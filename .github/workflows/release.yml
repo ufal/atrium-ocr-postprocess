@@ -1,4 +1,4 @@
-# atrium-alto-postprocess — automated GitHub Release
+# atrium-ocr-postprocess — automated GitHub Release
 #
 # On a v* tag, create a GitHub Release with auto-generated notes and attach a
 # packaged service bundle. The Docker image is published separately by docker.yml.

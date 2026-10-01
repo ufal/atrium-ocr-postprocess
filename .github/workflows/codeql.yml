@@ -1,4 +1,4 @@
-# atrium-alto-postprocess — CodeQL static analysis
+# atrium-ocr-postprocess — CodeQL static analysis
 #
 # Thin caller for ufal/atrium-project's codeql.reusable.yml (#18, T3). Was a
 # ~44-line standalone workflow; five near-identical copies differed only by an

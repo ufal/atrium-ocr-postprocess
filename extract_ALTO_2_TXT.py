@@ -164,7 +164,7 @@ def main(argv=None) -> None:
     page_alto_dir = Path(tasks[-1][2]).parent
 
     _logger = ParadataLogger(
-        program="alto-postprocess",
+        program="ocr-postprocess",
         config={
             "script": "extract_ALTO_2_TXT",
             "method": "alto-tools",

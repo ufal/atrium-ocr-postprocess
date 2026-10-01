@@ -1,4 +1,4 @@
-# atrium-alto-postprocess — caller for the security reusable workflow
+# atrium-ocr-postprocess — caller for the security reusable workflow
 #
 # Thin caller (mirrors docker.yml) for ufal/atrium-project's
 # security.reusable.yml: Trivy image scan + SBOM + version-check in one.
@@ -39,7 +39,7 @@ jobs:
     # It previously carried `secrets: inherit` for no reason (#18).
     with:
       # The published image to scan/SBOM.
-      image-ref: ghcr.io/ufal/atrium-alto-postprocess:latest
+      image-ref: ghcr.io/ufal/atrium-ocr-postprocess:latest
       citation-path: CITATION.cff
       # CRITICAL: this repo stores para_config.txt in the setup folder
       para-config-path: setup/para_config.txt

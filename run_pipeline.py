@@ -651,7 +651,7 @@ def main() -> int:
     merged = merge_run_paradata(
         json_paths=collected,
         out_path=summary_out,
-        pipeline="alto-postprocess",
+        pipeline="ocr-postprocess",
         method=settings["method"],
         skipped_stages=skipped_names,
     )

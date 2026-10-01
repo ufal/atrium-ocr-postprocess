@@ -12,7 +12,8 @@ from __future__ import annotations
 #: must be a named model (strategy §4.2).
 SERVICES = [
     {
-        "service": "atrium-alto-postprocess",
+        "service": "atrium-ocr-postprocess",
+        "service_previous": "atrium-alto-postprocess",
         "app": "service.text_api:app",
         "spec": "service/openapi.json",
         "primary": ["/process"],

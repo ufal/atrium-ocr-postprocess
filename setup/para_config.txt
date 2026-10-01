@@ -1,10 +1,10 @@
-# para_config.txt — atrium-alto-postprocess
+# para_config.txt — atrium-ocr-postprocess
 # Repository-specific paradata facts. Edit this file (not the Python) when
 # components or versions change.
 [tool]
-program = alto-postprocess
-version = v1.7.0-beta
-repository_fallback = https://github.com/ufal/atrium-alto-postprocess
+program = ocr-postprocess
+version = v2.0.0-beta
+repository_fallback = https://github.com/ufal/atrium-ocr-postprocess
 
 [components]
 # name = <license> ; <always|conditional> ; <role>

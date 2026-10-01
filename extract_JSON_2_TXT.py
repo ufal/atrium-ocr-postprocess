@@ -223,7 +223,7 @@ def main(argv: Optional[list] = None) -> None:
     input_dir = Path(tasks[-1][2]).parent
 
     _logger = ParadataLogger(
-        program="alto-postprocess",
+        program="ocr-postprocess",
         config={
             "script": "extract_JSON_2_TXT",
             "method": "json-keys",

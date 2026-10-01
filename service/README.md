@@ -52,7 +52,7 @@ Key features:
 The service logic resides in the `service/` directory, while models are expected in a `models/` directory at the project root.
 
 ```text
-atrium-alto-postprocess/
+atrium-ocr-postprocess/
 ├── v3/                          # 📦 LayoutReader helper scripts
 ├── models/                      # 📦 Model weights (downloaded externally)
 │   └── lid.176.bin              # FastText language identification binary
@@ -207,7 +207,7 @@ a `pages` list (`page`, `page_label`, `lines`, PDF `text_layer` / `needs_ocr_rea
 `page_label` on every line, whose `line_num` restarts per page as in the batch `DOC_LINE_CATEG`. Lines are read
 and shaped by the same `text_formats.py` code as the batch text-lines method (blank lines dropped, lines over
 1000 characters wrapped). With a record (`document_json`), lines accrete per page — except for born-digital
-uploads (DOCX, visible-text PDF, …), whose record belongs to llm-enrich's `digital-convert` (atrium_document
+uploads (DOCX, visible-text PDF, …), whose record belongs to `digital-convert` (atrium_document
 §1a) and comes back as it was sent. Each item in `cleaned_lines` carries the fields used by the
 classification pipeline. Every field is typed in [`openapi.json`](openapi.json) (`ProcessResponse`,
 `AltoLine`, `AltoPage`); the table below is the short form.
@@ -289,8 +289,8 @@ environment, installs all Python dependencies, fetches the `v3/` LayoutReader sc
 sparse checkout, and downloads the FastText binary:
 
 ```bash
-git clone [https://github.com/ufal/atrium-alto-postprocess.git](https://github.com/ufal/atrium-alto-postprocess.git)
-cd atrium-alto-postprocess
+git clone [https://github.com/ufal/atrium-ocr-postprocess.git](https://github.com/ufal/atrium-ocr-postprocess.git)
+cd atrium-ocr-postprocess
 chmod +x setup/setup_api_server.sh
 ./setup/setup_api_server.sh
 ```
@@ -337,7 +337,7 @@ curl -X POST "http://localhost:8000/process" \
 Activate your virtual environment and start the API with hot-reloading (useful during development):
 
 ```bash
-cd atrium-alto-postprocess
+cd atrium-ocr-postprocess
 source venv/bin/activate          # or: source venv-api/bin/activate
 uvicorn service.text_api:app --reload
 ```
@@ -380,7 +380,7 @@ Open a **second terminal window** alongside your running server and follow these
 ```bash
 git clone [https://github.com/ufal/lindat-common.git](https://github.com/ufal/lindat-common.git)
 cd lindat-common
-cp -r /path/to/atrium-alto-postprocess .
+cp -r /path/to/atrium-ocr-postprocess .
 ```
 
 **2. Install NodeJS and dependencies:**
@@ -411,7 +411,7 @@ Expected output:
 ```
 
 Open `http://localhost:8080` and navigate to the
-`atrium-alto-postprocess/service/frontend-lindat` directory in the file tree.
+`atrium-ocr-postprocess/service/frontend-lindat` directory in the file tree.
 
 For further details on the LINDAT development workflow see the
 [LINDAT Common Development Guide](https://github.com/ufal/lindat-common/?tab=readme-ov-file#development).
@@ -454,7 +454,7 @@ reference is `docs/k8s_deployment.md` in that same repo.
 
 `PORT` and `HOST` are read by `service/text_api.py`'s `__main__` block, which is what the `api` image's `ENTRYPOINT` runs.
 
-alto-postprocess is the reference implementation for this contract: it has honoured
+ocr-postprocess is the reference implementation for this contract: it has honoured
 `PORT`/`HOST` since issue #55, and issue #58 brought the other four services into line with
 it. Its entrypoint is `python service/text_api.py` (a script launch, made viable by the
 `sys.path` bootstrap at the top of that file) rather than the `python -m service.api` the
@@ -552,7 +552,7 @@ image serves — equal to the release's `openapi.json.sha256` for an image built
 ## Shutdown behavior 🛑
 
 Issue [#55](https://github.com/ufal/atrium-project/issues/55). The published `api` image
-(`ghcr.io/ufal/atrium-alto-postprocess:<version>-api`, new in that issue — before it this
+(`ghcr.io/ufal/atrium-ocr-postprocess:<version>-api`, new in that issue — before it this
 service was only reachable via a compose entrypoint override, so no API image existed to
 deploy) declares `HEALTHCHECK` (shallow `GET /health`, via the vendored
 `service/healthcheck.py`) and `STOPSIGNAL SIGTERM`. `service/text_api.py`'s own
@@ -604,5 +604,5 @@ signal on purpose so a supervisor sees the real cause. That is a normal stop, no
 [^5]: https://docs.python.org/3/library/venv.html
 [^6]: https://huggingface.co/Qwen/Qwen2.5-0.5B
 [^7]: https://ufal.mff.cuni.cz/home-page
-[^8]: https://github.com/ufal/atrium-alto-postprocess
+[^8]: https://github.com/ufal/atrium-ocr-postprocess
 [^9]: https://github.com/ppaanngggg/layoutreader

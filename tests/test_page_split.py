@@ -504,7 +504,7 @@ def test_main_survives_malformed_json_document(workdir):
 class _FakeParadataLogger:
     """Only the three attributes document_hook.paradata_ref_for() reads."""
 
-    def __init__(self, run_id, program="alto-postprocess", paradata_dir="paradata"):
+    def __init__(self, run_id, program="ocr-postprocess", paradata_dir="paradata"):
         self.run_id = run_id
         self.program = program
         self.paradata_dir = paradata_dir
@@ -540,8 +540,8 @@ def test_resolve_source_origin_defaults_per_format_resolve_to_this_repo(monkeypa
     an unmatched prefix makes _assert_origin_consistent() abstain in silence, which is
     the state that had the guard switched off."""
     monkeypatch.delenv("DOCUMENT_SOURCE_ORIGIN", raising=False)
-    assert resolve_originator(resolve_source_origin("xml")) == "alto-postprocess"
-    assert resolve_originator(resolve_source_origin("json")) == "alto-postprocess"
+    assert resolve_originator(resolve_source_origin("xml")) == "ocr-postprocess"
+    assert resolve_originator(resolve_source_origin("json")) == "ocr-postprocess"
     assert resolve_source_origin("xml") == "ABBYY-ALTO"
     assert resolve_source_origin("json").startswith("ocr:")
 
@@ -579,7 +579,7 @@ def test_main_writes_source_origin_that_resolves_to_this_repo(workdir, docdir):
     record = load_document(str(docdir / "doc.document.json"))
     source = record["source"]
     assert source["origin"] == "ABBYY-ALTO"
-    assert resolve_originator(source["origin"]) == "alto-postprocess"
+    assert resolve_originator(source["origin"]) == "ocr-postprocess"
     assert source["page_count"] == 2
     assert source["filename"] == "doc.alto.xml"
     assert source["sha256"] == hashlib.sha256(src.read_bytes()).hexdigest()
@@ -597,7 +597,7 @@ def test_main_json_input_records_an_ocr_origin(workdir, docdir):
 
     source = load_document(str(docdir / "doc.document.json"))["source"]
     assert source["origin"].startswith("ocr:")
-    assert resolve_originator(source["origin"]) == "alto-postprocess"
+    assert resolve_originator(source["origin"]) == "ocr-postprocess"
     assert source["media_type"] == "application/json"
 
 
@@ -608,7 +608,7 @@ def test_main_source_origin_cli_override_is_recorded(workdir, docdir):
 
     source = load_document(str(docdir / "doc.document.json"))["source"]
     assert source["origin"] == "ocr:pero"
-    assert resolve_originator(source["origin"]) == "alto-postprocess"
+    assert resolve_originator(source["origin"]) == "ocr-postprocess"
 
 
 def test_main_passes_a_run_id_string_and_a_paradata_ref_to_the_hook(workdir, docdir, monkeypatch):
@@ -632,7 +632,7 @@ def test_main_passes_a_run_id_string_and_a_paradata_ref_to_the_hook(workdir, doc
     main([str(workdir / "in"), str(workdir / "out")])
 
     assert isinstance(seen["run_id"], str) and seen["run_id"]
-    assert seen["paradata_ref"].endswith("_alto-postprocess.json")
+    assert seen["paradata_ref"].endswith("_ocr-postprocess.json")
     assert seen["doc_id"] == "doc"
     assert seen["kwargs"]["source"]["origin"] == "ABBYY-ALTO"
 
@@ -659,6 +659,6 @@ def test_write_document_block_with_source_and_a_block_in_one_call(workdir, docdi
     assert not (docdir / "CTXpair.document.json.tmp").exists()
     record = load_document(str(record_path))
     assert record["assembled"]["blocks"]["pages"]["run_id"] == run_id
-    assert record["assembled"]["blocks"]["pages"]["paradata_ref"].endswith(f"{run_id}_alto-postprocess.json")
+    assert record["assembled"]["blocks"]["pages"]["paradata_ref"].endswith(f"{run_id}_ocr-postprocess.json")
     # The §1a guard is live for this write rather than deferred, and it authorises it.
-    assert resolve_originator(record["source"]["origin"]) == "alto-postprocess"
+    assert resolve_originator(record["source"]["origin"]) == "ocr-postprocess"

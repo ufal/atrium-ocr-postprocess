@@ -11,7 +11,7 @@ pytest.importorskip("fastapi")
 from fastapi.testclient import TestClient  # noqa: E402
 
 # --- per-service contract parameters -----------------------------------------------------------
-SERVICE = "atrium-alto-postprocess"
+SERVICE = "atrium-ocr-postprocess"
 APP_IMPORT = "service.text_api"
 PRIMARY_ENDPOINTS = ["/process"]
 # -----------------------------------------------------------------------------------------------

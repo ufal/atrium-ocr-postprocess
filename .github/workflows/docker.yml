@@ -35,7 +35,7 @@ jobs:
       # needs only this one (#18). inherit handed it every repo secret.
       CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
     with:
-      image-name: ufal/atrium-alto-postprocess
+      image-name: ufal/atrium-ocr-postprocess
       apt-packages: build-essential g++
       # Mirrors this repo's own constraint in setup/requirements.txt. A bare
       # `torch` resolved to whatever the CPU index served that day, so the

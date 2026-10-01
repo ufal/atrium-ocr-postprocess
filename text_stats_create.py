@@ -160,7 +160,7 @@ def main(argv=None) -> int:
         return 2
 
     logger = ParadataLogger(
-        program="alto-postprocess",
+        program="ocr-postprocess",
         config={"script": "text_stats_create", "input_folder": str(args.input_folder), "output": str(args.output)},
         paradata_dir="paradata",
         output_types=["csv"],

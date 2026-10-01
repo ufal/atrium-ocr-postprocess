@@ -55,8 +55,8 @@ def test_resolve_document_json_dir_disabled_by_default(monkeypatch):
 
 
 def test_paradata_ref_for():
-    logger = _FakeLogger(run_id="260731-101112", program="alto-postprocess", paradata_dir="paradata")
-    assert paradata_ref_for(logger) == os.path.join("paradata", "260731-101112_alto-postprocess.json")
+    logger = _FakeLogger(run_id="260731-101112", program="ocr-postprocess", paradata_dir="paradata")
+    assert paradata_ref_for(logger) == os.path.join("paradata", "260731-101112_ocr-postprocess.json")
 
 
 def test_write_document_block_noop_when_dir_falsy(monkeypatch, tmp_path):
@@ -82,7 +82,7 @@ def test_write_document_block_merges_without_erasing_co_owned_fields(tmp_path):
         doc_dir,
         "CTX01",
         run_id="r2",
-        paradata_ref="paradata/r2_alto-postprocess.json",
+        paradata_ref="paradata/r2_ocr-postprocess.json",
         merge_blocks={"pages": [{"page": "1", "quality_score": 0.98, "quality_band": "Clear"}]},
     )
 
@@ -106,7 +106,7 @@ def test_write_document_block_set_blocks_uses_set_block(tmp_path):
     )
     record = load_document(document_path(doc_dir, "CTX02"))
     assert record["content"] == {"text": "full document text"}
-    assert record["assembled"]["blocks"]["content"]["program"] == "alto-postprocess"
+    assert record["assembled"]["blocks"]["content"]["program"] == "ocr-postprocess"
 
 
 def test_write_document_block_keeps_an_amcr_seed_and_stamps_the_run(tmp_path, capsys):
@@ -361,7 +361,7 @@ _LINES = [{"page": "1", "line": 1, "text": "a line", "categ": "Clear", "quality_
 def _seed_source(doc_dir, doc_id, origin, pages=None):
     from atrium_document import DocumentRecord
 
-    with DocumentRecord(doc_id, "digital-convert" if origin.startswith("digital") else "alto-postprocess",
+    with DocumentRecord(doc_id, "digital-convert" if origin.startswith("digital") else "ocr-postprocess",
                         out_dir=str(doc_dir)) as doc:  # fmt: skip
         doc.set_source(sha256="c" * 64, filename=f"{doc_id}.bin", origin=origin)
         if pages:

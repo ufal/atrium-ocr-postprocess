@@ -1,6 +1,6 @@
 services:
   alto:
-    image: ghcr.io/ufal/atrium-alto-postprocess:${ATRIUM_VERSION:-dev}
+    image: ghcr.io/ufal/atrium-ocr-postprocess:${ATRIUM_VERSION:-dev}
     # The host uid, group 0 (atrium-project#69, roadmap B6). ./data is in the clone
     # (data/.gitkeep), owned by whoever cloned it, while the image runs as uid 10001 by
     # default -- so without this every write to /data fails with EACCES. Every path the
@@ -11,12 +11,12 @@ services:
     build:
       context: .
       args:
-        ATRIUM_RUNNER_IMAGE: ghcr.io/ufal/atrium-alto-postprocess:${ATRIUM_VERSION:-dev}
-        ATRIUM_RUNNER_REPO: https://github.com/ufal/atrium-alto-postprocess
+        ATRIUM_RUNNER_IMAGE: ghcr.io/ufal/atrium-ocr-postprocess:${ATRIUM_VERSION:-dev}
+        ATRIUM_RUNNER_REPO: https://github.com/ufal/atrium-ocr-postprocess
         ATRIUM_RUNNER_REF: ${ATRIUM_RUNNER_REF:-dev}
     environment:
-      ATRIUM_RUNNER_IMAGE: ghcr.io/ufal/atrium-alto-postprocess:${ATRIUM_VERSION:-dev}
-      ATRIUM_RUNNER_REPO: https://github.com/ufal/atrium-alto-postprocess
+      ATRIUM_RUNNER_IMAGE: ghcr.io/ufal/atrium-ocr-postprocess:${ATRIUM_VERSION:-dev}
+      ATRIUM_RUNNER_REPO: https://github.com/ufal/atrium-ocr-postprocess
       ATRIUM_RUNNER_REF: ${ATRIUM_RUNNER_REF:-dev}
       HF_HOME: /cache/huggingface
     volumes:
@@ -39,14 +39,14 @@ services:
     # as docker-tool.reusable.yml publishes it, so `ATRIUM_VERSION=1.6.0-beta docker compose
     # --profile api pull` fetches the released image. The old `…:<version>-api` tag was never
     # published by any build.
-    image: ghcr.io/ufal/atrium-alto-postprocess-api:${ATRIUM_VERSION:-dev}
+    image: ghcr.io/ufal/atrium-ocr-postprocess-api:${ATRIUM_VERSION:-dev}
     build:
       context: .
       target: api
       # Its own build arg (atrium-project#69): `extends: alto` MERGES `build:`, so without
       # this line the api image baked the batch image's name into its ENV.
       args:
-        ATRIUM_RUNNER_IMAGE: ghcr.io/ufal/atrium-alto-postprocess-api:${ATRIUM_VERSION:-dev}
+        ATRIUM_RUNNER_IMAGE: ghcr.io/ufal/atrium-ocr-postprocess-api:${ATRIUM_VERSION:-dev}
     # env_file delivers every OTHER variable in .env.example into the container --
     # LOG_LEVEL, GRACEFUL_SHUTDOWN_S, HOST, RELOAD, HEALTHCHECK_PATH and
     # MAX_UPLOAD_MB were all documented but undeliverable under compose until
@@ -62,7 +62,7 @@ services:
       # image for requests served by the API image. (atrium-project#60, same class
       # of defect as atrium-page-classification's.) The build arg above does the same
       # for the image's baked ENV (atrium-project#69).
-      ATRIUM_RUNNER_IMAGE: ghcr.io/ufal/atrium-alto-postprocess-api:${ATRIUM_VERSION:-dev}
+      ATRIUM_RUNNER_IMAGE: ghcr.io/ufal/atrium-ocr-postprocess-api:${ATRIUM_VERSION:-dev}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:8080,http://localhost:5500}
       PORT: ${PORT:-8000}
     ports:

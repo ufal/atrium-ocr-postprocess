@@ -393,7 +393,7 @@ def test_process_accretes_real_lines_and_pages_onto_a_baseline(mock_process, tmp
     assert {key: record["source"][key] for key in baseline_before["source"]} == baseline_before["source"]
 
     # Rule 4: this contribution is stamped, and the baseline is acknowledged.
-    assert record["assembled"]["blocks"]["lines"]["program"] == "alto-postprocess"
+    assert record["assembled"]["blocks"]["lines"]["program"] == "ocr-postprocess"
     assert record["assembled"]["blocks"]["page_categories"]["program"] == "page-classification"
     assert record["assembled"]["had_baseline"] is True
 
@@ -483,7 +483,7 @@ def test_process_accretes_onto_a_seed_keyed_unlike_the_upload(mock_process, tmp_
 
     assert record["doc_id"] == _SEED_ID
     assert [line["text"] for line in record["lines"]] == [entry["text"] for entry in _CLASSIFIED_LINES]
-    assert record["assembled"]["blocks"]["lines"]["program"] == "alto-postprocess"
+    assert record["assembled"]["blocks"]["lines"]["program"] == "ocr-postprocess"
     page7 = record["pages"][0]
     assert page7["quality_score"] == 0.5
     assert page7["category"] == "Text"  # the seed's own field on the same row

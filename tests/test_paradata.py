@@ -20,7 +20,7 @@ import pytest
 from atrium_paradata import ParadataLogger, _sanitise
 
 # ── Repo-specific constant ───────────────────────────────────────────────────
-PROGRAM_NAME = "alto-postprocess"
+PROGRAM_NAME = "ocr-postprocess"
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -123,7 +123,7 @@ class TestParadataLoggerLifecycle:
     def test_filename_contains_run_id_and_program(self, tmp_path):
         logger = ParadataLogger(PROGRAM_NAME, {}, paradata_dir=str(tmp_path))
         path = logger.finalize()
-        stem = Path(path).stem  # e.g. "260315-120442_alto-postprocess"
+        stem = Path(path).stem  # e.g. "260315-120442_ocr-postprocess"
         assert logger._run_id in stem
         assert PROGRAM_NAME in stem
 

@@ -8,10 +8,10 @@
     "--repo-root . --worktree",
     "The pilot pins `-api` (python service/text_api.py, so service/ is on sys.path and its",
     "bare imports resolve there); `base` is the batch pipeline of the same stage",
-    "(run_pipeline.py), published, never pinned. Renamed to ocr-postprocess by",
-    "atrium-alto-postprocess#56: the image name changes, this list does not."
+    "(run_pipeline.py), published, never pinned. Continues atrium-alto-postprocess",
+    "(2026-10-01, a new repository with new image names): the image name changed, this list did not."
   ],
-  "image": "ghcr.io/ufal/atrium-alto-postprocess-api",
+  "image": "ghcr.io/ufal/atrium-ocr-postprocess-api",
   "target": "api",
   "entrypoint": "service/text_api.py",
   "stage": "OCR output and text-bearing files to lines, scored: POST /process",

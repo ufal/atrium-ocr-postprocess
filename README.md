@@ -3,17 +3,28 @@
   <a href="https://huggingface.co/facebook/fasttext-language-identification"><img src="https://img.shields.io/badge/%F0%9F%A4%97%20HF-fasttext--langID-yellow.svg" title="FastText Language Identification"></a>
   <a href="https://huggingface.co/Qwen/Qwen2.5-0.5B"><img src="https://img.shields.io/badge/%F0%9F%A4%97%20HF-Qwen2.5--0.5B-yellow.svg" title="Qwen2.5-0.5B Perplexity"></a>
   <a href="https://github.com/cneud/alto-tools"><img src="https://img.shields.io/badge/vendored-alto--tools-lightgrey.svg" title="alto-tools (vendored, Apache-2.0)"></a>
-  <a href="https://opensource.org/license/mit/"><img src="https://img.shields.io/github/license/ufal/atrium-alto-postprocess" title="MIT License"></a>
+  <a href="https://opensource.org/license/mit/"><img src="https://img.shields.io/github/license/ufal/atrium-ocr-postprocess" title="MIT License"></a>
   <a href="https://atrium-research.eu/"><img src="https://img.shields.io/badge/funded%20by-ATRIUM-8A2BE2.svg" title="ATRIUM Project"></a>
 </p>
 
 ---
 
-# 📦 ALTO XML Files Postprocessing Pipeline
+# 📦 OCR Output Postprocessing Pipeline
 
-This project provides a complete workflow for processing **ALTO XML** 📄 files. It takes raw ALTO
-XMLs and transforms them into structured **statistics tables** 📊, performs text classification,
-and filters low-quality **OCR** 🔍 results.
+This project provides a complete workflow for processing **OCR output** 📄 and other text-bearing
+files. It takes the output of OCR — ALTO XML, PAGE XML, hOCR, ABBYY FineReader XML, OCR JSON — and
+transforms it into structured **statistics tables** 📊, performs text classification, and filters
+low-quality **OCR** 🔍 results. ALTO XML, the format of the PSNC corpus, stays the worked example
+throughout this README.
+
+> [!NOTE]
+> **Formerly `atrium-alto-postprocess`.** On 1 October 2026 the project continued in this repository under
+> its new name, with the pipeline, the scripts, the categories and the scoring unchanged (the ALTO-specific
+> scripts keep their names: they name steps that really are ALTO-specific). What changed: the repository and image
+> names (`ghcr.io/ufal/atrium-ocr-postprocess`, `…-api`), the service id (`atrium-ocr-postprocess`), and the program id
+> this tool stamps into the document record (`ocr-postprocess`; records written before keep `alto-postprocess`, which the
+> record contract accepts as the same writer). The images of the old repository stay published for consumers pinned to
+> them and receive no new tags; its issues and releases remain readable there.
 
 The core of the quality filtering relies on **language identification** 🌐 and a composite **quality
 score** 📈 — combining structural detectors, **perplexity** 📉, and character-level metrics — to identify
@@ -79,8 +90,8 @@ Before you begin, set up your environment.
     ```
 
 > [!NOTE]
-> **Docker on Linux: run as yourself.** The published images are `ghcr.io/ufal/atrium-alto-postprocess:<version>`
-> (the batch pipeline) and `ghcr.io/ufal/atrium-alto-postprocess-api:<version>`, where `<version>` is the release
+> **Docker on Linux: run as yourself.** The published images are `ghcr.io/ufal/atrium-ocr-postprocess:<version>`
+> (the batch pipeline) and `ghcr.io/ufal/atrium-ocr-postprocess-api:<version>`, where `<version>` is the release
 > without its leading `v`. `./data` is part of the clone and belongs to you, while the images run as uid 10001 by
 > default: `docker-compose.yml` runs the services as `user: "${ATRIUM_UID:-10001}:0"`, so put your uid in `.env`
 > once — `echo "ATRIUM_UID=$(id -u)" >> .env`. With `docker run`, pass `--user "$(id -u):0"`. Docker Desktop
@@ -307,7 +318,7 @@ in its header, that engine instead (`ocr:tesseract`, `ocr:pero`, `ocr:kraken`, `
 image) and `ocr:generic` (TXT, Markdown, CSV/TSV, JSON/JSONL, TEI, XML, subtitles); a ZIP bundle
 takes its members' origin. Born-digital documents are `digital-born-<kind>` (DOCX, ODT/ODS/ODP,
 XLSX, PPTX, EPUB, RTF, plain HTML, e-mail, a PDF with visible text). A born-digital record is
-originated by llm-enrich's `digital-convert`, so this repo then writes **only** `source` into
+originated by [`digital-convert`](https://github.com/ufal/atrium-digital-convert), so this repo then writes **only** `source` into
 it: `document_hook` holds back the `pages`/`content`/`lines` blocks of every stage
 (`atrium_document` §1a), unless a page carries the `needs_ocr` hand-off. The CSV outputs of the
 run are produced either way. `--source-origin ocr:<engine>` overrides the default when the
@@ -514,7 +525,7 @@ When [`[DOCUMENT].JSON_DIR`](#paradata-logging) (or the `DOCUMENT_JSON_DIR` env 
 configured, a second, separate **Accretion Layer** runs after extraction: for every document,
 it reads back that document's already-written `.txt` pages and merges them into
 `<doc_id>.document.json` as this repo's owned fields — `pages[].ocr`
-(`alto-postprocess`'s share of the field-split `pages` block) and the whole `content` block —
+(`ocr-postprocess`'s share of the field-split `pages` block) and the whole `content` block —
 leaving every other block (`page_categories`, `entities`, `source`, ...) untouched, per the
 `atrium_document.schema.json` paired-hook contract. With no baseline `doc.json` yet on disk,
 the record is created holding just this contribution (accretion rule 3). This mirrors what
@@ -1092,7 +1103,7 @@ in that file are upstream CLI output and must only change when upstream's behavi
 
 ## Acknowledgements 🙏
 
-**For support write to:** lutsai.k@gmail.com — responsible for this GitHub repository [^8](https://github.com/ufal/atrium-alto-postprocess) 🔗
+**For support write to:** lutsai.k@gmail.com — responsible for this GitHub repository [^8](https://github.com/ufal/atrium-ocr-postprocess) 🔗
 
 * **Developed by** UFAL [^7](https://ufal.mff.cuni.cz/home-page) 👥
 * **Funded by** ATRIUM [^4](https://atrium-research.eu/) 💰
@@ -1114,6 +1125,6 @@ in that file are upstream CLI output and must only change when upstream's behavi
 [^5]: https://github.com/ufal/atrium-nlp-enrich
 [^6]: https://huggingface.co/Qwen/Qwen2.5-0.5B
 [^7]: https://ufal.mff.cuni.cz/home-page
-[^8]: https://github.com/ufal/atrium-alto-postprocess
+[^8]: https://github.com/ufal/atrium-ocr-postprocess
 [^9]: https://github.com/ppaanngggg/layoutreader
 [^10]: https://huggingface.co/THUDM/glm-4v-9b

@@ -128,7 +128,7 @@ def main(argv=None):
     first = True
 
     _logger = ParadataLogger(
-        program="alto-postprocess",
+        program="ocr-postprocess",
         config={
             "script": "json_stats_create",
             "input_dir": str(args.input_folder),

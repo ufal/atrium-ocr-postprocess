@@ -1,7 +1,7 @@
 """
 tests/conftest.py
 =================
-Shared pytest fixtures for the atrium-alto-postprocess test suite.
+Shared pytest fixtures for the atrium-ocr-postprocess test suite.
 
 Nothing here requires ML models, GPU, or network access.
 """

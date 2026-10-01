@@ -88,6 +88,8 @@ try:
 except ImportError:  # registry not vendored here - abstain, do not guess
     _VOCAB_LINE_CATEGORY_ORIGINATORS = None
 else:
+    # The registry keys the label set by the predecessor's id (this tool's id until 2026-10-01); `ocr-postprocess`
+    # resolves to it by alias in atrium_vocab.validate_labels, so the row itself keeps one key.
     _declared = tuple(sorted(_VOCAB_LINE_CATEGORY_ORIGINATORS.get("alto-postprocess", ())))
     if _declared and _declared != CATEGORIES_EMITTED:
         print(

@@ -48,7 +48,7 @@ DOCUMENT_CONFIG_PATH = os.getenv("LANGID_CONFIG", os.path.join("setup", "config.
 #: guard was switched off for every real run of the repo it primarily protects.
 #:
 #: Each value MUST match an `ORIGIN_ORIGINATORS` prefix that resolves to
-#: "alto-postprocess" or the check silently abstains again — that is the failure mode,
+#: "ocr-postprocess" or the check silently abstains again — that is the failure mode,
 #: not a loud one, so `resolve_source_origin()` below checks the resolution rather
 #: than trusting the spelling.
 #:
@@ -546,7 +546,7 @@ def main(argv=None):
         _formats_present = ["xml"]
 
     _logger = ParadataLogger(
-        program="alto-postprocess",
+        program="ocr-postprocess",
         config={
             "script": "page_split",
             "input_dir": str(args.input_dir),

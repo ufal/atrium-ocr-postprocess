@@ -14,8 +14,9 @@ once, pointing them all at the same directory of `<doc_id>.document.json` files.
 empty (the default), every function below is a no-op — standalone runs are
 unaffected, matching rule 3 of the accretion contract.
 
-Ownership note: every write here uses PROGRAM_NAME = "alto-postprocess", the single
-name `atrium_document.BLOCK_OWNERS` recognises for this repo's blocks. Every stage's
+Ownership note: every write here uses PROGRAM_NAME = "ocr-postprocess" (named "alto-postprocess" until
+2026-10-01; `atrium_document.PROGRAM_SUCCESSORS` treats the two as one writer), the current name
+`atrium_document.BLOCK_OWNERS` lists for this repo's blocks. Every stage's
 ParadataLogger stamps that same `program` (classify, aggregate and the text-lines
 stages import PROGRAM_NAME from here; the other stages spell the literal) and names
 the script in `config.script`. The older per-stage names (`langID-classify`,
@@ -40,7 +41,7 @@ from atrium_document import DocumentRecord, load_document, resolve_originator, v
 
 logger = logging.getLogger(__name__)
 
-PROGRAM_NAME = "alto-postprocess"
+PROGRAM_NAME = "ocr-postprocess"
 
 #: (atrium-project#10 D4) One-shot latch for the "validation is unavailable" warning.
 #: The gate below is called once per document, and a batch run holds thousands of

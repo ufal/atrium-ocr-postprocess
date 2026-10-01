@@ -1,4 +1,4 @@
-"""tool_limits.py — every limit atrium-alto-postprocess has (atrium-project#53, factor III).
+"""tool_limits.py — every limit atrium-ocr-postprocess has (atrium-project#53, factor III).
 
 One declaration, read by the service (``service/text_api.py``, ``service/text_inference.py``)
 and the readers (``text_formats.py``), and reported by ``GET /info`` (``limits`` and

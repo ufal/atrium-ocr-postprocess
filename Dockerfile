@@ -3,7 +3,7 @@ FROM python:3.11-slim AS base
 
 # --- Provenance (flows into atrium_paradata.py via ENV) ---
 ARG ATRIUM_RUNNER_IMAGE=""
-ARG ATRIUM_RUNNER_REPO="https://github.com/ufal/atrium-alto-postprocess"
+ARG ATRIUM_RUNNER_REPO="https://github.com/ufal/atrium-ocr-postprocess"
 ARG ATRIUM_RUNNER_REF=""
 # CPU torch by default (alto-tools method needs no GPU; LayoutReader runs on CPU too,
 # just slower). Override to a CUDA wheel index (e.g. .../whl/cu121) to build a GPU
@@ -147,7 +147,7 @@ RUN if [ -z "$FASTTEXT_REVISION" ] || [ -z "$FASTTEXT_SHA256" ]; then \
     && wget -nv --tries=5 --continue --timeout=60 \
             --retry-connrefused --waitretry=10 \
             --retry-on-http-error=403,408,429,500,502,503,504 \
-            --header="User-Agent: atrium-alto-postprocess-docker-build/1.0" \
+            --header="User-Agent: atrium-ocr-postprocess-docker-build/1.0" \
             "https://huggingface.co/facebook/fasttext-language-identification/resolve/${FASTTEXT_REVISION}/model.bin?download=true" \
             -O "$MODEL_DIR/lid.176.bin" \
     && size="$(stat -c %s "$MODEL_DIR/lid.176.bin")" \

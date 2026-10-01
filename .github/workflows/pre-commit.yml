@@ -1,4 +1,4 @@
-# atrium-alto-postprocess — pre-commit in CI
+# atrium-ocr-postprocess — pre-commit in CI
 #
 # Thin caller for ufal/atrium-project's pre-commit.reusable.yml (#18, T3).
 # BLOCKING: a failing hook fails the check. This repo's own

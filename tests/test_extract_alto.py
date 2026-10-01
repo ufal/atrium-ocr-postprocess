@@ -73,7 +73,7 @@ def test_accretion_preserves_unrelated_metadata_and_co_owned_fields(tmp_path):
         str(doc_dir),
         "CTX88",
         "r9",
-        "paradata/r9_alto-postprocess.json",
+        "paradata/r9_ocr-postprocess.json",
         merge_blocks={"pages": pages},
         set_blocks={"content": content},
     )

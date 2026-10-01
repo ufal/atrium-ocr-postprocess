@@ -273,7 +273,7 @@ def test_paradata_reads_this_repos_para_config(tmp_path, monkeypatch):
 
     logger = atrium_paradata.ParadataLogger(
         config=PARA_CONFIG_PATH,
-        program="alto-postprocess",
+        program="ocr-postprocess",
         paradata_dir=str(tmp_path),
         config_dir=str(Path(PARA_CONFIG_PATH).parent),
     )

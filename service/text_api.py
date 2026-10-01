@@ -116,7 +116,11 @@ from tool_limits import (  # noqa: E402
 logger = logging.getLogger(__name__)
 
 #: The tool id (/info `service`, the spec's `x-atrium-service`): the repository name.
-SERVICE = "atrium-alto-postprocess"
+SERVICE = "atrium-ocr-postprocess"
+
+#: The id this service published until 2026-10-01 (atrium-project#72). The release gate accepts the changed
+#: `x-atrium-service` only when the spec declares the previous one (`atrium_openapi.py compare`).
+PREVIOUS_SERVICE = "atrium-alto-postprocess"
 
 # Every limit this service has is declared in tool_limits.py (atrium-project#53, factor III)
 # and read per request. These are the import-time values, kept for the callers and tests
@@ -297,7 +301,7 @@ class ProcessResponse(BaseModel):
     document_json: Optional[AtriumDocument] = Field(
         None,
         description=(
-            "Only when the record was sent as `document_json`: the record with alto-postprocess's `pages` and "
+            "Only when the record was sent as `document_json`: the record with ocr-postprocess's `pages` and "
             "`lines` fields merged in. A born-digital record (atrium_document §1a) comes back as it was sent."
         ),
     )
@@ -318,7 +322,7 @@ class ProcessResponse(BaseModel):
 
 
 class AltoInfo(InfoBase):
-    """`/info` of atrium-alto-postprocess."""
+    """`/info` of atrium-ocr-postprocess."""
 
     status: str = Field(description="`active`.")
     device: str = Field(description="Where the models run: `cpu` or `cuda`.")
@@ -331,7 +335,7 @@ class AltoInfo(InfoBase):
 _RECORD_PART_HELP = (
     "Optional baseline ATRIUM Document JSON (accretion model, docs/document_schema.md), or an AMČR seed "
     "(`doc_id`, `source`). When given, the response's `document_json` carries the record back with "
-    "alto-postprocess's `pages` and `lines` fields merged in; every other tool's block and field passes "
+    "ocr-postprocess's `pages` and `lines` fields merged in; every other tool's block and field passes "
     "through. A record that does not validate against atrium_document.schema.json is still accepted "
     "(rule 6); one that cannot be opened is refused (422 `invalid_record`). An empty part counts as none."
 )
@@ -380,7 +384,7 @@ attach_inflight_middleware(app, _state)
 # §4.4 error body {status, reason, detail} for every error (atrium-project#32 item 2, #53).
 attach_error_handlers(app)
 # The published spec: reason registry, record schema, service id (atrium-project#32 item 3).
-attach_openapi_contract(app, SERVICE)
+attach_openapi_contract(app, SERVICE, previous=PREVIOUS_SERVICE)
 
 # CORS — standard §4.5 configuration; default "*" for parity with sibling services.
 add_cors(app, methods=["GET", "POST"])
@@ -464,7 +468,7 @@ def _lines_records_from_result(result: Dict[str, Any], page: str = SERVICE_PAGE_
 
     Note the two spellings: the inference layer calls the field `category`, the
     schema calls it `categ`. Values pass through VERBATIM, and the values THIS repo
-    passes through are the alto-postprocess half of `lines[].categ` — `"Clear"`,
+    passes through are the ocr-postprocess half of `lines[].categ` — `"Clear"`,
     `"Empty"`, `"Noisy"`, `"Non-text"`, `"Trash"`, i.e. whatever
     `text_util.determine_category()` returned, unaltered. `"Garbage"` and
     `"Inverted"` belong to the OTHER authorised originator of that block

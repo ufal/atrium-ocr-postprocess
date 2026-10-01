@@ -19,15 +19,15 @@
 # run's paradata recorded an image it did not run (roadmap B3's compose half).
 services:
   alto:
-    image: atrium-alto-postprocess-gpu:local
+    image: atrium-ocr-postprocess-gpu:local
     pull_policy: build
     build:
       args:
         TORCH_INDEX_URL: ${TORCH_INDEX_URL:-https://download.pytorch.org/whl/cu124}
-        ATRIUM_RUNNER_IMAGE: atrium-alto-postprocess-gpu:local
+        ATRIUM_RUNNER_IMAGE: atrium-ocr-postprocess-gpu:local
     environment:
       NVIDIA_VISIBLE_DEVICES: all
-      ATRIUM_RUNNER_IMAGE: atrium-alto-postprocess-gpu:local
+      ATRIUM_RUNNER_IMAGE: atrium-ocr-postprocess-gpu:local
     deploy:
       resources:
         reservations:

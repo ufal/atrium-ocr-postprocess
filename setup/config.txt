@@ -17,7 +17,7 @@ JSON_DIR =
 # when this is empty: ocr:page-xml / ocr:hocr / ABBYY-ALTO / ocr:pdf-text-layer (a PDF
 # whose text is an invisible OCR layer) / ocr:generic (TXT, MD, CSV, JSON, TEI, XML)
 # for OCR output, and digital-born-<kind> for DOCX, ODT, XLSX, PPTX, EPUB, RTF, HTML
-# and visible-text PDF. A digital-born record belongs to llm-enrich's digital-convert:
+# and visible-text PDF. A digital-born record belongs to digital-convert:
 # this repo then writes only `source` into it (document_hook guard); CSV outputs are
 # unaffected. A value set HERE overrides that default for every text-lines input too.
 SOURCE_ORIGIN =
@@ -26,7 +26,7 @@ SOURCE_ORIGIN =
 # (txt, md, csv, tsv, json, jsonl, xml, tei, html, docx, xlsx, pptx, odt, ods, odp,
 # epub, rtf, eml, mbox, srt, vtt, …). Precedence: --source-origin > the
 # DOCUMENT_SOURCE_ORIGIN env var > this key > SOURCE_ORIGIN > the truthful default.
-# The use case: llm-enrich's digital-convert reads only PDF and DOCX, so a
+# The use case: digital-convert reads only PDF and DOCX, so a
 # digital-born XLSX/PPTX/ODT/ODS/ODP/EPUB/RTF/HTML/e-mail record ends up with `source`
 # only. When files of such a kind are really OCR or transcription exports, say so,
 # e.g. `xlsx = ocr:generic, pptx = ocr:generic`, and this repo writes their

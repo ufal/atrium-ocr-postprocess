@@ -1,4 +1,4 @@
-# atrium-alto-postprocess — scheduled "slow lane" smoke tests
+# atrium-ocr-postprocess — scheduled "slow lane" smoke tests
 #
 # PR CI runs `pytest -m "not slow"` (hermetic, no network/models). The slow
 # tests — LayoutReader / Qwen2.5 perplexity / GLM-4v and the HuggingFace

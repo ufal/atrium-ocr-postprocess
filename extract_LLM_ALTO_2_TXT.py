@@ -208,7 +208,7 @@ def main(argv=None):
     page_alto_dir = Path(df.iloc[0]["path"]).parent
 
     _logger = ParadataLogger(
-        program="alto-postprocess",
+        program="ocr-postprocess",
         config={
             "script": "extract_LLM_ALTO_2_TXT",
             "method": "glm",

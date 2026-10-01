@@ -104,14 +104,14 @@ def test_build_plan_returns_all_stages_with_skip_flags():
 def test_merge_paradata_records_skipped_stages(tmp_path):
     stage_json = tmp_path / "stage.json"
     stage_json.write_text(
-        json.dumps({"program": "alto-postprocess", "statistics": {"output_counts_by_type": {"csv": 1}}}),
+        json.dumps({"program": "ocr-postprocess", "statistics": {"output_counts_by_type": {"csv": 1}}}),
         encoding="utf-8",
     )
     out = tmp_path / "merged.json"
     merge_run_paradata(
         json_paths=[str(stage_json)],
         out_path=str(out),
-        pipeline="alto-postprocess",
+        pipeline="ocr-postprocess",
         method="layoutreader",
         skipped_stages=["3. extract text", "1. page_split"],
     )

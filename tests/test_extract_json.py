@@ -142,7 +142,7 @@ def test_accretion_preserves_unrelated_metadata_and_co_owned_fields(tmp_path: Pa
         str(doc_dir),
         "CTX99",
         run_id="r3",
-        paradata_ref="paradata/r3_alto-postprocess.json",
+        paradata_ref="paradata/r3_ocr-postprocess.json",
         merge_blocks={"pages": pages},
         set_blocks={"content": content},
     )
@@ -190,7 +190,7 @@ def test_json_keys_accretion_output_is_schema_valid(tmp_path, document_schema, f
         str(doc_dir),
         "CTXschema",
         run_id="r1",
-        paradata_ref="paradata/r1_alto-postprocess.json",
+        paradata_ref="paradata/r1_ocr-postprocess.json",
         merge_blocks={"pages": pages},
         set_blocks={"content": content},
     )

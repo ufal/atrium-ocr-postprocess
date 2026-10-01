@@ -1,7 +1,7 @@
 cff-version: 1.2.0
 message: "If you use this software, please cite it as below."
-title: "ATRIUM's ALTO XMLs postprocessor: a tool to extract contents, fix word splits, and categorize textlines by language & severity of OCR errors."
-version: "1.7.0-beta"
+title: "ATRIUM's OCR-output postprocessor: a tool to extract contents, fix word splits, and categorize textlines by language & severity of OCR errors, for ALTO XML and other OCR and text-bearing formats."
+version: "2.0.0-beta"
 date-released: "2026-10-01"
 authors:
   - family-names: "Lutsai"
@@ -16,7 +16,7 @@ authors:
   - family-names: "Křivánková"
     given-names: "Dana"
     orcid: https://orcid.org/0000-0001-5718-9447
-repository-code: "https://github.com/ufal/atrium-alto-postprocess"
+repository-code: "https://github.com/ufal/atrium-ocr-postprocess"
 license: "MIT"
 references:
   - type: standard

@@ -436,7 +436,7 @@ but a named limit also carries its code as `cause`.
 
 ## 5. PDF text layers and page flags
 
-`pages_report.csv` classifies every PDF page, using the thresholds of llm-enrich's `pdf_to_md`:
+`pages_report.csv` classifies every PDF page, using the thresholds of digital-convert's `pdf_to_md`:
 
 | `text_layer` | Test                                                                                        | Meaning                                                       |
 |--------------|---------------------------------------------------------------------------------------------|---------------------------------------------------------------|
@@ -448,19 +448,19 @@ but a named limit also carries its code as `cause`.
 A garbled layer is still extracted, because its lines are exactly what the categorizer is meant to
 flag as `Trash`. A document whose text-bearing pages are mostly `ocr` gets `source.origin`
 `ocr:pdf-text-layer`; any other PDF gets `digital-born-pdf`. PDFium returns text in content-stream
-order, so multi-column pages are not re-ordered (no column detection). llm-enrich's `digital_to_json`
+order, so multi-column pages are not re-ordered (no column detection). digital-convert's `digital_to_json`
 does detect columns since its #18, so for a born-digital PDF the record's `lines[]` (written by that
 converter, the plane's originator) follow the columns, while this repo's line tables follow the
 content stream. Both ratio thresholds must lie in [0, 1].
 
 The `flags` column reports what the text layer looks like. The flags never set a category, since the
 categories stay classify's and the shared vocabulary keeps the tools' category sets apart. The
-`mojibake_cp1252` test is the same one llm-enrich's `digital_to_json` applies to a line before calling
+`mojibake_cp1252` test is the same one digital-convert's `digital_to_json` applies to a line before calling
 it `Garbage` (same thresholds, same letter evidence, since its #18):
 
 | Flag                                 | Set when                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 |--------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `mojibake_cp1252`                    | at least 20% of a page's lines read like CP1250 Czech decoded as CP1252 (`sondì èíslo`). The confusion table is derived from the two codecs, as in llm-enrich's `digital_to_json`; a line needs two misread characters or under 90% clean letters, a Czech letter both code pages share (á í ú ý š ž), no letter only Western text has (à ê û œ), and a clean CP1252 round trip, so French or Italian text is not flagged. Any kind; the note `mojibake_cp1252_pages=N` counts them |
+| `mojibake_cp1252`                    | at least 20% of a page's lines read like CP1250 Czech decoded as CP1252 (`sondì èíslo`). The confusion table is derived from the two codecs, as in digital-convert's `digital_to_json`; a line needs two misread characters or under 90% clean letters, a Czech letter both code pages share (á í ú ý š ž), no letter only Western text has (à ê û œ), and a clean CP1252 round trip, so French or Italian text is not flagged. Any kind; the note `mojibake_cp1252_pages=N` counts them |
 | `mirrored_text=N` / `rotated_text=N` | PDF: N text objects whose matrix (composed with its form XObjects) mirrors the text (a negative scale; 180° counts as mirrored) or turns it by more than about 1°                                                                                                                                                                                                                                                                                                                   |
 | `page_load_failed`                   | PDF: PDFium could not load the page (lossy: `partial`)                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | `overflow`                           | a continuation page of a block over `MAX_LINES_PER_PAGE`                                                                                                                                                                                                                                                                                                                                                                                                                            |
@@ -470,10 +470,10 @@ it `Garbage` (same thresholds, same letter evidence, since its #18):
 With `[DOCUMENT].JSON_DIR` set, `text_split.py` writes the record's `source`: `sha256`, `filename`,
 `media_type`, `origin`, and `page_count` for formats with real pages only (PDF, ALTO, PAGE XML,
 hOCR, ABBYY, DjVu, Tesseract TSV, a bundle of such pages). A DOCX or ODT has no page count of its
-own: its pages are the breaks a reader chooses to count. Since its #18, llm-enrich counts DOCX pages
+own: its pages are the breaks a reader chooses to count. Since its #18, digital-convert counts DOCX pages
 with the same rules as `PAGE_BREAKS = auto` here, but each tool's setting can differ, and
 `set_source()` keeps the first writer's value. So the count is left to the positional plane's
-originator, which for a born-digital DOCX is llm-enrich. The origin is **truthful per class**:
+originator, which for a born-digital DOCX is digital-convert. The origin is **truthful per class**:
 
 | Class                      | Formats                                                                                                                  | Default origin                                                                                                                                                                                              | Positional blocks written by this repo |
 |----------------------------|--------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------|
@@ -481,9 +481,9 @@ originator, which for a born-digital DOCX is llm-enrich. The origin is **truthfu
 | text of unknown provenance | TXT, Markdown, CSV/TSV, JSON/JSONL, TEI, other XML, SRT/VTT; a bundle of mixed kinds                                     | `ocr:generic` (as json-keys)                                                                                                                                                                                | yes                                    |
 | born-digital               | DOCX, ODT/ODS/ODP, XLSX, PPTX, EPUB, RTF, plain HTML, visible-text PDF, EML/MBOX                                         | `digital-born-<kind>`                                                                                                                                                                                       | **no**: `source` only                  |
 
-A `digital-born-*` origin authorises llm-enrich's **digital-convert** to originate the record's
+A `digital-born-*` origin authorises **digital-convert** to originate the record's
 `pages`/`content`/`lines`/`tables` (`atrium_document` §1a), and the hub's digital end-to-end test
-asserts that alto-postprocess does not write them. The shared check only *warns* when it is not
+asserts that ocr-postprocess does not write them. The shared check only *warns* when it is not
 strict. `document_hook.write_document_block()` therefore holds those blocks back for every stage of
 this repo, including the unchanged `classify_TEXT` and `aggregate_STAT`, with one warning per
 document. The exception is when the record carries digital-convert's own `pages[].needs_ocr`
