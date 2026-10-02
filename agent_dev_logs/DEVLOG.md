@@ -1287,3 +1287,23 @@ week, ≈ 2026-10-02). Recorded in the #30 digest and plan; nothing switched on.
   `docs/categorization_logic.md`, `docs/issue30/README.md`.
 
   **Not pushed: files delivered in chat.**
+
+## 2026-10-01 (night) — #30 (now atrium-ocr-postprocess#3): stage 12 read; flag held; D47 + stage 13 defined
+
+* **What arrived:** stage 12's `logs12.log`, `12b_docs.txt`, `12b_dana_sidecar.csv`, `12e_projection.json`,
+  `12f_discordant.csv`, `12g_discordant.csv`, `12h_witness_distinct.csv`.
+* **Found:** the gold gate passes (12g: errors 510 → 499, `Clear`-loss 38 = 38, p = 0.0034); on @DanaKriv's 826 lines
+  the flag is harmless and nearly idle (12f: 648 → 642, `Clear`-loss 1 = 1, p = 0.24; 3 direct fixes, 9 via the
+  cascade, 6 breaks all `PocEaovy soubor` in one document). The text-only projection does not hold: gate 6 consults
+  the witness on ~3% of the lines it would convict (AA4). The current tree is 133 errors worse than the July batch on
+  her lines, 588 of 826 at `Clear` where gold has 4 (AA5).
+* **Decided:** flag HELD (K4TEL) though the flip rule is met; D47 — a witness floor, a convicted short line is never
+  `Clear` — proposed behind `SHORT_GARBAGE_WITNESS_FLOOR` (boolean, ships false); stage 13 defined, its job written.
+* **Dev logs:** `30.digest.md` § "Stage 12 read against its own delivery" (AA1–AA8) and a 🛑 on R1; `30.plan.md` top
+  block (flip-rule outcome, D47, stage 13 and its decision rule), checklist.
+* **Corrected in place:** `docs/issue30/README.md`, `docs/categorization_logic.md` (row 5c), `setup/config.txt`,
+  `text_util.py` (comment) — the projection no longer reads as an effect.
+* **Cluster:** `issue30_stage13_job.sh` — 13a runs now; 13b–13e and opt-in 13r run once D47 is in the tree.
+
+  **Not pushed: files delivered in chat.**
+

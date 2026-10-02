@@ -179,9 +179,14 @@ decisions came back with it. What they settle, and what is left:
 
 **What your labels showed about the program**, beyond answering Q6:
 
-* The new rule, switched on, would fix most of what it touches: in the rare text it takes the
-  estimated mistakes from about 4,800 lines to about 1,200, and it discards **none** of the lines
-  you marked `Clear`.
+* Judged on the text alone, the new rule is right about most of what it flags: in the rare text it
+  would take the estimated mistakes from about 4,800 lines to about 1,200, and it flags **none** of
+  the lines you marked `Clear`.
+  > **Corrected after the cluster run (2026-10-01, evening).** In the real program the rule is only
+  > consulted on a small part of those lines, so switching it on changed about 26 of the 826 lines
+  > your answers cover (648 → 642 mistakes), not the hundreds the estimate above suggests. The run
+  > also showed that the current program rates 588 of those 826 lines `Clear`, where you rated 4. That
+  > gap is what the next step is aimed at; the switch stays off until it is measured.
 * That last part needed one correction first. The rule used to read words joined by a comma or a
   slash without a space — `gut erhalten,Siedelungsfund,gefunden` — as one long word, and judge it
   as damage. Your only two `Clear` lines in the at-risk set, `XXX,1937,str. 21` and
