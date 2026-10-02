@@ -88,8 +88,6 @@ try:
 except ImportError:  # registry not vendored here - abstain, do not guess
     _VOCAB_LINE_CATEGORY_ORIGINATORS = None
 else:
-    # The registry keys the label set by the predecessor's id (this tool's id until 2026-10-01); `ocr-postprocess`
-    # resolves to it by alias in atrium_vocab.validate_labels, so the row itself keeps one key.
     _declared = tuple(sorted(_VOCAB_LINE_CATEGORY_ORIGINATORS.get("alto-postprocess", ())))
     if _declared and _declared != CATEGORIES_EMITTED:
         print(
@@ -2266,6 +2264,13 @@ def _has_strong_garbage_evidence(
 # that), `Clear`-loss 0 -- after D46 below, which her two `Clear` labels found.
 # The flag stays false until stage 12 scores the same labels on the real lines
 # with the lexicon armed (tools/project_annotation.py join).
+#
+# UPDATE 2026-10-01, evening -- stage 12 did, and the projection above is the
+# witness's verdict on TEXT, not its effect: this gate consults it only behind
+# the signal half above, and on Dana's 826 lines the armed run moved about 26
+# (errors 648 -> 642; gold 2,064: 510 -> 499, p = 0.0034, Clear-loss flat). The
+# flip rule is met and the flag is held for #30 D47 (a witness floor outside this
+# gate) and stage 13.
 #
 # The annotations themselves are now here -- tools/gold/sidecars/, joined onto a
 # delivered batch with `--gold-sidecar`; see tools/gold/GOLD.md, including its

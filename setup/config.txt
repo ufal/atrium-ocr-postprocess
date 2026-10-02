@@ -17,7 +17,7 @@ JSON_DIR =
 # when this is empty: ocr:page-xml / ocr:hocr / ABBYY-ALTO / ocr:pdf-text-layer (a PDF
 # whose text is an invisible OCR layer) / ocr:generic (TXT, MD, CSV, JSON, TEI, XML)
 # for OCR output, and digital-born-<kind> for DOCX, ODT, XLSX, PPTX, EPUB, RTF, HTML
-# and visible-text PDF. A digital-born record belongs to digital-convert:
+# and visible-text PDF. A digital-born record belongs to llm-enrich's digital-convert:
 # this repo then writes only `source` into it (document_hook guard); CSV outputs are
 # unaffected. A value set HERE overrides that default for every text-lines input too.
 SOURCE_ORIGIN =
@@ -26,7 +26,7 @@ SOURCE_ORIGIN =
 # (txt, md, csv, tsv, json, jsonl, xml, tei, html, docx, xlsx, pptx, odt, ods, odp,
 # epub, rtf, eml, mbox, srt, vtt, …). Precedence: --source-origin > the
 # DOCUMENT_SOURCE_ORIGIN env var > this key > SOURCE_ORIGIN > the truthful default.
-# The use case: digital-convert reads only PDF and DOCX, so a
+# The use case: llm-enrich's digital-convert reads only PDF and DOCX, so a
 # digital-born XLSX/PPTX/ODT/ODS/ODP/EPUB/RTF/HTML/e-mail record ends up with `source`
 # only. When files of such a kind are really OCR or transcription exports, say so,
 # e.g. `xlsx = ocr:generic, pptx = ocr:generic`, and this repo writes their
@@ -282,9 +282,12 @@ ISOLATED_CHAR_MIN_TOKENS    = 3
 # text_util prints an advisory if you set this without SHORT_GARBAGE_LEXICON_PATH
 # -- advisory, not fatal, because the shape-only configuration is measured on
 # purpose (every gold A/B from stage 5a on, and the 508 re-check).
-# 2026-10-01: @DanaKriv's 357 decisions support arming it (projected at-risk
-# errors 4,844 -> 1,180 in the tail, no labelled `Clear` lost after D46). Still
-# false until stage 12 scores them on the real lines with a lexicon.
+# 2026-10-01: stage 12 scored it on @DanaKriv's lines and on the 2,064 gold,
+# lexicon armed: 12g errors 510 -> 499, Clear-loss 38 = 38, p = 0.0034; 12f
+# 648 -> 642, Clear-loss 1 = 1. The flip rule is met, and the flag is HELD so it
+# is decided together with the witness floor (#30 D47, stage 13). The text-only
+# projection (4,844 -> 1,180) is NOT the effect: gate 6 consults the witness on
+# about 3% of the lines it would convict (digest AA4).
 SHORT_GARBAGE_WITNESS_ENABLE            = false
 # (#30) The hand-maintained word lists. THIS IS THE FILE FOR PEOPLE WHO KNOW THE
 # MATERIAL: units, reference labels, section headings, and -- the section that did
