@@ -184,6 +184,7 @@ RULES: list[str] = sorted(
         "rule_trailing_fill_rescue",
         "rule_short_garbage",
         "rule_short_garbage_witness",
+        "rule_short_garbage_witness_floor",
         "rule_domain_notation",
         "rule_domain_notation_categ",
         "rule_short_line",

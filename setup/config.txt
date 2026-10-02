@@ -289,6 +289,17 @@ ISOLATED_CHAR_MIN_TOKENS    = 3
 # projection (4,844 -> 1,180) is NOT the effect: gate 6 consults the witness on
 # about 3% of the lines it would convict (digest AA4).
 SHORT_GARBAGE_WITNESS_ENABLE            = false
+# (#30 D47) The witness floor: a short line (<= ISOLATED_CHAR_MIN_TOKENS words) that
+# the shape witness convicts is never `Clear` -- where the cascade would say
+# `Clear` it says `Noisy` (rule `rule_short_garbage_witness_floor`). Applied after
+# the cascade, so it never touches a `Trash`, `Noisy`, `Non-text` or `Empty`
+# verdict, and it does not need the signal half of gate 6. INDEPENDENT of
+# SHORT_GARBAGE_WITNESS_ENABLE. Boolean on purpose (Q1: convicted means damaged,
+# not necessarily illegible). Read the lexicon the same way the witness does:
+# without SHORT_GARBAGE_LEXICON_PATH it would convict real words.
+# SHIPS OFF. Measured in stage 13 (13b-13e) on Dana's lines and the 2,064 gold;
+# adopt only if errors fall and Clear-loss does not rise on BOTH.
+SHORT_GARBAGE_WITNESS_FLOOR             = false
 # (#30) The hand-maintained word lists. THIS IS THE FILE FOR PEOPLE WHO KNOW THE
 # MATERIAL: units, reference labels, section headings, and -- the section that did
 # not exist before 2026-09-22 -- ordinary open-class words this archive uses that

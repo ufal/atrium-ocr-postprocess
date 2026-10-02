@@ -112,6 +112,12 @@ UNREACHABLE_RULES: dict[str, str] = {
         "tools/gold/GOLD.md), delete this entry and add a real edge case instead. "
         "tests/test_short_garbage_witness_wiring.py covers the flag-on behaviour."
     ),
+    "rule_short_garbage_witness_floor": (
+        "(#30 D47) The witness floor acts in categorize_line() after the cascade and ships "
+        "behind SHORT_GARBAGE_WITNESS_FLOOR, which defaults to false. EDGE_CASES run at the "
+        "default config, so this name cannot fire here. Unreachable BY CONFIGURATION. "
+        "tests/test_witness_floor.py covers the flag-on behaviour."
+    ),
     "rule_mid_uppercase": (
         "Gate 9d requires word_count <= 2, but gate 7 (rule_short_line) has the same "
         "condition and always returns first, so 9d is shadowed. See "

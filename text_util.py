@@ -531,6 +531,23 @@ SHORT_GARBAGE_WITNESS_ENABLE = _get_str("TEXT_UTILS", "SHORT_GARBAGE_WITNESS_ENA
     "on",
 )
 
+# (#30 D47) The witness floor: a short line the shape witness convicts is never
+# `Clear`. Where the cascade would answer `Clear` for such a line it answers
+# `Noisy` instead (reason `noisy_threshold`, rule `rule_short_garbage_witness_floor`).
+# INDEPENDENT of SHORT_GARBAGE_WITNESS_ENABLE: that flag lets the witness return
+# `Trash` at gate 6, behind the signal half of `rule_short_garbage` (which reaches
+# ~3% of the witness's population, digest AA4); this one acts after the whole
+# cascade and never returns `Trash`. A BOOLEAN, not a category name, because the
+# answer is fixed by Q1 -- convicted means damaged, not necessarily illegible --
+# and `ab_constant_eval` varies numbers and booleans only. SHIPS OFF: it changes
+# no category until stage 13 has measured it on both sidecars.
+SHORT_GARBAGE_WITNESS_FLOOR = _get_str("TEXT_UTILS", "SHORT_GARBAGE_WITNESS_FLOOR", "false").strip().lower() in (
+    "true",
+    "1",
+    "yes",
+    "on",
+)
+
 # (#30 D35) Rules whose `_fire()` is gated by a CONFIG FLAG rather than by their
 # own predicate, and the flag that gates each. A rule listed here reports
 # `fire_count == 0` on every corpus while its flag is off -- not because it has
@@ -557,6 +574,7 @@ SHORT_GARBAGE_WITNESS_ENABLE = _get_str("TEXT_UTILS", "SHORT_GARBAGE_WITNESS_ENA
 # than captured, so `override_constants()` is visible to readers of this map.
 CONFIG_GATED_RULES: dict[str, str] = {
     "rule_short_garbage_witness": "SHORT_GARBAGE_WITNESS_ENABLE",
+    "rule_short_garbage_witness_floor": "SHORT_GARBAGE_WITNESS_FLOOR",
     "rule_domain_notation_categ": "DOMAIN_NOTATION_CATEG",
 }
 
@@ -2120,6 +2138,25 @@ def categorize_line(
         ghost_dominated,
         lang,
     )
+
+    # (#30 D47) The witness floor. Applied AFTER the whole cascade, so it can only
+    # ever turn a `Clear` into a `Noisy`: a `Trash`, `Noisy`, `Non-text` or `Empty`
+    # verdict is never touched. The text conditions are the witness's own --
+    # `shape_garbage_clauses()` already vetoes Czech diacritics, structured lines
+    # and domain notation, and applies the lexicon, the `[allowed]` list and the
+    # language-split vowel-run clause -- plus the short-line bound of gate 6. The
+    # SIGNAL half of gate 6 (weak language score, weirdness, quality score) is
+    # deliberately NOT required: digest AA4 measured that it excludes ~97% of the
+    # population. `lang` is the RAW detected label, as in `determine_category()`.
+    if (
+        SHORT_GARBAGE_WITNESS_FLOOR
+        and categ == CATEG_CLEAR
+        and "rule_short_garbage_witness_floor" not in DISABLED_RULES
+        and wc <= ISOLATED_CHAR_MIN_TOKENS
+        and shape_garbage_clauses(txt, lang)
+    ):
+        _fire("rule_short_garbage_witness_floor")
+        categ, reason = CATEG_NOISY, "noisy_threshold"
 
     # Label constants, not literals, on the three sites where a category name is
     # COMPARED against rather than emitted: the pairing of CATEG_TRASH with
