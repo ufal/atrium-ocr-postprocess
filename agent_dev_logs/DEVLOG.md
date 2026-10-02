@@ -1306,4 +1306,3 @@ week, ≈ 2026-10-02). Recorded in the #30 digest and plan; nothing switched on.
 * **Cluster:** `issue30_stage13_job.sh` — 13a runs now; 13b–13e and opt-in 13r run once D47 is in the tree.
 
   **Not pushed: files delivered in chat.**
-
