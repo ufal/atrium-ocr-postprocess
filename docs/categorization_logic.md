@@ -404,6 +404,16 @@ stripping trailing fill characters (spaces, `._:-–—<`) from the line leaves 
 (`word_count ≤ 4` and `len ≤ 25`), and `valid_word_ratio > 0.0`, the line is rescued rather than dropped straight to
 Trash. This protects genuine short entries that trail off with punctuation/dashes (common in tabular archival forms).
 
+**Witness floor** (`rule_short_garbage_witness_floor`, `SHORT_GARBAGE_WITNESS_FLOOR`, **off by default**) — applied
+*after* the cascade in `categorize_line()`: when the cascade would answer `Clear` for a short line
+(`word_count ≤ ISOLATED_CHAR_MIN_TOKENS`) that `shape_garbage_clauses()` convicts, the answer becomes `Noisy` /
+`noisy_threshold`. It never touches a `Trash`, `Noisy`, `Non-text` or `Empty` verdict, it does not need the signal
+half of gate 6, and it is independent of `SHORT_GARBAGE_WITNESS_ENABLE`. The page-level smoothing in
+`apply_document_postprocessing()` acts after it, so with the floor on a line it created can still be moved to `Trash`
+by the surrounded-`Trash` pass or page rule 1. Because it only ever answers `Noisy`, it cannot change the A/B tool's
+`Clear-loss` (gold `Clear` → `Trash` / `Non-text`); the tool also reports `Clear-demoted` (gold `Clear` → any other
+class) for rules like this one.
+
 **Quality-score band routing** (reached only if none of the gates above returned):
 
 ```text
