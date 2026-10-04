@@ -58,13 +58,15 @@ POSITIONAL_BLOCKS = ("pages", "content", "lines", "tables")
 #: per document, not one per stage call.
 _FOREIGN_ORIGIN_WARNED: set = set()
 
-#: (#31 Phase 4) The text-lines kinds llm-enrich's digital-convert can read (its
-#: api_util/digital_to_json.py sniffs content, not the extension: a PDF, or a
-#: WordprocessingML package — .docx, .docm, .dotx, .dotm — since its #18). A
-#: `digital-born-<kind>` origin for any OTHER kind hands the positional plane to an
-#: originator that cannot produce it, so the record keeps `source` only — which is
-#: what `[DOCUMENT].SOURCE_ORIGIN_BY_KIND` exists to let an operator decide.
-DIGITAL_CONVERT_KINDS = frozenset({"pdf", "docx"})
+#: (#31 Phase 4) The text-lines kinds atrium-digital-convert can read (its
+#: api_util/digital_to_json.py sniffs content, not the extension: a PDF or a
+#: WordprocessingML package since llm-enrich#18; ODT, ODS, XLSX and RTF through this
+#: repository's own text_formats.py, which it vendors, since its v1.1.0-beta — #2 W2; DOC
+#: and XLS too, which are no reader kind here). A `digital-born-<kind>` origin for any
+#: OTHER kind (PPTX, EPUB, ...) hands the positional plane to an originator that cannot
+#: produce it, so the record keeps `source` only — which is what
+#: `[DOCUMENT].SOURCE_ORIGIN_BY_KIND` exists to let an operator decide.
+DIGITAL_CONVERT_KINDS = frozenset({"pdf", "docx", "odt", "ods", "xlsx", "rtf"})
 
 _ORIGIN_BY_KIND_KEY = "[DOCUMENT] SOURCE_ORIGIN_BY_KIND"
 
@@ -363,6 +365,94 @@ def write_document_block(
                 doc.assert_fields_survived(block, records)
         _validate_own_output(doc, baseline_was_invalid)
         # Explicitly, and to `path` (#68): see the docstring. __exit__ then has nothing left to do.
+        return doc.finalize(path)
+
+
+#: (atrium-digital-convert#4 W3) What `write_scores()` writes: the common line-quality
+#: model's fields, exactly `atrium_document.SCORING_FIELDS` — the one write this repo may make
+#: into a positional plane another tool originated (a born-digital record's).
+SCORE_LINE_FIELDS = ["categ", "quality_score", "lang"]
+SCORE_PAGE_FIELDS = ["quality_score", "quality_band"]
+
+#: Line categories this repo never overwrites: digital-convert's decode verdict on a born-digital
+#: line (atrium_vocab.LINE_CATEGORY_ORIGINATORS). Its own Clear/Noisy/Trash/Non-text/Empty are a
+#: disjoint set, so a verdict that a text layer does not decode is never re-scored as text.
+DECODE_VERDICTS = frozenset({"Garbage", "Inverted"})
+
+
+def write_scores(
+    document_json_dir: str,
+    doc_id: str,
+    run_id: Optional[str],
+    paradata_ref: str = "",
+    *,
+    pages: Optional[List[Dict[str, Any]]] = None,
+    lines: Optional[List[Dict[str, Any]]] = None,
+    run_uuid: Optional[str] = None,
+) -> Optional[str]:
+    """Score an EXISTING record in place: lines[] categ/quality_score/lang, pages[] quality.
+
+    The scoring-only write path (atrium-digital-convert#4 W3, `POST /score_record`): unlike
+    `write_document_block()`, it writes into any record — an OCR record this repo originated
+    (a re-score) and a born-digital one digital-convert originated, where the shared module
+    treats a merge limited to `atrium_document.SCORING_FIELDS` as a co-contribution. It never
+    writes `text`, `bbox` or any other positional field, never `source`, and never a row:
+
+      * a row carrying any other field (`text`, `bbox`, ...) is refused with ValueError
+        before anything is opened — a caller bug, never data to drop in silence;
+      * rows whose key is not in the record are left out (a score cannot invent a line);
+      * a line carrying digital-convert's decode verdict (`DECODE_VERDICTS`) is left out;
+      * every merge is followed by `assert_fields_survived()`, as in `write_document_block()`;
+      * the output is validated before it is written, as in `write_document_block()`.
+
+    Returns the path written, or None when there is no record at `<doc_id>.document.json` or
+    nothing to write.
+    """
+    for block, rows, allowed in (
+        ("lines", lines, ["page", "line", *SCORE_LINE_FIELDS]),
+        ("pages", pages, ["page", *SCORE_PAGE_FIELDS]),
+    ):
+        extra = sorted({field for row in rows or [] for field in row} - set(allowed))
+        if extra:
+            raise ValueError(f"write_scores writes only {allowed} into {block}[], not {extra}")
+    if not document_json_dir:
+        return None
+    path = document_path(document_json_dir, doc_id)
+    if not os.path.exists(path):
+        return None
+    record = load_document(path) or {}
+    known_lines = {
+        (str(row.get("page")), row.get("line")): row for row in record.get("lines") or [] if isinstance(row, dict)
+    }
+    known_pages = {str(row.get("page")) for row in record.get("pages") or [] if isinstance(row, dict)}
+
+    line_rows = [
+        row
+        for row in lines or []
+        if (str(row.get("page")), row.get("line")) in known_lines
+        and known_lines[(str(row.get("page")), row.get("line"))].get("categ") not in DECODE_VERDICTS
+    ]
+    page_rows = [row for row in pages or [] if str(row.get("page")) in known_pages]
+    if not line_rows and not page_rows:
+        return None
+
+    baseline_was_invalid = _baseline_is_invalid(path)
+    with DocumentRecord.open(
+        doc_id,
+        PROGRAM_NAME,
+        baseline=path,
+        run_id=run_id,
+        run_uuid=run_uuid,
+        paradata_ref=paradata_ref,
+        out_dir=document_json_dir,
+    ) as doc:
+        if line_rows:
+            doc.merge_block("lines", line_rows, key_fields=["page", "line"], own_fields=SCORE_LINE_FIELDS)
+            doc.assert_fields_survived("lines", line_rows)
+        if page_rows:
+            doc.merge_block("pages", page_rows, key_fields=["page"], own_fields=SCORE_PAGE_FIELDS)
+            doc.assert_fields_survived("pages", page_rows)
+        _validate_own_output(doc, baseline_was_invalid)
         return doc.finalize(path)
 
 

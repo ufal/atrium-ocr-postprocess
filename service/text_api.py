@@ -98,7 +98,14 @@ import atrium_rocrate  # noqa: E402
 from atrium_document import canonical_doc_id, resolve_originator  # noqa: E402
 from atrium_limits import LimitExceeded, LimitNotes  # noqa: E402
 from atrium_paradata import ParadataLogger  # noqa: E402
-from document_hook import PROGRAM_NAME, quality_band, resolve_input_origin, write_document_block  # noqa: E402
+from document_hook import (  # noqa: E402
+    DECODE_VERDICTS,
+    PROGRAM_NAME,
+    quality_band,
+    resolve_input_origin,
+    write_document_block,
+    write_scores,
+)
 from text_formats import COMPRESSION_SUFFIXES, READERS, IngestError, compression_of, sniff_kind  # noqa: E402
 from tool_limits import (  # noqa: E402
     LIMITS,
@@ -318,6 +325,50 @@ class ProcessResponse(BaseModel):
             "The call's provenance: its Process Run Crate `CreateAction` (atrium-project#71), whose `@id` is the "
             "`run_uuid` stamped into the returned record."
         ),
+    )
+
+
+class ScoredLine(AltoLine):
+    """One scored record line (`/score_record` `cleaned_lines[]`): the classifier's fields, keyed
+    by the record's own `page` and `line`."""
+
+    page: str = Field(description="The record's page key (`lines[].page`, e.g. a PDF page label like `iv`).")
+    line: int = Field(description="The record's line key (`lines[].line`).")
+
+
+class ScoredPage(BaseModel):
+    """One page of a `/score_record` call (`pages[]`)."""
+
+    page: str = Field(description="The record's page key.")
+    lines_scored: int = Field(description="Lines the model scored on this page.")
+    skipped_decode_verdict: int = Field(
+        description="Lines left as they were: digital-convert's decode verdict (`Garbage`, `Inverted`) stands."
+    )
+    skipped_empty: int = Field(description="Lines with no text, not scored.")
+    quality_score: Optional[float] = Field(description="The mean score of the scored lines; null when none was.")
+    quality_band: Optional[str] = Field(
+        description="`Clear`, `Noisy` or `Trash` by plurality of the scored lines; null when none of the three occurs."
+    )
+
+
+class ScoreRecordResponse(BaseModel):
+    """`/score_record`: the record's lines scored by the common quality model, and the record."""
+
+    model_config = ConfigDict(extra="allow")
+
+    type: str = Field(description="`record`.")
+    doc_id: str = Field(description="The record's `doc_id`.")
+    cleaned_lines: List[ScoredLine] = Field(description="The scored lines, in record order.")
+    pages: List[ScoredPage] = Field(description="One entry per page considered, in record order.")
+    limits_applied: List[LimitNote] = Field(description="Every limit that shaped the result without refusing it.")
+    document_json: AtriumDocument = Field(
+        description=(
+            "The record with ocr-postprocess's scoring fields merged in: `lines[].categ/quality_score/lang` and "
+            "`pages[].quality_score/quality_band`, on existing rows only; returned as sent when nothing was scored."
+        )
+    )
+    paradata: Optional[CreateAction] = Field(
+        description="The call's provenance: its `CreateAction`, whose `@id` is the `run_uuid` stamped into the record."
     )
 
 
@@ -907,6 +958,180 @@ async def process_document(
     finally:
         if os.path.exists(tmp_path):
             os.remove(tmp_path)
+
+
+_SCORE_RECORD_HELP = (
+    "The ATRIUM Document JSON whose lines to score (required). Any origin: a born-digital record "
+    "(digital-convert's) gets the scoring fields only, an OCR record is re-scored. One that cannot be "
+    "opened, or has no `doc_id`, is refused (422 `invalid_record`)."
+)
+
+#: Characters a record's doc_id may keep in the temporary file name it is written under; the
+#: record itself keeps its doc_id (DocumentRecord inherits the baseline's).
+_UNSAFE_FILE_KEY = re.compile(r"[^A-Za-z0-9._-]")
+
+
+@app.post(
+    "/score_record",
+    response_model=None,
+    responses={
+        200: {"model": ScoreRecordResponse, "description": "The scored lines and the record."},
+        **error_responses(413, 503),
+    },
+)
+async def score_record(
+    document_json: UploadFile = File(
+        ..., description=_SCORE_RECORD_HELP, json_schema_extra={"contentMediaType": "application/json"}
+    ),
+    pages: Optional[str] = Form(
+        None,
+        description=(
+            "Optional: score only these pages, by the record's own page keys, comma-separated (e.g. `i,ii,3`). "
+            "Empty (the default): every page. A key the record does not have is refused (422)."
+        ),
+    ),
+) -> JSONResponse:
+    """Score a record's lines with the common line-quality model (atrium-digital-convert#4 W3).
+
+    The lines are read from the record (`lines[].text`, in record order) and scored exactly as
+    they are — not re-read, split or reordered — so each answer maps back onto its row. A line
+    carrying digital-convert's decode verdict (`Garbage`, `Inverted`) is left as it is, and a
+    line without text is not scored. The record gets `lines[].categ/quality_score/lang` and
+    `pages[].quality_score/quality_band` on the rows it already has, through the scoring-only
+    write path (document_hook.write_scores): never `text`, never a new row, never `source`. On a
+    born-digital record that is the shared module's scoring co-contribution (SCORING_FIELDS), so
+    the record stays digital-convert's.
+
+    `MAX_PAGES` bounds the pages scored and `MAX_LINES_PER_PAGE` the lines of one page (413
+    `limit_exceeded`); `MAX_UPLOAD_MB` the record part.
+    """
+    _refuse_if_draining()
+    para_logger = ParadataLogger(
+        config={"endpoint": "/score_record"},
+        program=PROGRAM_NAME,
+        paradata_dir=None,
+        config_dir=str(Path(PARA_CONFIG_PATH).parent),
+    )
+    raw = await read_upload_bounded(document_json, MAX_UPLOAD.get(), "document_json")
+    record = parse_record_part(raw, "document_json")
+    if record is None:
+        raise AtriumHTTPError(
+            422, "The document_json part is empty: /score_record scores a record.", reason="invalid_record"
+        )
+    doc_id = str(record.get("doc_id") or "").strip()
+    if not doc_id:
+        raise AtriumHTTPError(422, "The record has no doc_id.", reason="invalid_record")
+
+    wanted = {key.strip() for key in (pages or "").split(",") if key.strip()} or None
+    record_pages = [str(row.get("page")) for row in record.get("pages") or [] if isinstance(row, dict)]
+    by_page: "OrderedDict[str, List[tuple]]" = OrderedDict()
+    skipped_verdict: Dict[str, int] = {}
+    skipped_empty: Dict[str, int] = {}
+    for row in record.get("lines") or []:
+        if not isinstance(row, dict) or row.get("page") is None or not isinstance(row.get("line"), int):
+            continue
+        page = str(row["page"])
+        if wanted is not None and page not in wanted:
+            continue
+        by_page.setdefault(page, [])
+        if row.get("categ") in DECODE_VERDICTS:
+            skipped_verdict[page] = skipped_verdict.get(page, 0) + 1
+            continue
+        text = row.get("text")
+        if not isinstance(text, str) or not text.strip():
+            skipped_empty[page] = skipped_empty.get(page, 0) + 1
+            continue
+        by_page[page].append((row["line"], text.strip()))
+    if wanted is not None:
+        unknown = sorted(wanted - set(by_page) - set(record_pages))
+        if unknown:
+            raise HTTPException(status_code=422, detail=f"pages: the record has no page {', '.join(unknown)}.")
+
+    MAX_PAGES.check(len(by_page), detail=f"{len(by_page)} pages to score; the limit is {MAX_PAGES.get()} (MAX_PAGES).")
+    for page, rows in by_page.items():
+        MAX_LINES_PER_PAGE.check(
+            len(rows),
+            detail=f"page {page!r} has {len(rows)} lines to score; the limit is {MAX_LINES_PER_PAGE.get()} "
+            "(MAX_LINES_PER_PAGE).",
+        )
+
+    notes = LimitNotes()
+    texts = [text for rows in by_page.values() for _line, text in rows]
+    try:
+        # Off the event loop (issue #55): synchronous perplexity + fastText.
+        entries = await asyncio.to_thread(text_manager.classify_line_texts, texts, notes) if texts else []
+        if len(entries) != len(texts):
+            raise RuntimeError(f"the classifier answered {len(entries)} lines for {len(texts)}")
+
+        cleaned: List[Dict[str, Any]] = []
+        answers = iter(entries)
+        for page, rows in by_page.items():
+            for position, (line_key, _text) in enumerate(rows, start=1):
+                entry = dict(next(answers))
+                entry.update(line_num=position, page=page, line=line_key)
+                cleaned.append(entry)
+
+        line_records = [
+            {"page": e["page"], "line": e["line"]}
+            | {
+                field: e[key]
+                for key, field in (("category", "categ"), ("quality_score", "quality_score"), ("lang", "lang"))
+                if e.get(key) is not None
+            }
+            for e in cleaned
+        ]
+        page_records = [row for row in _page_records_from_lines(line_records) if len(row) > 1]
+        page_summary = {row["page"]: row for row in page_records}
+        counts: Dict[str, int] = {}
+        for e in cleaned:
+            counts[e["page"]] = counts.get(e["page"], 0) + 1
+
+        returned = record
+        with tempfile.TemporaryDirectory() as work:
+            file_key = _UNSAFE_FILE_KEY.sub("_", doc_id)[:120] or "record"
+            Path(work, f"{file_key}.document.json").write_bytes(raw)
+            written = write_scores(
+                work,
+                file_key,
+                para_logger.run_id,
+                para_logger.paradata_ref,
+                pages=page_records,
+                lines=line_records,
+                run_uuid=para_logger.run_uuid,
+            )
+            if written:
+                with open(written, "r", encoding="utf-8-sig") as fh:
+                    returned = json.load(fh)
+
+        result: Dict[str, Any] = {
+            "type": "record",
+            "doc_id": doc_id,
+            "cleaned_lines": cleaned,
+            "pages": [
+                {
+                    "page": page,
+                    "lines_scored": counts.get(page, 0),
+                    "skipped_decode_verdict": skipped_verdict.get(page, 0),
+                    "skipped_empty": skipped_empty.get(page, 0),
+                    "quality_score": (page_summary.get(page) or {}).get("quality_score"),
+                    "quality_band": (page_summary.get(page) or {}).get("quality_band"),
+                }
+                for page in by_page
+            ],
+            "limits_applied": notes.as_list(),
+            "document_json": returned,
+        }
+        para_logger.note_limits(notes)
+        para_logger.log_document_success()
+        para_logger.finalize()
+        upload = atrium_rocrate.file_entity(f"{file_key}.document.json", raw, media_type="application/json")
+        result["paradata"] = _run_action(para_logger, upload, result, "document_json", doc_id)
+        return JSONResponse(content=result)
+    except (HTTPException, LimitExceeded):
+        raise
+    except Exception as exc:
+        logger.exception("score_record failed")
+        raise HTTPException(status_code=500, detail=f"Scoring failed: {exc}") from exc
 
 
 #: The reader kind of each non-document task type, for its default origin and media type.

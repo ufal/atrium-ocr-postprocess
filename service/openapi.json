@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "ATRIUM Text Processor",
-    "version": "1.8.0-beta",
+    "version": "1.9.0-beta",
     "x-atrium-service": "atrium-ocr-postprocess",
     "x-atrium-service-previous": "atrium-alto-postprocess"
   },
@@ -227,6 +227,75 @@
           },
           "501": {
             "description": "This deployment cannot read the input: a reader's optional dependency is not installed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Not ready, warming up or draining. Retry three times with backoff.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/score_record": {
+      "post": {
+        "summary": "Score Record",
+        "description": "Score a record's lines with the common line-quality model (atrium-digital-convert#4 W3).\n\nThe lines are read from the record (`lines[].text`, in record order) and scored exactly as\nthey are — not re-read, split or reordered — so each answer maps back onto its row. A line\ncarrying digital-convert's decode verdict (`Garbage`, `Inverted`) is left as it is, and a\nline without text is not scored. The record gets `lines[].categ/quality_score/lang` and\n`pages[].quality_score/quality_band` on the rows it already has, through the scoring-only\nwrite path (document_hook.write_scores): never `text`, never a new row, never `source`. On a\nborn-digital record that is the shared module's scoring co-contribution (SCORING_FIELDS), so\nthe record stays digital-convert's.\n\n`MAX_PAGES` bounds the pages scored and `MAX_LINES_PER_PAGE` the lines of one page (413\n`limit_exceeded`); `MAX_UPLOAD_MB` the record part.",
+        "operationId": "score_record",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_score_record"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "The scored lines and the record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScoreRecordResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unusable or invalid input: request validation (`errors`), a bad parameter, a record that cannot be opened (`reason: invalid_record`), or a parameter or per-input budget over its limit (`reason: limit_exceeded`). Do not retry unchanged.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Processing failed. Report it; do not retry blindly.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorBody"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The request content is over a limit (`reason: limit_exceeded`). Split the input or raise the limit.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1692,6 +1761,33 @@
         ],
         "title": "Body_process_document"
       },
+      "Body_score_record": {
+        "properties": {
+          "document_json": {
+            "type": "string",
+            "contentMediaType": "application/json",
+            "title": "Document Json",
+            "description": "The ATRIUM Document JSON whose lines to score (required). Any origin: a born-digital record (digital-convert's) gets the scoring fields only, an OCR record is re-scored. One that cannot be opened, or has no `doc_id`, is refused (422 `invalid_record`)."
+          },
+          "pages": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pages",
+            "description": "Optional: score only these pages, by the record's own page keys, comma-separated (e.g. `i,ii,3`). Empty (the default): every page. A key the record does not have is refused (422)."
+          }
+        },
+        "type": "object",
+        "required": [
+          "document_json"
+        ],
+        "title": "Body_score_record"
+      },
       "CreateAction": {
         "properties": {
           "@context": {
@@ -2350,6 +2446,261 @@
         ],
         "title": "ReadyBody",
         "description": "`GET /ready`: readiness for new work."
+      },
+      "ScoreRecordResponse": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "title": "Type",
+            "description": "`record`."
+          },
+          "doc_id": {
+            "type": "string",
+            "title": "Doc Id",
+            "description": "The record's `doc_id`."
+          },
+          "cleaned_lines": {
+            "items": {
+              "$ref": "#/components/schemas/ScoredLine"
+            },
+            "type": "array",
+            "title": "Cleaned Lines",
+            "description": "The scored lines, in record order."
+          },
+          "pages": {
+            "items": {
+              "$ref": "#/components/schemas/ScoredPage"
+            },
+            "type": "array",
+            "title": "Pages",
+            "description": "One entry per page considered, in record order."
+          },
+          "limits_applied": {
+            "items": {
+              "$ref": "#/components/schemas/LimitNote"
+            },
+            "type": "array",
+            "title": "Limits Applied",
+            "description": "Every limit that shaped the result without refusing it."
+          },
+          "document_json": {
+            "$ref": "#/components/schemas/AtriumDocument",
+            "description": "The record with ocr-postprocess's scoring fields merged in: `lines[].categ/quality_score/lang` and `pages[].quality_score/quality_band`, on existing rows only; returned as sent when nothing was scored."
+          },
+          "paradata": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CreateAction"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The call's provenance: its `CreateAction`, whose `@id` is the `run_uuid` stamped into the record."
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "type",
+          "doc_id",
+          "cleaned_lines",
+          "pages",
+          "limits_applied",
+          "document_json",
+          "paradata"
+        ],
+        "title": "ScoreRecordResponse",
+        "description": "`/score_record`: the record's lines scored by the common quality model, and the record."
+      },
+      "ScoredLine": {
+        "properties": {
+          "line_num": {
+            "type": "integer",
+            "title": "Line Num",
+            "description": "1-based position after layout reordering; per page for a document."
+          },
+          "text": {
+            "type": "string",
+            "title": "Text",
+            "description": "The cleaned text, with split-word merges applied."
+          },
+          "lang": {
+            "type": "string",
+            "title": "Lang",
+            "description": "The language code after the expected-language remap (FastText, then setup/config.txt)."
+          },
+          "lang_score": {
+            "type": "number",
+            "title": "Lang Score",
+            "description": "Its confidence, from 0 to 1."
+          },
+          "original_lang": {
+            "type": "string",
+            "title": "Original Lang",
+            "description": "FastText's own prediction, before the remap."
+          },
+          "orig_lang_score": {
+            "type": "number",
+            "title": "Orig Lang Score",
+            "description": "FastText's own confidence, from 0 to 1."
+          },
+          "perplexity": {
+            "type": "number",
+            "title": "Perplexity",
+            "description": "Qwen2.5-0.5B perplexity; 99999 when the line's batch could not be scored."
+          },
+          "garbage_density": {
+            "type": "number",
+            "title": "Garbage Density",
+            "description": "The share of non-alphanumeric noise characters."
+          },
+          "sym_count": {
+            "type": "integer",
+            "title": "Sym Count",
+            "description": "Tokens with strange or unexpected symbols."
+          },
+          "upper_count": {
+            "type": "integer",
+            "title": "Upper Count",
+            "description": "Tokens with mid-word uppercase artefacts."
+          },
+          "repeated_count": {
+            "type": "integer",
+            "title": "Repeated Count",
+            "description": "Tokens with a non-standard character repetition."
+          },
+          "ldl_fuses": {
+            "type": "integer",
+            "title": "Ldl Fuses",
+            "description": "Tokens with letter-digit-letter fusions."
+          },
+          "gibberish": {
+            "type": "integer",
+            "title": "Gibberish",
+            "description": "Tokens lacking vowels or with highly irregular ratios."
+          },
+          "word_weird": {
+            "type": "number",
+            "title": "Word Weird",
+            "description": "The mean per-word weirdness score, from 0 to 1."
+          },
+          "quality_score": {
+            "type": "number",
+            "title": "Quality Score",
+            "description": "The composite quality score, from 0 to 1."
+          },
+          "category": {
+            "type": "string",
+            "title": "Category",
+            "description": "`Clear`, `Noisy`, `Trash`, `Non-text` or `Empty`; written to the record as `lines[].categ`."
+          },
+          "page": {
+            "type": "string",
+            "title": "Page",
+            "description": "The record's page key (`lines[].page`, e.g. a PDF page label like `iv`)."
+          },
+          "page_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Page Label",
+            "description": "Document uploads only: the source's own page label."
+          },
+          "line": {
+            "type": "integer",
+            "title": "Line",
+            "description": "The record's line key (`lines[].line`)."
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "required": [
+          "line_num",
+          "text",
+          "lang",
+          "lang_score",
+          "original_lang",
+          "orig_lang_score",
+          "perplexity",
+          "garbage_density",
+          "sym_count",
+          "upper_count",
+          "repeated_count",
+          "ldl_fuses",
+          "gibberish",
+          "word_weird",
+          "quality_score",
+          "category",
+          "page",
+          "line"
+        ],
+        "title": "ScoredLine",
+        "description": "One scored record line (`/score_record` `cleaned_lines[]`): the classifier's fields, keyed\nby the record's own `page` and `line`."
+      },
+      "ScoredPage": {
+        "properties": {
+          "page": {
+            "type": "string",
+            "title": "Page",
+            "description": "The record's page key."
+          },
+          "lines_scored": {
+            "type": "integer",
+            "title": "Lines Scored",
+            "description": "Lines the model scored on this page."
+          },
+          "skipped_decode_verdict": {
+            "type": "integer",
+            "title": "Skipped Decode Verdict",
+            "description": "Lines left as they were: digital-convert's decode verdict (`Garbage`, `Inverted`) stands."
+          },
+          "skipped_empty": {
+            "type": "integer",
+            "title": "Skipped Empty",
+            "description": "Lines with no text, not scored."
+          },
+          "quality_score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quality Score",
+            "description": "The mean score of the scored lines; null when none was."
+          },
+          "quality_band": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quality Band",
+            "description": "`Clear`, `Noisy` or `Trash` by plurality of the scored lines; null when none of the three occurs."
+          }
+        },
+        "type": "object",
+        "required": [
+          "page",
+          "lines_scored",
+          "skipped_decode_verdict",
+          "skipped_empty",
+          "quality_score",
+          "quality_band"
+        ],
+        "title": "ScoredPage",
+        "description": "One page of a `/score_record` call (`pages[]`)."
       },
       "AtriumDocument_bbox": {
         "type": "array",

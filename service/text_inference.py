@@ -222,6 +222,18 @@ class TextModelManager:
             cleaned_lines.append(entry)
         return cleaned_lines
 
+    def classify_line_texts(self, lines: List[str], notes: Optional[LimitNotes] = None) -> List[Dict[str, Any]]:
+        """Score lines EXACTLY as given: one entry per line, in order (`POST /score_record`).
+
+        No reading, splitting, wrapping or reordering — the lines are another tool's record rows
+        (a born-digital record's, atrium-digital-convert#4 W3), and each answer has to map back
+        onto its row. The scoring itself is the shared path every format uses
+        (``_classify_lines``: batched perplexity, then the unified penalty categoriser), so a
+        line scores the same here as in a text upload. Blank lines are the caller's to leave
+        out; ``line_num`` is the 1-based position in `lines`.
+        """
+        return self._classify_lines(list(lines), notes)
+
     def _note_perplexity(self, chunk: List[str], scores: List[float], notes: LimitNotes) -> None:
         if chunk and all(score == _PPL_FAILED for score in scores):
             notes.note(

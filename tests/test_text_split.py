@@ -13,7 +13,16 @@ import pytest
 
 import text_split
 from atrium_document import load_document
-from tests.text_format_fixtures import compress_bytes, docx_bytes, make_zip, pdf_bytes, w_p, w_t, xlsx_bytes
+from tests.text_format_fixtures import (
+    compress_bytes,
+    docx_bytes,
+    make_zip,
+    pdf_bytes,
+    pptx_bytes,
+    w_p,
+    w_t,
+    xlsx_bytes,
+)
 
 
 @pytest.fixture
@@ -343,19 +352,21 @@ def test_a_bad_source_origin_by_kind_exits_2(workdir, monkeypatch, value):
 
 
 def test_the_born_digital_note_needs_a_record_and_names_the_override(workdir, monkeypatch):
+    """A kind digital-convert cannot originate (PPTX) is pointed at the override; the kinds it
+    reads (DOCX, and XLSX since its v1.1.0-beta) are not."""
     inp, out = workdir / "in", workdir / "out"
+    (inp / "p.pptx").write_bytes(pptx_bytes([["snímek"]]))
     (inp / "s.xlsx").write_bytes(xlsx_bytes([("S", [["buňka"]])]))
     (inp / "w.docx").write_bytes(docx_bytes(w_p(w_t("x"))))
     _config(workdir, monkeypatch)
     text_split.main([str(inp), str(out)])
-    assert "born-digital" not in _report(out)["s.xlsx"]["notes"]  # no record, nothing held back
+    assert "born-digital" not in _report(out)["p.pptx"]["notes"]  # no record, nothing held back
     _config(workdir, monkeypatch, json_dir=str(workdir / "docs"))
     text_split.main([str(inp), str(out)])
     report = _report(out)
-    assert "SOURCE_ORIGIN_BY_KIND" in report["s.xlsx"]["notes"]
-    assert (
-        "born-digital origin" in report["w.docx"]["notes"] and "SOURCE_ORIGIN_BY_KIND" not in report["w.docx"]["notes"]
-    )
+    assert "SOURCE_ORIGIN_BY_KIND" in report["p.pptx"]["notes"]
+    for name in ("s.xlsx", "w.docx"):
+        assert "born-digital origin" in report[name]["notes"] and "SOURCE_ORIGIN_BY_KIND" not in report[name]["notes"]
 
 
 def test_paradata_records_the_reader_options(workdir, monkeypatch):

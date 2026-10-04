@@ -16,7 +16,7 @@ SERVICES = [
         "service_previous": "atrium-alto-postprocess",
         "app": "service.text_api:app",
         "spec": "service/openapi.json",
-        "primary": ["/process"],
+        "primary": ["/process", "/score_record"],
     },
 ]
 

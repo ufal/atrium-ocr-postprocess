@@ -1306,3 +1306,26 @@ week, ≈ 2026-10-02). Recorded in the #30 digest and plan; nothing switched on.
 * **Cluster:** `issue30_stage13_job.sh` — 13a runs now; 13b–13e and opt-in 13r run once D47 is in the tree.
 
   **Not pushed: files delivered in chat.**
+
+## 2026-10-04 — `POST /score_record`: W3, the quality model scores a born-digital record (atrium-digital-convert#4, #2)
+* **Why:** W3 on atrium-digital-convert#4 (agreed with AMČR): born-digital lines get the same quality answer as
+  OCR lines, via "one additive rule in the shared module". `/process` writes nothing into a `digital-born-*` record
+  (§1a), so W3 had no path.
+* **Code:**
+  * `POST /score_record` (`service/text_api.py`). `document_json` is required; `pages` (record page keys) optional.
+  * Lines are scored exactly as they are (`text_manager.classify_line_texts` → `_classify_lines`), and every answer
+    maps back onto its row.
+  * `Garbage`/`Inverted` lines (digital-convert's decode verdict) and lines without text are skipped and counted.
+  * `MAX_PAGES` and `MAX_LINES_PER_PAGE` bound the work (413).
+* **Write path:** `document_hook.write_scores()` writes the scoring fields only. Any other field is refused
+  (ValueError); it updates existing rows only and never writes `source`. On a born-digital record that is the hub's
+  new `SCORING_FIELDS` co-contribution: the stamp reads `contribution: "scoring"`.
+* **Other changes:**
+  * `DIGITAL_CONVERT_KINDS` gains ODT, ODS, XLSX and RTF (digital-convert `v1.1.0-beta` reads them with this repo's
+    `text_formats.py`); `test_text_split` moves its note case to PPTX.
+  * Re-vendored `atrium_document.py` / `tests/test_document_originators.py`.
+* **Tests:** `tests/test_score_record.py` (17, patched classifier, response checked against the published spec).
+  Full suite 2005 passed. The real app (stand-in scorer) ran live against digital-convert's `/describe`.
+* **Docs:** `service/README.md` (§ Scoring a record), README and `docs/text_inputs.md` (the kinds digital-convert
+  reads), CONTRIBUTING row. The spec stays compatible (additive).
+* Tag draft: `v1.9.0-beta` (or with the #3 time-box release, if that goes first). **Not pushed: files delivered in chat.**

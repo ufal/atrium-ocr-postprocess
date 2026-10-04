@@ -500,8 +500,10 @@ ABBYY/FineReader → `ABBYY-ALTO` — that is the default origin; any other name
 default. A real Tesseract ALTO used to be recorded as `ABBYY-ALTO`. A ZIP bundle takes its members'
 origin when they agree. The ALTO methods (`page_split.py`) keep `ABBYY-ALTO`.
 
-digital-convert reads only PDF and DOCX, so for the other born-digital kinds nothing in the ecosystem
-writes the positional plane yet, and the note says so. The hub keeps its `digital-born…` prefix as is,
+digital-convert reads PDF and DOCX, and since its v1.1.0-beta ODT, ODS, XLSX and RTF (with this
+repository's `text_formats.py`, which it vendors) and DOC/XLS (through LibreOffice). For the other
+born-digital kinds (PPTX, ODP, EPUB, HTML, e-mail) nothing in the ecosystem writes the positional plane
+yet, and the note says so (`document_hook.DIGITAL_CONVERT_KINDS`). The hub keeps its `digital-born…` prefix as is,
 by decision (2026-09-25): narrowing it would change the §1a contract for all five repos, and the
 per-kind override below is the per-site answer. `[DOCUMENT].SOURCE_ORIGIN_BY_KIND` lets an
 operator state, per kind, what the files really are:

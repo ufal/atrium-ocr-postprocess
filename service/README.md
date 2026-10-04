@@ -135,13 +135,14 @@ are assigned by a fast CPU pre-filter before any model inference. The remaining 
 
 ### Endpoints 🔗
 
-| Method | Path       | Description                                                                                                                                                                                            |
-|--------|------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `GET`  | `/`        | Serves the standalone `index.html` interface for manual testing.                                                                                                                                       |
-| `GET`  | `/info`    | Service identity + capabilities: `service`, `version`, `endpoints`, `limits` (every [limit](#limits)), `limits_meta` (the variable behind each), plus status, device, line fields, quality categories. |
-| `GET`  | `/health`  | Liveness probe — 200 always, even mid-shutdown. `?deep=true` also checks the quality/language models are loaded (503 on failure or while draining).                                                    |
-| `GET`  | `/ready`   | Readiness probe (issue #55) — 503 until model load finishes, 200 while serving, 503 the instant `SIGTERM` arrives. The Kubernetes `readinessProbe`/`startupProbe` target.                              |
-| `POST` | `/process` | Uploads a file for layout analysis, cleaning, and line-level classification.                                                                                                                           |
+| Method | Path            | Description                                                                                                                                                                                            |
+|--------|-----------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `GET`  | `/`             | Serves the standalone `index.html` interface for manual testing.                                                                                                                                       |
+| `GET`  | `/info`         | Service identity + capabilities: `service`, `version`, `endpoints`, `limits` (every [limit](#limits)), `limits_meta` (the variable behind each), plus status, device, line fields, quality categories. |
+| `GET`  | `/health`       | Liveness probe — 200 always, even mid-shutdown. `?deep=true` also checks the quality/language models are loaded (503 on failure or while draining).                                                    |
+| `GET`  | `/ready`        | Readiness probe (issue #55) — 503 until model load finishes, 200 while serving, 503 the instant `SIGTERM` arrives. The Kubernetes `readinessProbe`/`startupProbe` target.                              |
+| `POST` | `/process`      | Uploads a file for layout analysis, cleaning, and line-level classification.                                                                                                                           |
+| `POST` | `/score_record` | Scores the lines of an existing ATRIUM record with the same quality model, in place: see [Scoring a record](#scoring-a-record-post-score_record).                                                      |
 
 ### Request Example 💻
 
@@ -272,6 +273,40 @@ classification pipeline. Every field is typed in [`openapi.json`](openapi.json) 
 | `quality_score` | float  | Composite quality score `[0, 1]`; weighted sum of nine signals (valid-word ratio, word-weirdness, perplexity, length, garbage density, vowel quality, language confidence, gibberish, fused-word ratio); higher = cleaner. |
 | `category`      | string | One of: `Clear`, `Noisy`, `Trash`, `Non-text`, `Empty`.                                                                                                                                                                    |
 
+
+### Scoring a record (`POST /score_record`)
+
+atrium-digital-convert#4 W3. A born-digital record (PDF, DOCX, ODT, … read by atrium-digital-convert)
+has its lines from the document's own text layer, so `/process` contributes nothing to it (§1a). Whether
+that text reads is still this service's question, and the pilot wants one quality answer for scanned and
+born-digital documents alike. `/score_record` answers it on the record itself:
+
+```bash
+curl -X POST "http://localhost:8000/score_record" \
+  -F "document_json=@report.document.json"          # optional: -F "pages=i,ii,3"
+```
+
+* **In:** `document_json` (required) — any record, born-digital or OCR; `pages` (optional) — the record's own page
+  keys, comma-separated (a key the record lacks is refused, `422`).
+* **Scored:** each `lines[]` row with text, **exactly as it is** — not re-read, split or reordered, so every answer
+  maps back onto its row — in batches of `PPL_BATCH_LINES`, by the same scorer as every other path. A line carrying
+  atrium-digital-convert's decode verdict (`categ` `Garbage` or `Inverted`: the embedded text layer does not decode)
+  is left as it is; a line without text is not scored.
+* **Written into the record** (`document_hook.write_scores()`): `lines[].categ` / `quality_score` / `lang` and
+  `pages[].quality_score` / `quality_band`, on rows the record already has — never `text`, never `bbox`, never a new
+  row, never `source`. On a born-digital record that is the shared module's scoring co-contribution
+  (`atrium_document.SCORING_FIELDS`): the record stays atrium-digital-convert's, and the block's stamp reads
+  `"program": "ocr-postprocess", "contribution": "scoring"`.
+* **Out** (`ScoreRecordResponse`): `cleaned_lines` (every `AltoLine` field plus the record's `page` and `line`; `line_num`
+  restarts per page), `pages` (`lines_scored`, `skipped_decode_verdict`, `skipped_empty`, `quality_score`,
+  `quality_band`), `limits_applied`, `document_json` (the record, scored; as sent when nothing was scored) and
+  `paradata`.
+* **Limits:** `MAX_UPLOAD_MB` for the record part, `ATRIUM_TEXT_INGEST_MAX_PAGES` for the pages scored and
+  `ATRIUM_TEXT_INGEST_MAX_LINES_PER_PAGE` for the lines of one page (`413 limit_exceeded`). A record that cannot be
+  opened, or has no `doc_id`, is `422 invalid_record`.
+
+atrium-digital-convert's `POST /describe` calls this endpoint when `OCR_POSTPROCESS_URL` is set (and falls back
+to `/process` page by page against an older version of this service).
 
 ## Installation & Setup 🛠
 

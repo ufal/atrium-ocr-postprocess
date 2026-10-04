@@ -324,8 +324,10 @@ it: `document_hook` holds back the `pages`/`content`/`lines` blocks of every sta
 run are produced either way. `--source-origin ocr:<engine>` overrides the default when the
 files are known OCR output.
 
-digital-convert reads only PDF and DOCX, so born-digital records of the other kinds keep `source`
-only. When files of such a kind really are OCR or transcription exports, say so per kind:
+digital-convert reads PDF, DOCX and, since its v1.1.0-beta, ODT, ODS, XLSX and RTF (with this repository's
+`text_formats.py`), so born-digital records of the other kinds (PPTX, ODP, EPUB, HTML, e-mail) keep `source`
+only. The lines digital-convert does write can be scored on its record by `POST /score_record`
+([service/README.md](service/README.md#scoring-a-record-post-score_record)). When files of such a kind really are OCR or transcription exports, say so per kind:
 `[DOCUMENT].SOURCE_ORIGIN_BY_KIND = xlsx = ocr:generic, pptx = ocr:generic`. For text-lines the
 precedence is CLI flag > env var > `SOURCE_ORIGIN_BY_KIND` > `SOURCE_ORIGIN` > per-format default
 ([docs/text_inputs.md §6](docs/text_inputs.md#6-provenance-sourceorigin)).
