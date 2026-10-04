@@ -947,7 +947,11 @@ def evaluate_dataframe(
     scored rows, in frame order -- to the returned metrics, and to
     ``baseline_vs_gold`` when that is present. Two arms evaluated on the same frame
     get masks over the same rows in the same order, which is what makes a PAIRED
-    test possible; see ``ab_constant_eval.mcnemar_exact``.
+    test possible; see ``ab_constant_eval.mcnemar_exact``. It also adds
+    ``predicted_labels`` -- the arm's own category for each of those rows -- because
+    a correctness mask cannot say where a line that is wrong in both arms went
+    (issue #3 stage 14d: a gold-``Clear`` line moved ``Noisy`` -> ``Trash`` while
+    wrong either way, which raised ``Clear``-loss and appears in no mask).
 
     OPT-IN, and default off, for one blunt reason: the mask is a numpy array and
     ``const_importance_sweep.save_json`` serialises this whole dict with a plain
@@ -986,6 +990,7 @@ def evaluate_dataframe(
     metrics = _metrics_from_labels(reference, predicted, sample_weight=weights)
     if return_correctness:
         metrics["correct_mask"] = reference == predicted
+        metrics["predicted_labels"] = predicted
 
     if gold_category_column is not None:
         metrics["gold_column"] = gold_category_column

@@ -46,6 +46,7 @@ from recategorize_from_csv import (  # noqa: E402
     attach_gold_sidecar_from_args,
     evaluate_dataframe,
     load_csvs,
+    normalize_category,
     read_config_constants,
 )
 
@@ -54,6 +55,37 @@ def _clear_loss(metrics: Dict[str, Any]) -> int:
     """True Clear -> Trash/Non-text count vs. ground truth (from the confusion matrix)."""
     clear_row = metrics.get("confusion", {}).get("Clear", {})
     return int(clear_row.get("Trash", 0)) + int(clear_row.get("Non-text", 0))
+
+
+def _clear_demoted(metrics: Dict[str, Any]) -> int:
+    """Gold Clear lines the arm sends to ANY other class (from the confusion matrix).
+
+    ``_clear_loss`` counts only Trash and Non-text, which is the gate's definition and
+    stays the gate. A rule that answers ``Noisy`` -- the D47 floor -- cannot move it,
+    so for such a rule "Clear-loss does not rise" is true before any data arrives
+    (issue #3, stage 13: ``Svatoslavova`` was a gold-Clear line demoted by the floor
+    while the table said ``Clear-loss +0``). This is the number that does move; it is
+    REPORTED, not gated, because moving a doubtful Clear line to Noisy is the cheapest
+    kind of change and the gate was set for the expensive kind.
+    """
+    clear_row = metrics.get("confusion", {}).get("Clear", {})
+    return sum(int(v) for k, v in clear_row.items() if k != "Clear")
+
+
+def _live_flag_value(const_name: str) -> bool | None:
+    """The running value of a boolean flag, or None when it is not a boolean.
+
+    ``read_config_constants`` returns the numeric keys only, so ``--const
+    SHORT_GARBAGE_WITNESS_ENABLE`` printed ``(current config value: None)`` (stage 13a,
+    12f, 13b-13e), which reads as "unset". The module attribute is the value the
+    re-scorer starts from.
+    """
+    try:
+        import text_util as _tu
+    except ImportError:
+        return None
+    value = getattr(_tu, const_name, None)
+    return value if isinstance(value, bool) else None
 
 
 def _scored_row_count(df: Any, gold_column: str | None) -> int | None:
@@ -190,6 +222,13 @@ def _refuses_dump_inside_input(dump_path: Path, input_dir: Path) -> bool:
     return True
 
 
+def _isin(labels: Any, wanted: Tuple[str, ...]) -> Any:
+    """Elementwise ``label in wanted`` over a numpy array of category strings."""
+    import numpy as np
+
+    return np.isin(labels, list(wanted))
+
+
 def _dump_discordant(
     path: Path,
     df: Any,
@@ -214,6 +253,15 @@ def _dump_discordant(
     One row per (arm, discordant row). `direction` is `fix` when the arm is right
     where the reference is wrong and `break` the other way round, so the two
     counts in the verdict line are recoverable by grouping on it.
+
+    A correctness mask cannot see a line that is wrong in BOTH arms, and such a line
+    can still move the gate: issue #3 stage 14d raised Clear-loss by one with a single
+    discordant row, and that row was a gold-Noisy break -- the Clear-loss line was a
+    gold-Clear line wrong either way, moved Noisy -> Trash, present in no file. Those
+    rows are therefore listed too, as `direction = clear_loss` (gold Clear, newly sent
+    to Trash/Non-text by the arm, correctness unchanged). `ref_pred` and `arm_pred`
+    carry each arm's own label on every row; `categ` is the STORED label, not either
+    arm's output.
     """
     ref = rows[0]
     if ref.get("correct_mask") is None:
@@ -225,21 +273,38 @@ def _dump_discordant(
     scored = df.loc[annotated_mask(df, gold_column)]
     locator_cols = [c for c in GOLD_SIDECAR_KEYS if c in scored.columns]
     carry = locator_cols + [c for c in ("text", "categ", gold_column) if c in scored.columns]
+    ref_pred = ref.get("predicted")
+    gold = scored[gold_column].map(normalize_category).to_numpy() if gold_column in scored.columns else None
+    demoting = ("Trash", "Non-text")
 
     path.parent.mkdir(parents=True, exist_ok=True)
     written = 0
+    kinds: Dict[str, int] = {}
     with path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.writer(handle)
-        writer.writerow(["arm", "reference", "direction", *carry])
+        writer.writerow(["arm", "reference", "direction", *carry, "ref_pred", "arm_pred"])
         for r in rows[1:]:
             mask = r.get("correct_mask")
             if mask is None:
                 continue
-            for direction, sel in (("fix", mask & ~ref["correct_mask"]), ("break", ref["correct_mask"] & ~mask)):
-                for _, row in scored[sel].iterrows():
-                    writer.writerow([r["value"], ref["value"], direction, *(row[c] for c in carry)])
+            arm_pred = r.get("predicted")
+            selections = [("fix", mask & ~ref["correct_mask"]), ("break", ref["correct_mask"] & ~mask)]
+            if gold is not None and ref_pred is not None and arm_pred is not None:
+                lost = (gold == "Clear") & _isin(arm_pred, demoting) & ~_isin(ref_pred, demoting)
+                selections.append(("clear_loss", lost & (mask == ref["correct_mask"])))
+            for direction, sel in selections:
+                positions = sel.nonzero()[0]
+                for pos in positions:
+                    row = scored.iloc[pos]
+                    labels = (
+                        ref_pred[pos] if ref_pred is not None else "",
+                        arm_pred[pos] if arm_pred is not None else "",
+                    )
+                    writer.writerow([r["value"], ref["value"], direction, *(row[c] for c in carry), *labels])
                     written += 1
-    print(f"\n  wrote {written} discordant row(s) to {path}")
+                    kinds[direction] = kinds.get(direction, 0) + 1
+    detail = ", ".join(f"{n} {k}" for k, n in sorted(kinds.items()))
+    print(f"\n  wrote {written} discordant row(s) to {path}" + (f" ({detail})" if detail else ""))
     print("     `break` rows are the ones the adoption gate turns on. If a break is not a line")
     print("     the rule fires on, look at the modal dedup in apply_document_postprocessing()")
     print("     and re-run with --no-postprocessing.")
@@ -317,6 +382,8 @@ def _print_gold_verdict(rows: List[Dict[str, Any]], gold_column: str, margin: fl
         if r.get("errors") is not None:
             bits.append(f"errors={r['errors']:,}" + (f" ({extra_errors:+,})" if extra_errors else ""))
         bits.append(f"Clear-loss={r['clear_loss']:,}")
+        if r.get("clear_support"):
+            bits.append(f"Clear-demoted={r['clear_demoted']:,}/{r['clear_support']:,}")
         if extra_cost is not None:
             bits.append(f"cost={r['costed_score']:.4f} ({extra_cost:+.4f})")
         print(f"  {r['value']}: " + "  ".join(bits) + f"  -> {verdict}")
@@ -342,6 +409,11 @@ def _print_gold_verdict(rows: List[Dict[str, Any]], gold_column: str, margin: fl
     print(
         "  Read `effective n` before the macro_f1 delta: it is how many scored rows the two "
         "arms actually disagree on, and it is usually far smaller than the gold set."
+    )
+    print(
+        "  Clear-loss counts gold Clear sent to Trash/Non-text only; Clear-demoted counts gold Clear "
+        "sent to ANY other class (reported, not gated). A rule that answers Noisy only cannot move "
+        "Clear-loss."
     )
 
     # Trash-recall is the figure most often quoted out of this table, and on a
@@ -408,6 +480,8 @@ def run_ab(
     dump_discordant: Path | None = None,
 ) -> None:
     base_value = base_constants.get(const_name)
+    if base_value is None:
+        base_value = _live_flag_value(const_name)
     n_lines = len(df)
     gold_column = eval_kwargs.get("gold_category_column")
     scored = _scored_row_count(df, gold_column)
@@ -438,6 +512,9 @@ def run_ab(
                 "clear_rate": float(metrics["clear_rate"]),
                 "kl": float(metrics["kl_divergence"]),
                 "clear_loss": _clear_loss(metrics),
+                "clear_demoted": _clear_demoted(metrics),
+                "clear_support": int(sum(int(v) for v in metrics.get("confusion", {}).get("Clear", {}).values())),
+                "predicted": metrics.get("predicted_labels"),
                 "trash_recall": _trash_recall(metrics),
                 "trash_caught": _trash_counts(metrics)[0],
                 "trash_support": _trash_counts(metrics)[1],

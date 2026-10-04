@@ -5,7 +5,7 @@
 cd "$(dirname "$0")/.." || exit 1
 
 # Configuration
-VENV_DIR="venv-alto"
+VENV_DIR="venv-ocr"
 SERV_REQUIREMENTS="service/requirements.txt"
 MODEL_DIR="models"
 FASTTEXT_BIN="lid.176.bin"
