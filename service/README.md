@@ -135,14 +135,14 @@ are assigned by a fast CPU pre-filter before any model inference. The remaining 
 
 ### Endpoints 🔗
 
-| Method | Path            | Description                                                                                                                                                                                            |
-|--------|-----------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `GET`  | `/`             | Serves the standalone `index.html` interface for manual testing.                                                                                                                                       |
-| `GET`  | `/info`         | Service identity + capabilities: `service`, `version`, `endpoints`, `limits` (every [limit](#limits)), `limits_meta` (the variable behind each), plus status, device, line fields, quality categories. |
-| `GET`  | `/health`       | Liveness probe — 200 always, even mid-shutdown. `?deep=true` also checks the quality/language models are loaded (503 on failure or while draining).                                                    |
-| `GET`  | `/ready`        | Readiness probe (issue #55) — 503 until model load finishes, 200 while serving, 503 the instant `SIGTERM` arrives. The Kubernetes `readinessProbe`/`startupProbe` target.                              |
-| `POST` | `/process`      | Uploads a file for layout analysis, cleaning, and line-level classification.                                                                                                                           |
-| `POST` | `/score_record` | Scores the lines of an existing ATRIUM record with the same quality model, in place: see [Scoring a record](#scoring-a-record-post-score_record).                                                      |
+| Method | Path            | Description                                                                                                                                                                                                                             |
+|--------|-----------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `GET`  | `/`             | Serves the standalone `index.html` interface for manual testing.                                                                                                                                                                        |
+| `GET`  | `/info`         | Service identity + capabilities: `service`, `version`, `endpoints`, `limits` (every [limit](#limits)), `limits_meta` (the variable behind each), plus status, device, line fields, quality categories.                                  |
+| `GET`  | `/health`       | Liveness probe — 200 always, even mid-shutdown. `?deep=true` also checks the quality/language models are loaded (503 on failure or while draining).                                                                                     |
+| `GET`  | `/ready`        | Readiness probe (issue #55) — 503 until model load finishes, 200 while serving, 503 the instant `SIGTERM` arrives. The Kubernetes `readinessProbe`/`startupProbe` target.                                                               |
+| `POST` | `/process`      | Uploads a file for layout analysis, cleaning, and line-level classification; with a born-digital record, an ALTO page re-acquires a page it flags `needs_ocr`: see [OCR hand-off](#merging-an-ocrd-page-into-a-born-digital-record-w4). |
+| `POST` | `/score_record` | Scores the lines of an existing ATRIUM record with the same quality model, in place: see [Scoring a record](#scoring-a-record-post-score_record).                                                                                       |
 
 ### Request Example 💻
 
@@ -209,7 +209,8 @@ a `pages` list (`page`, `page_label`, `lines`, PDF `text_layer` / `needs_ocr_rea
 and shaped by the same `text_formats.py` code as the batch text-lines method (blank lines dropped, lines over
 1000 characters wrapped). With a record (`document_json`), lines accrete per page — except for born-digital
 uploads (DOCX, visible-text PDF, …), whose record belongs to `digital-convert` (atrium_document
-§1a) and comes back as it was sent. Each item in `cleaned_lines` carries the fields used by the
+§1a) and comes back as it was sent, and except a born-digital record's `needs_ocr` pages, which an ALTO of
+that page re-acquires ([the OCR hand-off](#merging-an-ocrd-page-into-a-born-digital-record-w4)). Each item in `cleaned_lines` carries the fields used by the
 classification pipeline. Every field is typed in [`openapi.json`](openapi.json) (`ProcessResponse`,
 `AltoLine`, `AltoPage`); the table below is the short form.
 
@@ -307,6 +308,40 @@ curl -X POST "http://localhost:8000/score_record" \
 
 atrium-digital-convert's `POST /describe` calls this endpoint when `OCR_POSTPROCESS_URL` is set (and falls back
 to `/process` page by page against an older version of this service).
+
+### Merging an OCR'd page into a born-digital record (W4)
+
+atrium-digital-convert#4 W4. atrium-digital-convert flags a page of a born-digital PDF `needs_ocr` when its embedded
+text layer is missing, does not decode, or is an earlier OCR run (`pages[].needs_ocr_reason`, `pages[].text_layer`).
+The AMČR pipeline renders that page, runs ATR on it, and sends the page's ALTO here **with the record**: the page's
+lines come back into the same record, and the document's born-digital pages stay as the converter wrote them.
+
+```bash
+curl -X POST "http://localhost:8000/process" \
+  -F "file=@C-202000543A-DT-27-ii.alto.xml" \
+  -F "document_json=@C-202000543A-DT-27.document.json" \
+  -F "page=ii"                                        # the record's key for the page
+```
+
+* **Which page:** `page`, the record's own key (`ii`, `A-1`, …). Without it, the ALTO page's `PHYSICAL_IMG_NR` is
+  read as a physical position and mapped through the record's `pages[].page_index` (position 3 of a PDF labelled
+  `i, ii, 1` is the page `1`; a number is never matched to a label). One ALTO page per request.
+* **Refused before any model runs (`422`):** a page the record lacks, a page it does not flag `needs_ocr`, a
+  multi-page ALTO with `page`, `page` without `document_json` or with a document upload, and `page` on a
+  born-digital record that flags nothing. A JSON or text upload names no page of its own, so on a record that flags
+  pages it needs `page`; without it nothing is written.
+* **Written:** the page's `lines[]` are **replaced** by the classified lines (`text`, `categ`, `quality_score`,
+  `lang`) — the converter's undecodable rows of that page go, in the record's page order. The page's `pages[]` row
+  gets `quality_score`, `quality_band` and `ocr.engine` (the engine the ALTO names, e.g. `ocr:pero`, else the
+  configured ALTO origin) and keeps `page_index`, `canvas`, `needs_ocr`, `text_layer` and page-classification's
+  `category`. `source` (the original's), `content` and every other page are left as they are. Both stamps read
+  `"program": "ocr-postprocess", "contribution": "ocr-handoff"`, the shared module's hand-off
+  (`atrium_document.OCR_HANDOFF`), which `merge_document_records()` accepts while the record flags a page.
+* **Out:** the usual `/process` response, plus `ocr_handoff` (`page`, `lines_replaced`, `lines_written`).
+
+The batch stages make the same write through `document_hook.write_document_block()`: on a record that flags pages,
+only those pages' rows are written (page keys mapped the same way), their lines replaced; `content`, `tables`, other
+pages' rows and an OCR input's `source` are held back with one warning.
 
 ## Installation & Setup 🛠
 

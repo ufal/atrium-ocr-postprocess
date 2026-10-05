@@ -320,8 +320,11 @@ takes its members' origin. Born-digital documents are `digital-born-<kind>` (DOC
 XLSX, PPTX, EPUB, RTF, plain HTML, e-mail, a PDF with visible text). A born-digital record is
 originated by [`digital-convert`](https://github.com/ufal/atrium-digital-convert), so this repo then writes **only** `source` into
 it: `document_hook` holds back the `pages`/`content`/`lines` blocks of every stage
-(`atrium_document` §1a), unless a page carries the `needs_ocr` hand-off. The CSV outputs of the
-run are produced either way. `--source-origin ocr:<engine>` overrides the default when the
+(`atrium_document` §1a), except for the pages digital-convert flags `needs_ocr`. Those pages'
+rows are written page by page, their lines replaced by this repo's, and every other page is left
+alone (the OCR hand-off, atrium-digital-convert#4 W4;
+[service/README.md](service/README.md#merging-an-ocrd-page-into-a-born-digital-record-w4)). The CSV
+outputs of the run are produced either way. `--source-origin ocr:<engine>` overrides the default when the
 files are known OCR output.
 
 digital-convert reads PDF, DOCX and, since its v1.1.0-beta, ODT, ODS, XLSX and RTF (with this repository's

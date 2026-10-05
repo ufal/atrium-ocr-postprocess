@@ -130,6 +130,29 @@ def parse_alto_page_labels(xml_path: str) -> List[str]:
     return [page.attrib.get("PHYSICAL_IMG_NR") or str(i) for i, page in enumerate(root.findall(page_tag, ns), 1)]
 
 
+def parse_alto_software(xml_path: str) -> List[str]:
+    """The software an ALTO upload's ``Description`` names (``softwareName``, ``softwareCreator``),
+    in document order; [] when it names none or does not parse.
+
+    Added for the OCR hand-off (atrium-digital-convert#4 W4): a page re-acquired by OCR records the
+    engine in ``pages[].ocr.engine``, and ``text_formats.producer_origin`` maps these names to the
+    engine's origin (``ocr:pero``, ``ocr:tesseract``, ...). The same hardened parser as above.
+    """
+    try:
+        root = ET.parse(xml_path, parser=_SAFE_PARSER).getroot()
+    except Exception as e:
+        logger.error(f"XML Parse Error in {xml_path}: {e}")
+        return []
+    names: List[str] = []
+    for child in root:
+        if not isinstance(child.tag, str) or ET.QName(child).localname != "Description":
+            continue
+        for el in child.iter():
+            if isinstance(el.tag, str) and ET.QName(el).localname in ("softwareName", "softwareCreator"):
+                names.append(el.text or "")
+    return names
+
+
 def parse_alto_xml_lines(xml_path: str) -> Tuple[List[str], List[List[int]], Tuple[int, int]]:
     """
     Parses ALTO XML from a file path, grouping text by <TextLine> (one

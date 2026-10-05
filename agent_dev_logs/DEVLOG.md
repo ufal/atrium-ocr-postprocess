@@ -1346,3 +1346,39 @@ week, ≈ 2026-10-02). Recorded in the #30 digest and plan; nothing switched on.
 * Tag draft: `v1.9.0-beta`. Pushed as `648aae7`.
 * 2026-10-04, evening: the CONTRIBUTING row now also names the #3 changes this release carries (the witness-floor
   rule, shipped off; `tools/ab_constant_eval.py`'s Clear-demoted count; `setup_api_server.sh`'s `venv-ocr`).
+
+## 2026-10-05 — W4: the OCR hand-off merges an ATR ALTO page into the born-digital record (atrium-digital-convert#4)
+* **Why:** AMČR's requirement on atrium-digital-convert#4 (26 September) and #2: the pipeline OCRs the pages
+  digital-convert flags `needs_ocr`, and "ocr-postprocess merges those pages into a record that digital-convert
+  started, keeping its born-digital pages". Before this, `/process` keyed the rows by the ALTO's `PHYSICAL_IMG_NR`
+  (position 3 of a PDF labelled `i, ii, 1` landed on a row "3"), merged instead of replacing (the converter's lines
+  past the OCR line count stayed on the page), wrote the ALTO's `source` onto the PDF's, and any one flagged page
+  opened every page; the hub's fan-in refused the result.
+* **`/process` (`service/text_api.py`):**
+  * `page`, a new optional form field: the record's key for the page. Without it, the ALTO page's
+    `PHYSICAL_IMG_NR` is mapped through `pages[].page_index` (never matched to a label by its number).
+  * `_ocr_handoff_target()` decides the page before any model runs: 422 for a page the record lacks or does not
+    flag, a multi-page ALTO with `page`, `page` without a record or with a document upload, `page` on a record
+    that flags nothing. A JSON/text upload on a flagged record needs `page`; without it nothing is written.
+  * The page's `pages[]` row gets `quality_score`, `quality_band` and `ocr.engine` (`_ocr_engine()`: the engine
+    the ALTO names, `service/utils.parse_alto_software` + `text_formats.producer_origin`, else the configured ALTO
+    origin). The response gains `ocr_handoff` (`page`, `lines_replaced`, `lines_written`).
+* **`document_hook.write_document_block()`**, the one write path of the service and the batch stages:
+  * on a record that flags pages, only those pages' rows are written (`handoff_pages`, `record_page_key`),
+    their `lines` replaced through the hub's new `DocumentRecord.replace_page_rows()`, and the page row limited to
+    `HANDOFF_PAGE_FIELDS` (quality, `ocr`); `content`, `tables`, other pages' rows are held back, one warning;
+  * `ocr_pages` names a page to re-acquire even with no line (an empty OCR pass);
+  * a `source` whose origin names another originator than the record's is not written (an OCR of the
+    original's pages is another file); `foreign_origin()` no longer abstains for the hand-off.
+* **Shared modules (re-vendored, hub round of 2026-10-05):** the per-page hand-off and `contribution:
+  "ocr-handoff"` (fan-in accepts it while a page is flagged), `pages[].text_layer` in the schema, and
+  `source_digest_mismatch` in the reason registry. `service/openapi.json` regenerated: additive, compatible with
+  `v1.9.0-beta`.
+* **Tests:** `tests/test_ocr_handoff.py` (18: the merge and its stamps, the page mapping, the 422s before
+  inference, the empty pass, the engine fallback, the JSON case, an OCR record's `page`, the fan-in, the batch
+  path). Full suite 2037 passed.
+* **Docs:** `service/README.md` (§ Merging an OCR'd page into a born-digital record), README and
+  `docs/text_inputs.md` (the hand-off paragraphs), CONTRIBUTING row; `setup/para_config.txt` and `CITATION.cff` at
+  `v1.10.0-beta`.
+* Tag draft: `v1.10.0-beta`. **Not pushed: files delivered in chat.**
+

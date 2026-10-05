@@ -24,7 +24,7 @@ import tempfile
 from collections import OrderedDict
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any, Dict, List, Literal, Optional, Set, Union
+from typing import Any, Dict, List, Literal, Optional, Set, Tuple, Union
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse
@@ -87,7 +87,7 @@ from text_inference import ingest_settings, text_manager  # noqa: E402
 # reached through the sys.path bootstrap, so the import resolves under
 # `python service/text_api.py` (the Docker entrypoint) as well as under
 # `uvicorn service.text_api:app`.
-from utils import parse_alto_page_labels  # noqa: E402
+from utils import parse_alto_page_labels, parse_alto_software  # noqa: E402
 
 # These three live at the REPO ROOT, not in service/, so they resolve only because the
 # bootstrap above put the repo root on sys.path. They used to sit above it and worked
@@ -101,12 +101,21 @@ from atrium_paradata import ParadataLogger  # noqa: E402
 from document_hook import (  # noqa: E402
     DECODE_VERDICTS,
     PROGRAM_NAME,
+    handoff_pages,
     quality_band,
+    record_page_key,
     resolve_input_origin,
     write_document_block,
     write_scores,
 )
-from text_formats import COMPRESSION_SUFFIXES, READERS, IngestError, compression_of, sniff_kind  # noqa: E402
+from text_formats import (  # noqa: E402
+    COMPRESSION_SUFFIXES,
+    READERS,
+    IngestError,
+    compression_of,
+    producer_origin,
+    sniff_kind,
+)
 from tool_limits import (  # noqa: E402
     LIMITS,
     MAX_FILE_MB,
@@ -292,6 +301,14 @@ class AltoPage(BaseModel):
     needs_ocr_reason: Optional[str] = Field(description="Why the page needs OCR; null when it does not.")
 
 
+class OcrHandoff(BaseModel):
+    """What an upload re-acquired in a born-digital record (atrium-digital-convert#4 W4)."""
+
+    page: str = Field(description="The record's page key (a `needs_ocr` page) the upload's lines were written under.")
+    lines_replaced: int = Field(description="How many of the converter's lines that page held before.")
+    lines_written: int = Field(description="How many classified lines it holds now.")
+
+
 class ProcessResponse(BaseModel):
     """The classified lines of one upload, and its record when one was sent."""
 
@@ -309,7 +326,15 @@ class ProcessResponse(BaseModel):
         None,
         description=(
             "Only when the record was sent as `document_json`: the record with ocr-postprocess's `pages` and "
-            "`lines` fields merged in. A born-digital record (atrium_document §1a) comes back as it was sent."
+            "`lines` fields merged in. A born-digital record (atrium_document §1a) comes back as it was sent, "
+            "except a page it flags `needs_ocr`, which an ALTO upload of that page re-acquires (see `ocr_handoff`)."
+        ),
+    )
+    ocr_handoff: Optional[OcrHandoff] = Field(
+        None,
+        description=(
+            "Only when the upload re-acquired a page a born-digital record flags `needs_ocr` (the OCR hand-off, "
+            "atrium-digital-convert#4 W4): that page's lines were replaced by the upload's."
         ),
     )
     document_json_out: Optional[AtriumDocument] = Field(
@@ -590,9 +615,10 @@ def _page_records_from_lines(line_records: List[Dict[str, Any]]) -> List[Dict[st
     return pages
 
 
-def _accretion_records(task_type: str, upload_path: str, result: Dict[str, Any]):
+def _accretion_records(task_type: str, upload_path: str, result: Dict[str, Any], page: Optional[str] = None):
     """The (pages, lines) contribution for one /process request, or ([], []) when it
-    cannot be attributed to a page truthfully.
+    cannot be attributed to a page truthfully. `page`, when given, is the record's key the
+    one-page upload is written under (the `page` form field); otherwise the upload's own label.
 
     A multi-page ALTO upload is the "cannot" case, and it is refused rather than
     guessed at: `parse_alto_xml_lines` flattens every page's `<TextLine>` into one
@@ -632,9 +658,91 @@ def _accretion_records(task_type: str, upload_path: str, result: Dict[str, Any])
         )
         return [], []
 
-    page = page_labels[0] if page_labels else SERVICE_PAGE_LABEL
+    page = page or (page_labels[0] if page_labels else SERVICE_PAGE_LABEL)
     lines = _lines_records_from_result(result, page)
     return _page_records_from_lines(lines), lines
+
+
+def _ocr_handoff_target(
+    record: Optional[Dict[str, Any]], page: Optional[str], task_type: str, upload_path: str
+) -> Tuple[Optional[str], bool]:
+    """`(page key, hand-off)` for this upload's accretion, checked before any model runs.
+
+    The OCR hand-off (atrium-digital-convert#4 W4): digital-convert flags a born-digital page
+    `needs_ocr`, the pipeline OCRs it, and the ATR ALTO of that page comes here with the record.
+    Its key is `page` (the record's own label), or else the ALTO page's `PHYSICAL_IMG_NR` mapped
+    through the record's `page_index` (`document_hook.record_page_key`). It must be a page the
+    record flags; the write then replaces that page's lines and leaves every other page alone.
+
+    `(None, True)` means "a hand-off record, but nothing attributable": a JSON or text upload
+    without `page`, or a multi-page ALTO without it. Nothing is written then, as for any upload
+    that cannot be attributed to one page. On a record of this repo's own (or of no known) origin,
+    `page` only names the key the rows are written under.
+    """
+    page = (page or "").strip() or None
+    if page is not None:
+        if task_type == "document":
+            raise HTTPException(
+                status_code=422,
+                detail="page: applies to a one-page ALTO, JSON or text upload; a document upload has pages of its own.",
+            )
+        if record is None:
+            raise HTTPException(status_code=422, detail="page: names a page of the record; send it as `document_json`.")
+        if task_type == "alto":
+            count = len(parse_alto_page_labels(upload_path))
+            if count > 1:
+                raise HTTPException(
+                    status_code=422, detail=f"page: one ALTO page per request; this upload has {count} pages."
+                )
+    if record is None or task_type == "document":
+        return page, False
+    origin = (record.get("source") or {}).get("origin")
+    if resolve_originator(origin) in (None, PROGRAM_NAME):
+        return page, False
+    flagged = handoff_pages(record)
+    if not flagged:
+        if page is not None:
+            raise HTTPException(
+                status_code=422,
+                detail=f"page: the record ({origin!r}) flags no page needs_ocr, so none of its pages can be re-acquired.",
+            )
+        return None, False
+    if page is None:
+        labels = parse_alto_page_labels(upload_path) if task_type == "alto" else []
+        if len(labels) != 1:
+            return None, True
+        target = record_page_key(record, labels[0])
+        if target is None:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"the ALTO page {labels[0]!r} (PHYSICAL_IMG_NR, a physical position) is no page of the record; "
+                    f"send `page`, the record's key for it."
+                ),
+            )
+    else:
+        known = [str(row.get("page")) for row in record.get("pages") or [] if isinstance(row, dict)]
+        if page not in known:
+            raise HTTPException(status_code=422, detail=f"page: the record has no page {page!r}.")
+        target = page
+    if target not in flagged:
+        raise HTTPException(
+            status_code=422,
+            detail=f"page {target!r} does not ask for OCR (pages[].needs_ocr); the record flags {', '.join(flagged)}.",
+        )
+    return target, True
+
+
+def _ocr_engine(task_type: str, upload_path: str) -> str:
+    """`pages[].ocr.engine` for a re-acquired page: the engine an ALTO names in its Description
+    (`ocr:pero`, `ocr:tesseract`, ...), else the configured origin of the upload's kind."""
+    if task_type == "alto":
+        named = producer_origin(parse_alto_software(upload_path))
+        if named:
+            return named
+    _limits, _options, configured, by_kind = ingest_settings()
+    kind = _TASK_KINDS[task_type]
+    return resolve_input_origin(kind, READERS[kind].default_origin, configured=configured, by_kind=by_kind)
 
 
 @app.get("/", response_model=None)
@@ -718,6 +826,16 @@ async def process_document(
         ),
         json_schema_extra={"contentMediaType": "application/json"},
     ),
+    page: Optional[str] = Form(
+        None,
+        description=(
+            "Optional: the record's page key this one-page upload is written under. With a born-digital record "
+            "(digital-convert's), it names the page flagged `needs_ocr` that this ALTO re-acquires (the OCR "
+            "hand-off): that page's lines are replaced, every other page is left as it is. Without it, an ALTO "
+            "page's `PHYSICAL_IMG_NR` is mapped through the record's `page_index`. A page the record does not "
+            "have, or does not flag, is refused (422), as is a multi-page ALTO or a document upload with `page`."
+        ),
+    ),
 ) -> JSONResponse:
     """
     Upload an ALTO XML, plain-text or generic JSON file — or (#31) any other text-bearing
@@ -742,6 +860,14 @@ async def process_document(
     The record goes in `document_json` and comes back in `document_json`, as with every
     other ATRIUM service (atrium-project#32 round 2). The earlier names — `document_record`
     in, `document_json_out` out — still work and are deprecated in the spec.
+
+    The OCR hand-off (atrium-digital-convert#4 W4). With digital-convert's record of a
+    born-digital PDF and the ATR ALTO of one page it flagged `needs_ocr`, the classified lines
+    replace that page's lines in the record, its `pages[]` row gets the page's quality and
+    `ocr.engine`, and every other page stays as the converter wrote it (`ocr_handoff` in the
+    response). The page is `page`, or the ALTO's `PHYSICAL_IMG_NR` mapped through the record's
+    `page_index`; one that the record lacks or does not flag is a 422, checked before any model
+    runs. The record's `source` stays the original's.
 
     Returns a list of classified lines.  Each entry carries:
 
@@ -821,6 +947,7 @@ async def process_document(
     # `document_json`; the deprecated `document_record` comes back as `document_json_out`,
     # as it always did.
     record_bytes: Optional[bytes] = None
+    record: Optional[Dict[str, Any]] = None
     record_key = "document_json"
     for part, label, key in (
         (document_json, "document_json", "document_json"),
@@ -829,14 +956,15 @@ async def process_document(
         if part is None:
             continue
         raw = await read_upload_bounded(part, upload_mb, label)
-        if parse_record_part(raw, label) is None:
+        parsed = parse_record_part(raw, label)
+        if parsed is None:
             continue
         if record_bytes is not None:
             raise HTTPException(
                 status_code=422,
                 detail="Send the record as `document_json` or as `document_record` (deprecated), not both.",
             )
-        record_bytes, record_key = raw, key
+        record_bytes, record_key, record = raw, key, parsed
 
     with tempfile.NamedTemporaryFile(delete=False, suffix=_temp_suffix(file.filename)) as tmp:
         tmp.write(content)
@@ -860,6 +988,10 @@ async def process_document(
             # A compressed ALTO (.alto.xml.gz) is decompressed by the document reader;
             # the ALTO path parses the uploaded bytes directly.
             task_type = "alto" if kind == "alto" and not compression_of(tmp_path) else "document"
+
+        # (W4) Which page of the record this upload is written under, and whether it re-acquires a
+        # page a born-digital record flags for OCR: decided here, so a wrong page costs no inference.
+        target_page, handoff = _ocr_handoff_target(record, page, task_type, tmp_path)
 
         # Execute text inference, off the event loop (issue #55). These are synchronous
         # torch calls (LayoutReader + Qwen perplexity + fastText); run inline in an
@@ -911,7 +1043,38 @@ async def process_document(
 
                 # (#10 J1) Real lines + real per-page rows, both derived from this
                 # request — see _accretion_records for what was fabricated before.
-                page_metrics, lines_metrics = _accretion_records(task_type, tmp_path, result)
+                if handoff and target_page is None:
+                    # A born-digital record that flags pages, and an upload no page can be named
+                    # for: nothing is written (the record comes back as it was sent).
+                    logger.warning(
+                        "%s: the record flags pages %s for OCR, but this %s upload names none of them; send "
+                        "`page`. Not writing it into the record.",
+                        doc_id,
+                        handoff_pages(record),
+                        task_type,
+                    )
+                    page_metrics, lines_metrics = [], []
+                else:
+                    page_metrics, lines_metrics = _accretion_records(task_type, tmp_path, result, page=target_page)
+                ocr_pages = None
+                upload_source = _upload_source(task_type, result, file.filename, upload_entity["sha256"])
+                if handoff and target_page is not None:
+                    # The OCR hand-off: the page's quality and engine, its lines replaced; the
+                    # record's `source` is the original's, not this ALTO's.
+                    page_metrics = [row | {"ocr": {"engine": _ocr_engine(task_type, tmp_path)}} for row in page_metrics]
+                    page_metrics = page_metrics or [
+                        {"page": target_page, "ocr": {"engine": _ocr_engine(task_type, tmp_path)}}
+                    ]
+                    ocr_pages, upload_source = [target_page], None
+                    result["ocr_handoff"] = {
+                        "page": target_page,
+                        "lines_replaced": sum(
+                            1
+                            for row in (record or {}).get("lines") or []
+                            if isinstance(row, dict) and str(row.get("page")) == target_page
+                        ),
+                        "lines_written": len(lines_metrics),
+                    }
 
                 # Write the block using the repo-local hook. `pages`/`lines` are
                 # field-split with page-classification/nlp-enrich (BLOCK_FIELD_OWNERS),
@@ -923,9 +1086,10 @@ async def process_document(
                     doc_id=doc_id,
                     run_id=para_logger.run_id,
                     paradata_ref=para_logger.paradata_ref,  # the run_uuid: the service writes no file
-                    source=_upload_source(task_type, result, file.filename, upload_entity["sha256"]),
+                    source=upload_source,
                     merge_blocks={"pages": page_metrics, "lines": lines_metrics},
                     run_uuid=para_logger.run_uuid,
+                    ocr_pages=ocr_pages,
                 )
 
                 # Read back the record from the path the hook wrote (atrium-project#68), not

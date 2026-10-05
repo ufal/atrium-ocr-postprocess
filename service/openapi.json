@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "ATRIUM Text Processor",
-    "version": "1.9.0-beta",
+    "version": "1.9.1-beta",
     "x-atrium-service": "atrium-ocr-postprocess",
     "x-atrium-service-previous": "atrium-alto-postprocess"
   },
@@ -162,7 +162,7 @@
     "/process": {
       "post": {
         "summary": "Process Document",
-        "description": "Upload an ALTO XML, plain-text or generic JSON file — or (#31) any other text-bearing\ndocument: PDF, DOCX, ODT, XLSX/ODS, PPTX/ODP, EPUB, RTF, HTML/hOCR, PAGE XML, TEI,\nMarkdown, CSV/TSV, JSON Lines, ABBYY/DjVu XML, Tesseract TSV, SRT/VTT, EML/MBOX,\ngzip/bz2/xz-compressed files and ZIP bundles of page files. `task_type=\"auto\"`\nkeeps `.txt` → text and `.json` → json; `.xml` and every other extension are\ndecided from the bytes (an uncompressed ALTO root → alto, anything readable →\ndocument). Document results carry `page`/`page_label` per line and a `pages`\nsummary. The readers use the config's [TEXT_INGEST] settings.\n\nErrors name the reader's code at the start of `detail` and, but for a named limit, as\n`cause`: 415 `unsupported_media_type` for a file of a kind this service does not read\n(binary_content, legacy_office_unsupported, image_needs_ocr, archive_unsupported), with\nthe readable extensions as `accepted`; 413 `limit_exceeded` for a file over a size or\ncount limit (too_large, zip_limits_exceeded; 422 for the reader's time limit, timeout);\n422 for a supported kind that cannot be read (corrupt, encrypted, malformed, no_text,\n...); 501 when this deployment lacks the reader's optional dependency\n(dependency_missing). A record part that cannot be opened is 422 `invalid_record`.\nEvery response carries `limits_applied` (atrium-project#53).\n\nThe record goes in `document_json` and comes back in `document_json`, as with every\nother ATRIUM service (atrium-project#32 round 2). The earlier names — `document_record`\nin, `document_json_out` out — still work and are deprecated in the spec.\n\nReturns a list of classified lines.  Each entry carries:\n\n  line_num        (int)   – 1-based position after layout reordering\n  text            (str)   – cleaned text with split-word merges applied\n  lang            (str)   – ISO language code predicted by FastText\n  lang_score      (float) – FastText confidence [0, 1]\n  perplexity      (float) – Qwen2.5-0.5B perplexity; 0 for pre-filtered lines\n  garbage_density (float) – ratio of non-alphanumeric noise characters\n  sym_count       (int)   – tokens with strange/unexpected symbols\n  upper_count     (int)   – tokens with mid-word uppercase artefacts\n  repeated_count  (int)   – tokens with non-standard char repetition (>=40%)\n  ldl_fuses       (int)   – tokens with letter-digit-letter fusions\n  gibberish       (int)   – tokens lacking vowels or highly irregular ratios\n  word_weird      (float) – mean per-word weirdness score [0, 1]\n  quality_score   (float) – composite continuous quality score [0, 1]\n  category        (str)   – Clear | Noisy | Trash | Non-text | Empty\n                            Assigned dynamically using the unified penalty system.",
+        "description": "Upload an ALTO XML, plain-text or generic JSON file — or (#31) any other text-bearing\ndocument: PDF, DOCX, ODT, XLSX/ODS, PPTX/ODP, EPUB, RTF, HTML/hOCR, PAGE XML, TEI,\nMarkdown, CSV/TSV, JSON Lines, ABBYY/DjVu XML, Tesseract TSV, SRT/VTT, EML/MBOX,\ngzip/bz2/xz-compressed files and ZIP bundles of page files. `task_type=\"auto\"`\nkeeps `.txt` → text and `.json` → json; `.xml` and every other extension are\ndecided from the bytes (an uncompressed ALTO root → alto, anything readable →\ndocument). Document results carry `page`/`page_label` per line and a `pages`\nsummary. The readers use the config's [TEXT_INGEST] settings.\n\nErrors name the reader's code at the start of `detail` and, but for a named limit, as\n`cause`: 415 `unsupported_media_type` for a file of a kind this service does not read\n(binary_content, legacy_office_unsupported, image_needs_ocr, archive_unsupported), with\nthe readable extensions as `accepted`; 413 `limit_exceeded` for a file over a size or\ncount limit (too_large, zip_limits_exceeded; 422 for the reader's time limit, timeout);\n422 for a supported kind that cannot be read (corrupt, encrypted, malformed, no_text,\n...); 501 when this deployment lacks the reader's optional dependency\n(dependency_missing). A record part that cannot be opened is 422 `invalid_record`.\nEvery response carries `limits_applied` (atrium-project#53).\n\nThe record goes in `document_json` and comes back in `document_json`, as with every\nother ATRIUM service (atrium-project#32 round 2). The earlier names — `document_record`\nin, `document_json_out` out — still work and are deprecated in the spec.\n\nThe OCR hand-off (atrium-digital-convert#4 W4). With digital-convert's record of a\nborn-digital PDF and the ATR ALTO of one page it flagged `needs_ocr`, the classified lines\nreplace that page's lines in the record, its `pages[]` row gets the page's quality and\n`ocr.engine`, and every other page stays as the converter wrote it (`ocr_handoff` in the\nresponse). The page is `page`, or the ALTO's `PHYSICAL_IMG_NR` mapped through the record's\n`page_index`; one that the record lacks or does not flag is a 422, checked before any model\nruns. The record's `source` stays the original's.\n\nReturns a list of classified lines.  Each entry carries:\n\n  line_num        (int)   – 1-based position after layout reordering\n  text            (str)   – cleaned text with split-word merges applied\n  lang            (str)   – ISO language code predicted by FastText\n  lang_score      (float) – FastText confidence [0, 1]\n  perplexity      (float) – Qwen2.5-0.5B perplexity; 0 for pre-filtered lines\n  garbage_density (float) – ratio of non-alphanumeric noise characters\n  sym_count       (int)   – tokens with strange/unexpected symbols\n  upper_count     (int)   – tokens with mid-word uppercase artefacts\n  repeated_count  (int)   – tokens with non-standard char repetition (>=40%)\n  ldl_fuses       (int)   – tokens with letter-digit-letter fusions\n  gibberish       (int)   – tokens lacking vowels or highly irregular ratios\n  word_weird      (float) – mean per-word weirdness score [0, 1]\n  quality_score   (float) – composite continuous quality score [0, 1]\n  category        (str)   – Clear | Noisy | Trash | Non-text | Empty\n                            Assigned dynamically using the unified penalty system.",
         "operationId": "process_document",
         "requestBody": {
           "content": {
@@ -1218,7 +1218,7 @@
                 },
                 "needs_ocr": {
                   "type": "boolean",
-                  "description": "Set by whichever tool originated this page. On the digital-born path it means the embedded text layer exists but does not decode to trustworthy text (Issue #10: non-embedded WinAnsi with no /ToUnicode yields systematic diacritic corruption), i.e. this page should be re-acquired by OCR despite not being a scan. The converter reports; routing policy lives outside it. Because the two paths mean OPPOSITE things by it (no text layer vs. an untrustworthy one), always write needs_ocr_reason alongside. Setting this is also what authorises alto-postprocess to re-originate the positional plane of a digital-born record — see _assert_origin_consistent() in atrium_document.py.",
+                  "description": "Set by whichever tool originated this page. On the digital-born path it means the embedded text layer exists but does not decode to trustworthy text (Issue #10: non-embedded WinAnsi with no /ToUnicode yields systematic diacritic corruption), i.e. this page should be re-acquired by OCR despite not being a scan. The converter reports; routing policy lives outside it. Because the two paths mean OPPOSITE things by it (no text layer vs. an untrustworthy one), always write needs_ocr_reason alongside. Setting this is also what authorises ocr-postprocess to re-originate THIS page of a digital-born record (the OCR hand-off, per page) — see OCR_HANDOFF and _assert_origin_consistent() in atrium_document.py. It stays set after the OCR pass: it is the converter's request, and pages[].ocr records that the request was served.",
                   "examples": [
                     true
                   ]
@@ -1229,6 +1229,21 @@
                   "examples": [
                     "no extractable text layer",
                     "text layer decodes to corrupt diacritics (WinAnsi declared, no /ToUnicode)"
+                  ]
+                },
+                "text_layer": {
+                  "type": "string",
+                  "enum": [
+                    "digital",
+                    "garbled",
+                    "ocr",
+                    "none",
+                    "blank"
+                  ],
+                  "description": "The born-digital converter's verdict on this page's embedded text layer, so a routing step reads a value instead of parsing needs_ocr_reason: `digital` a layer that decodes; `garbled` a layer that exists but does not decode (mojibake, U+FFFD or control characters); `ocr` the layer is a prior OCR run's invisible text over a page image; `none` no text layer (a scan, text drawn as curves, a page that draws nothing a parser can see); `blank` an empty page of a format without page images (DOCX, ODT, sheets), with nothing to re-acquire. `garbled`, `ocr` and `none` are exactly the pages the converter flags needs_ocr. Written by digital-convert only; absent on OCR records.",
+                  "examples": [
+                    "digital",
+                    "garbled"
                   ]
                 },
                 "ocr": {
@@ -1753,6 +1768,18 @@
             "title": "Document Record",
             "description": "Deprecated name of `document_json`; its record comes back as `document_json_out`. Send one of the two, not both.",
             "deprecated": true
+          },
+          "page": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Page",
+            "description": "Optional: the record's page key this one-page upload is written under. With a born-digital record (digital-convert's), it names the page flagged `needs_ocr` that this ALTO re-acquires (the OCR hand-off): that page's lines are replaced, every other page is left as it is. Without it, an ALTO page's `PHYSICAL_IMG_NR` is mapped through the record's `page_index`. A page the record does not have, or does not flag, is refused (422), as is a multi-page ALTO or a document upload with `page`."
           }
         },
         "type": "object",
@@ -2305,6 +2332,33 @@
         "title": "LimitRef",
         "description": "Which limit a `limit_exceeded` refusal is about, and by how much."
       },
+      "OcrHandoff": {
+        "properties": {
+          "page": {
+            "type": "string",
+            "title": "Page",
+            "description": "The record's page key (a `needs_ocr` page) the upload's lines were written under."
+          },
+          "lines_replaced": {
+            "type": "integer",
+            "title": "Lines Replaced",
+            "description": "How many of the converter's lines that page held before."
+          },
+          "lines_written": {
+            "type": "integer",
+            "title": "Lines Written",
+            "description": "How many classified lines it holds now."
+          }
+        },
+        "type": "object",
+        "required": [
+          "page",
+          "lines_replaced",
+          "lines_written"
+        ],
+        "title": "OcrHandoff",
+        "description": "What an upload re-acquired in a born-digital record (atrium-digital-convert#4 W4)."
+      },
       "ProcessResponse": {
         "properties": {
           "type": {
@@ -2393,7 +2447,18 @@
                 "type": "null"
               }
             ],
-            "description": "Only when the record was sent as `document_json`: the record with ocr-postprocess's `pages` and `lines` fields merged in. A born-digital record (atrium_document §1a) comes back as it was sent."
+            "description": "Only when the record was sent as `document_json`: the record with ocr-postprocess's `pages` and `lines` fields merged in. A born-digital record (atrium_document §1a) comes back as it was sent, except a page it flags `needs_ocr`, which an ALTO upload of that page re-acquires (see `ocr_handoff`)."
+          },
+          "ocr_handoff": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OcrHandoff"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Only when the upload re-acquired a page a born-digital record flags `needs_ocr` (the OCR hand-off, atrium-digital-convert#4 W4): that page's lines were replaced by the upload's."
           },
           "document_json_out": {
             "anyOf": [
@@ -2790,10 +2855,16 @@
       "statuses": [
         422
       ]
+    },
+    "source_digest_mismatch": {
+      "description": "The record sent with the request names the original by its `source.sha512`, and the uploaded file is not that file (HTTP 422): the record would describe one file under another file's identity. Send the original the seed was made for, or a seed made for this file; do not retry unchanged.",
+      "statuses": [
+        422
+      ]
     }
   },
   "x-atrium-record-schema": {
     "schema_version": "1.0",
-    "sha256": "2a968799a5c50386abe8a65da9678f97f442ea7d691bf2f97d8f232b7ca3481e"
+    "sha256": "6887223a29b81f330901f62b7616c286f60343b4abfdb888153af65b95b6f8b3"
   }
 }

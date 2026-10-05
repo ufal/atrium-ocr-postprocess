@@ -37,7 +37,14 @@ import sys
 from collections import OrderedDict
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
-from atrium_document import DocumentRecord, load_document, resolve_originator, validate_baseline, validate_document
+from atrium_document import (
+    DocumentRecord,
+    load_document,
+    ocr_handoff_pages,
+    resolve_originator,
+    validate_baseline,
+    validate_document,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -241,31 +248,115 @@ def paradata_ref_for(logger) -> str:
     return os.path.join(logger.paradata_dir, f"{logger.run_id}_{logger.program}.json")
 
 
+def _read_record(path: str) -> Dict[str, Any]:
+    """The record at `path`, or {} when there is none or it cannot be read."""
+    if path and os.path.exists(path):
+        try:
+            return load_document(path) or {}
+        except Exception:
+            return {}
+    return {}
+
+
 def foreign_origin(path: str, source: Optional[Dict[str, Any]] = None) -> Optional[str]:
     """The record's `source.origin` when it authorises ANOTHER originator, else None (#31).
 
     Reads the baseline record at `path` (its `source` is first-writer-wins, so it is
     the one that counts), falling back to the `source` this call is about to write.
     Returns None — "nothing to hold back" — when there is no origin, when the origin
-    matches no ORIGIN_ORIGINATORS prefix (§1a abstains; so do we), when it authorises
-    this repo, and when the record already carries the documented OCR hand-off
-    (some `pages[].needs_ocr` is true, written by digital-convert to ask for exactly
-    this repo's pass — atrium_document `_ocr_handoff_requested`).
+    matches no ORIGIN_ORIGINATORS prefix (§1a abstains; so do we), and when it authorises
+    this repo. A record that carries digital-convert's `pages[].needs_ocr` hand-off is still
+    foreign: since W4 (atrium-digital-convert#4) `write_document_block()` writes such a record
+    page by page (`handoff_pages`), never as a whole.
     """
-    record: Dict[str, Any] = {}
-    if path and os.path.exists(path):
-        try:
-            record = load_document(path) or {}
-        except Exception:
-            record = {}
+    record = _read_record(path)
     origin = (record.get("source") or {}).get("origin") or (source or {}).get("origin")
     if not origin:
         return None
     if resolve_originator(origin) in (None, PROGRAM_NAME):
         return None
-    if any(isinstance(p, dict) and p.get("needs_ocr") is True for p in record.get("pages") or []):
-        return None
     return origin
+
+
+def handoff_pages(record: Optional[Dict[str, Any]]) -> List[str]:
+    """The record's page keys that digital-convert flagged `needs_ocr`: the pages this repo is
+    asked to re-originate from OCR (atrium-digital-convert#4 W4; `atrium_document.OCR_HANDOFF`)."""
+    return ocr_handoff_pages((record or {}).get("pages"))
+
+
+def record_page_key(record: Optional[Dict[str, Any]], key: Any) -> Optional[str]:
+    """The record's own key for the page an OCR file calls `key`, or None (W4).
+
+    An ALTO page is named by its `PHYSICAL_IMG_NR` (or its 1-based position: `page_split`'s
+    labels, `service/utils.parse_alto_page_labels`) — a PHYSICAL position. A born-digital record
+    names its pages by their labels (`i`, `ii`, `1`, `A-1`) and carries the position in
+    `pages[].page_index`. So when every page row has a `page_index`, a numeric key is looked up
+    by position and never matched to a label by its number (position 3 of `i, ii, 1` is `1`, not
+    a page labelled `3`) — page-classification's rule for the same records. Without page_index
+    (an ALTO record), the key must be one of the record's labels.
+    """
+    if key is None:
+        return None
+    wanted = str(key).strip()
+    rows = [r for r in (record or {}).get("pages") or [] if isinstance(r, dict) and r.get("page") is not None]
+    if rows and all(isinstance(r.get("page_index"), int) and not isinstance(r.get("page_index"), bool) for r in rows):
+        if wanted.isdigit():
+            return next((str(r["page"]) for r in rows if r["page_index"] == int(wanted)), None)
+    labels = [str(r["page"]) for r in rows]
+    return wanted if wanted in labels else None
+
+
+#: (W4) What this repo writes into a flagged page's `pages[]` row of a born-digital record: the
+#: page's quality and that an engine ran. `page_index`, `canvas`, `needs_ocr` and its reason stay
+#: the converter's (an ALTO's own canvas is in another unit, and `needs_ocr` is the request).
+HANDOFF_PAGE_FIELDS = ("quality_score", "quality_band", "ocr")
+
+
+def _handoff_writes(
+    record: Dict[str, Any],
+    set_blocks: Optional[Dict[str, Any]],
+    merge_blocks: Optional[Dict[str, List[Dict[str, Any]]]],
+) -> Tuple[Dict[str, List[Dict[str, Any]]], Dict[str, List[Dict[str, Any]]], List[str]]:
+    """This call's writes into a born-digital record that flags pages for OCR, page by page (W4).
+
+    Returns (merge_blocks, replace_lines, notes): the `pages` rows and the `lines` rows of the
+    flagged pages, keyed by the record's own page labels (`record_page_key`), and why anything
+    else was held back. The `lines` of a flagged page REPLACE the converter's (they are what the
+    OCR read on it); the `pages` rows merge `HANDOFF_PAGE_FIELDS` into the converter's, which
+    keep `page_index`, `canvas`, `needs_ocr`, `text_layer` and page-classification's `category`.
+    `content`, `tables` and every row of an unflagged page are held back: the shared module
+    refuses them.
+    """
+    flagged = set(handoff_pages(record))
+    notes: List[str] = []
+    held = sorted(set(set_blocks or {}) & set(POSITIONAL_BLOCKS))
+    if held:
+        notes.append(f"not writing {', '.join(held)} (a whole-document block; the hand-off is per page)")
+    merges: Dict[str, List[Dict[str, Any]]] = {}
+    replace: Dict[str, List[Dict[str, Any]]] = {}
+    for block, rows in (merge_blocks or {}).items():
+        if block not in POSITIONAL_BLOCKS:
+            merges[block] = rows
+            continue
+        if block not in ("pages", "lines"):
+            notes.append(f"not writing {block}")
+            continue
+        kept, outside = [], set()
+        for row in rows or []:
+            key = record_page_key(record, row.get("page"))
+            if key is None or key not in flagged:
+                outside.add(str(row.get("page")))
+                continue
+            if block == "pages":
+                row = {field: value for field, value in row.items() if field in HANDOFF_PAGE_FIELDS}
+                if not row:
+                    continue
+            kept.append({**row, "page": key})
+        if outside:
+            notes.append(f"not writing {block}[] of page(s) {sorted(outside)}: no flagged page of the record")
+        if kept:
+            (replace if block == "lines" else merges)[block] = kept
+    return merges, replace, notes
 
 
 def write_document_block(
@@ -278,11 +369,20 @@ def write_document_block(
     set_blocks: Optional[Dict[str, Any]] = None,
     merge_blocks: Optional[Dict[str, List[Dict[str, Any]]]] = None,
     run_uuid: Optional[str] = None,
+    ocr_pages: Optional[List[str]] = None,
 ) -> Optional[str]:
     """Open `<doc_id>.document.json` under `document_json_dir` (if configured and if
     it already exists), apply this stage's own contribution, and write it back in
     place. A missing baseline is safe (rule 3): the record then holds just this
     stage's part. No-ops entirely when `document_json_dir` is falsy.
+
+    On a born-digital record that flags pages `needs_ocr` (digital-convert's OCR hand-off,
+    atrium-digital-convert#4 W4) the write is made page by page: the `pages`/`lines` rows of the
+    flagged pages, keyed by the record's own labels (`record_page_key`), with each flagged page's
+    `lines` REPLACED (`DocumentRecord.replace_page_rows`), so the page holds what the OCR read and
+    nothing of the converter's undecodable layer. Rows of other pages, `content`, `tables` and an
+    OCR input's `source` are held back, with one warning. `ocr_pages` names flagged pages this
+    call re-acquires even when it has no line for them (an OCR pass that found no text).
 
     Returns the path written, or None when nothing was written. Callers read the
     record back from that path (atrium-project#68).
@@ -310,7 +410,7 @@ def write_document_block(
     """
     if not document_json_dir:
         return
-    if not any([source, set_blocks, merge_blocks]):
+    if not any([source, set_blocks, merge_blocks, ocr_pages]):
         return
 
     path = document_path(document_json_dir, doc_id)
@@ -320,22 +420,58 @@ def write_document_block(
     # repo (the unchanged classify/aggregate included) would put OCR-path fields and
     # categories into a record that digital-convert originates, the half-OCR/half-
     # digital plane §1a exists to refuse. `source` is still written; the CSV outputs
-    # of the run are unaffected.
-    if set_blocks or merge_blocks:
+    # of the run are unaffected. (W4) A record that flags pages `needs_ocr` is the one
+    # exception, and it is written page by page (`_handoff_writes`).
+    replace_lines: List[Dict[str, Any]] = []
+    replace_pages: List[str] = []
+    if set_blocks or merge_blocks or ocr_pages or source:
         foreign = foreign_origin(path, source)
-        if foreign:
+        record = _read_record(path) if foreign else {}
+        source_note = None
+        recorded = resolve_originator((record.get("source") or {}).get("origin"))
+        if source and recorded and resolve_originator(source.get("origin")) != recorded:
+            # The record's `source` is the original's (first writer wins). This stage read another
+            # file — an OCR of the original's pages — whose sha256 and origin describe that file.
+            source_note = "not writing source: the record's is the original's, and this stage read another file"
+            source = None
+        if foreign and handoff_pages(record):
+            # (W4) The hand-off: the flagged pages only, the converter's other pages untouched.
+            merge_blocks, replace, notes = _handoff_writes(record, set_blocks, merge_blocks)
+            set_blocks = {k: v for k, v in (set_blocks or {}).items() if k not in POSITIONAL_BLOCKS} or None
+            replace_lines = replace.get("lines", [])
+            flagged = handoff_pages(record)
+            replace_pages = [
+                p for p in flagged if p in set(ocr_pages or []) or any(r["page"] == p for r in replace_lines)
+            ]
+            refused = sorted(set(ocr_pages or []) - set(flagged))
+            if refused:
+                raise ValueError(
+                    f"{doc_id}: page(s) {refused} are not flagged needs_ocr in the record (flagged: {flagged})"
+                )
+            if source_note:
+                notes.append(source_note)
+            if notes and doc_id not in _FOREIGN_ORIGIN_WARNED:
+                _FOREIGN_ORIGIN_WARNED.add(doc_id)
+                _warn(
+                    f"{doc_id}: the needs_ocr hand-off of a {foreign!r} record covers page(s) {flagged} "
+                    f"(atrium_document OCR_HANDOFF) — " + "; ".join(notes) + ". The CSV outputs are unaffected."
+                )
+            merge_blocks = merge_blocks or None
+        elif foreign and (set_blocks or merge_blocks or ocr_pages):
             dropped = sorted((set(set_blocks or {}) | set(merge_blocks or {})) & set(POSITIONAL_BLOCKS))
+            if ocr_pages:
+                raise ValueError(f"{doc_id}: the record flags no page needs_ocr, so no page of it can be re-acquired")
             if dropped and doc_id not in _FOREIGN_ORIGIN_WARNED:
                 _FOREIGN_ORIGIN_WARNED.add(doc_id)
                 _warn(
                     f"{doc_id}: source.origin {foreign!r} is originated by {resolve_originator(foreign)!r}, "
                     f"not {PROGRAM_NAME!r} — not writing {', '.join(dropped)} into its record "
-                    f"(atrium_document §1a). The CSV outputs are unaffected."
+                    f"(atrium_document §1a){'; ' + source_note if source_note else ''}. The CSV outputs are unaffected."
                 )
             set_blocks = {k: v for k, v in (set_blocks or {}).items() if k not in POSITIONAL_BLOCKS} or None
             merge_blocks = {k: v for k, v in (merge_blocks or {}).items() if k not in POSITIONAL_BLOCKS} or None
-            if not any([source, set_blocks, merge_blocks]):
-                return
+        if not any([source, set_blocks, merge_blocks, replace_pages]):
+            return
 
     baseline_was_invalid = _baseline_is_invalid(path)
     with DocumentRecord.open(
@@ -363,6 +499,10 @@ def write_document_block(
                 # the caller, not data variance — so every call site must pass only
                 # fields it owns, plus the block's key fields.
                 doc.assert_fields_survived(block, records)
+        if replace_pages:
+            # (W4) The flagged pages' lines are what the OCR read on them, and nothing else.
+            doc.replace_page_rows("lines", replace_pages, replace_lines)
+            doc.assert_fields_survived("lines", replace_lines)
         _validate_own_output(doc, baseline_was_invalid)
         # Explicitly, and to `path` (#68): see the docstring. __exit__ then has nothing left to do.
         return doc.finalize(path)
