@@ -492,7 +492,7 @@ running; stage 8 written, validated and not yet submitted.
     round (push both; para-drift compares against this repository's `test`).
 * No behaviour change: comments, docstrings and one config comment only.
 
-  **Not pushed: files delivered in chat.**
+  Files delivered in chat; pushed by the maintainer as `2464756`.
 
 ---
 _Timeline index refreshed 2026-09-09 against live `test`/`master` HEAD, the current release list, open-issue state
@@ -1379,5 +1379,16 @@ week, ≈ 2026-10-02). Recorded in the #30 digest and plan; nothing switched on.
   path). Full suite 2037 passed.
 * **Docs:** `service/README.md` (§ Merging an OCR'd page into a born-digital record), README and
   `docs/text_inputs.md` (the hand-off paragraphs), CONTRIBUTING row; `setup/para_config.txt` and `CITATION.cff` at
-  `v1.10.0-beta`.
-* Tag draft: `v1.10.0-beta`. **Not pushed: files delivered in chat.**
+  `v1.9.1-beta`.
+* Tag: `v1.9.1-beta` (drafted here as `v1.10.0-beta`; the maintainer set the number). Pushed as `173c3a1`, without the
+  drafted `tests/test_ocr_handoff.py`.
+
+## 2026-10-05 (evening) — Tag lines corrected; the W4 API tests are missing
+* Two 2026-10-05 entries now say what shipped:
+  * the alignment with digital-convert (eight formats), pushed as `2464756`;
+  * W4, tagged `v1.9.1-beta` (drafted as `v1.10.0-beta`), pushed as `173c3a1`.
+* **`tests/test_ocr_handoff.py`, drafted with W4, is not in the repository.** The hand-off is tested at the
+  shared-module level (`tests/test_document_originators.py`, vendored from the hub), but no test calls `POST /process`
+  with `page=`. This is tracked on atrium-digital-convert#4.
+
+  Files delivered in chat.
