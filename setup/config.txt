@@ -17,18 +17,18 @@ JSON_DIR =
 # when this is empty: ocr:page-xml / ocr:hocr / ABBYY-ALTO / ocr:pdf-text-layer (a PDF
 # whose text is an invisible OCR layer) / ocr:generic (TXT, MD, CSV, JSON, TEI, XML)
 # for OCR output, and digital-born-<kind> for DOCX, ODT, XLSX, PPTX, EPUB, RTF, HTML
-# and visible-text PDF. A digital-born record belongs to llm-enrich's digital-convert:
-# this repo then writes only `source` into it (document_hook guard); CSV outputs are
-# unaffected. A value set HERE overrides that default for every text-lines input too.
+# and visible-text PDF. A digital-born record belongs to atrium-digital-convert: this
+# path then writes only `source` into it (document_hook guard; POST /score_record adds
+# line-quality scores only); CSV outputs are unaffected. A value set HERE overrides that default for every text-lines input too.
 SOURCE_ORIGIN =
 # (#31 Phase 4) Per-kind origin for text-lines inputs (text_split.py and /process):
 # `<kind> = <origin>` pairs separated by commas, kinds as in text_formats.READERS
 # (txt, md, csv, tsv, json, jsonl, xml, tei, html, docx, xlsx, pptx, odt, ods, odp,
 # epub, rtf, eml, mbox, srt, vtt, …). Precedence: --source-origin > the
 # DOCUMENT_SOURCE_ORIGIN env var > this key > SOURCE_ORIGIN > the truthful default.
-# The use case: llm-enrich's digital-convert reads only PDF and DOCX, so a
-# digital-born XLSX/PPTX/ODT/ODS/ODP/EPUB/RTF/HTML/e-mail record ends up with `source`
-# only. When files of such a kind are really OCR or transcription exports, say so,
+# The use case: atrium-digital-convert reads PDF, DOCX, ODT, ODS, XLSX, RTF, DOC and XLS
+# (since its v1.1.0-beta), so a digital-born PPTX/ODP/EPUB/HTML/e-mail record ends up
+# with `source` only. When files of such a kind are really OCR or transcription exports, say so,
 # e.g. `xlsx = ocr:generic, pptx = ocr:generic`, and this repo writes their
 # pages/content/lines. Keep it truthful: `source.origin` is provenance other tools
 # read. An unknown kind or an origin no originator claims stops the run (exit 2).

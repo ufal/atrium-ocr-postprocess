@@ -621,7 +621,7 @@ def default_source_origin(doc: TextDocument) -> str:
     A reader's `origin_hint` comes first (a ZIP bundle takes its members' origin).
     PDF is decided per document: a text layer that is mostly invisible text over the
     page image is an OCR layer (`ocr:pdf-text-layer`, this repo's to own); anything
-    else is a born-digital PDF (`digital-born-pdf`, llm-enrich's digital-convert's).
+    else is a born-digital PDF (`digital-born-pdf`, atrium-digital-convert's).
     """
     if doc.origin_hint:
         return doc.origin_hint
@@ -2782,7 +2782,7 @@ def _pdf_matrix(pdfium_c, obj, parent: Optional[Tuple[float, float, float, float
 
 
 def classify_text_layer(raw: str, n_text_objs: int, n_invisible: int, opts: ReaderOptions) -> Tuple[str, Optional[str]]:
-    """Per-page text-layer class, mirroring llm-enrich's pdf_to_md thresholds.
+    """Per-page text-layer class, mirroring digital-convert's pdf_to_md thresholds.
 
     none    — fewer than PDF_MIN_TEXT_CHARS visible characters: no text layer (OCR it)
     garbled — more than PDF_GARBLE_THRESHOLD of the characters are U+FFFD or
@@ -3998,7 +3998,7 @@ def _cp1250_misreads() -> Dict[str, str]:
 
 
 CP1250_MISREADS: Dict[str, str] = _cp1250_misreads()
-#: llm-enrich's GARBAGE_MIN_HITS / QUALITY_GARBAGE_BELOW: two misreads in a line, or
+#: digital-convert's GARBAGE_MIN_HITS / QUALITY_GARBAGE_BELOW: two misreads in a line, or
 #: fewer than 90% of its letters clean, is a decode fault rather than a foreign word.
 _MOJIBAKE_MIN_HITS = 2
 _MOJIBAKE_SCORE_BELOW = 0.90
@@ -4015,7 +4015,7 @@ _MOJIBAKE_WESTERN_EVIDENCE = frozenset("àêûœÀÊÛŒ")
 def mojibake_line(line: str) -> bool:
     """True for a line that reads like CP1250 Czech decoded as CP1252 ("sondì èíslo").
 
-    llm-enrich's rule (≥2 misread characters, or <90% of the letters clean), made
+    digital-convert's rule (≥2 misread characters, or <90% of the letters clean), made
     conservative for a report flag: the line must also hold a letter both code pages
     share with Czech (á, í, ú, ý, š, ž), none that only Western text has (à, ê, û,
     œ), and round-trip through CP1252. Correctly decoded Czech holds č/ř/ě, which

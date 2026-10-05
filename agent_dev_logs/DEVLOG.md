@@ -479,6 +479,21 @@ where a tie lands.
 sample CSVs moves **0 categories**. Suite **1252 → 1288** passing, 0 failed, `ruff` clean. Stage 6 still
 running; stage 8 written, validated and not yet submitted.
 
+## 2026-10-05 — Alignment: digital-convert is its own repository, with eight formats
+* Part of the hub's 2026-10-05 sweep of the eight ATRIUM repositories. Comments and docstrings here still placed
+  digital-convert inside llm-enrich, and one said it reads only PDF and DOCX:
+  * `setup/config.txt` (`SOURCE_ORIGIN`, `SOURCE_ORIGIN_BY_KIND`): digital-convert reads PDF, DOCX, ODT, ODS, XLSX,
+    RTF, DOC and XLS since its v1.1.0-beta, so the `source`-only kinds are PPTX/ODP/EPUB/HTML/e-mail;
+  * `text_split.py`, `text_util.py`, `setup/requirements.txt`: atrium-digital-convert, not llm-enrich;
+  * `service/text_api.py`: the downstream `DROP_CATEGORIES` defect (V-1) was fixed on 2026-09-25; the docstring
+    now says what the filter drops;
+  * `text_formats.py`: four docstrings and comments name digital-convert as the owner of the mirrored thresholds.
+    The file is vendored byte-identical into atrium-digital-convert, which takes the new copy and pin in the same
+    round (push both; para-drift compares against this repository's `test`).
+* No behaviour change: comments, docstrings and one config comment only.
+
+  **Not pushed: files delivered in chat.**
+
 ---
 _Timeline index refreshed 2026-09-09 against live `test`/`master` HEAD, the current release list, open-issue state
 via the GitHub API, and the refreshed `30.digest.md`/`37.digest.md`; 2026-09-20 entry appended from the stage-7
@@ -1328,4 +1343,6 @@ week, ≈ 2026-10-02). Recorded in the #30 digest and plan; nothing switched on.
   Full suite 2005 passed. The real app (stand-in scorer) ran live against digital-convert's `/describe`.
 * **Docs:** `service/README.md` (§ Scoring a record), README and `docs/text_inputs.md` (the kinds digital-convert
   reads), CONTRIBUTING row. The spec stays compatible (additive).
-* Tag draft: `v1.9.0-beta` (or with the #3 time-box release, if that goes first). **Not pushed: files delivered in chat.**
+* Tag draft: `v1.9.0-beta`. Pushed as `648aae7`.
+* 2026-10-04, evening: the CONTRIBUTING row now also names the #3 changes this release carries (the witness-floor
+  rule, shipped off; `tools/ab_constant_eval.py`'s Clear-demoted count; `setup_api_server.sh`'s `venv-ocr`).

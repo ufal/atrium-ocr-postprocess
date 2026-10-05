@@ -154,7 +154,7 @@ def resolve_text_source_origin(
     for the document's kind > [DOCUMENT].SOURCE_ORIGIN > the per-class default
     (document_hook.resolve_input_origin). The default is truthful: OCR-bearing formats
     get an `ocr:`/`ABBYY-ALTO` origin (this repo's to originate), born-digital ones
-    `digital-born-<kind>` (llm-enrich's digital-convert's). The document_hook guard then
+    `digital-born-<kind>` (atrium-digital-convert's). The document_hook guard then
     keeps this repo's positional writes out of a digital-born record; the CSV outputs
     are produced either way.
     """

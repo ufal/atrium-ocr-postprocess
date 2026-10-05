@@ -523,19 +523,17 @@ def _lines_records_from_result(result: Dict[str, Any], page: str = SERVICE_PAGE_
     `"Empty"`, `"Noisy"`, `"Non-text"`, `"Trash"`, i.e. whatever
     `text_util.determine_category()` returned, unaltered. `"Garbage"` and
     `"Inverted"` belong to the OTHER authorised originator of that block
-    (`digital-convert`, in atrium-llm-enrich); the two sets are deliberately
+    (`digital-convert`, atrium-digital-convert); the two sets are deliberately
     DISJOINT and nothing on this path can produce them.
     `atrium_vocab.LINE_CATEGORY_ORIGINATORS` is the declaration of which tool emits
     which, and `text_util.CATEGORIES_EMITTED` is this repo's side of it.
 
-    That disjointness has one consequence worth knowing before anyone "corrects" a
-    label here: atrium-llm-enrich's api_util/json_to_md.py keys its DROP_CATEGORIES
-    off `{"Garbage", "Inverted"}` alone, so the filter currently matches nothing this
-    endpoint produces — a `"Trash"` line is handed to the model exactly like a
-    `"Clear"` one. That is a downstream defect, tracked as V-1 in the hub's
-    `docs/skos_strategy.md` §6 together with its one-line fix; it is not a reason to
-    re-spell a category on the way out. A re-spelling would not fail validation
-    either — it would only put this repo's output out of step with the registry, in
+    Downstream filters key off these exact strings. atrium-digital-convert's
+    api_util/json_to_md.py drops `atrium_vocab.UNTRUSTWORTHY_LINE_CATEGORIES`, which
+    covers `"Trash"` from this half and `"Garbage"`/`"Inverted"` from the other (V-1 in
+    the hub's `docs/skos_strategy.md` §6, fixed 2026-09-25). So never re-spell a
+    category on the way out: a re-spelling would not fail validation, it would only
+    put this repo's output out of step with the registry and its consumers, in
     silence.
     """
     records: List[Dict[str, Any]] = []

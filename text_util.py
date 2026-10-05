@@ -49,8 +49,8 @@ _EMPTY_LEXICON: Mapping[str, int] = MappingProxyType({})
 #     re-ordered vendored copy of atrium_vocab.py silently change what the
 #     pipeline outputs -- the registry is a description of behaviour, not a knob
 #     that steers it;
-#   * `lines[].categ` has a SECOND authorised originator (`digital-convert`, in
-#     atrium-llm-enrich) which emits {Garbage, Inverted}. The two sets are
+#   * `lines[].categ` has a SECOND authorised originator (`digital-convert`,
+#     atrium-digital-convert) which emits {Garbage, Inverted}. The two sets are
 #     disjoint ON PURPOSE -- one is an OCR verdict over a rendered image, the
 #     other a decode-sanity verdict over an embedded text layer -- so "align the
 #     two" is never the fix for a disagreement found here.
