@@ -1381,4 +1381,3 @@ week, ≈ 2026-10-02). Recorded in the #30 digest and plan; nothing switched on.
   `docs/text_inputs.md` (the hand-off paragraphs), CONTRIBUTING row; `setup/para_config.txt` and `CITATION.cff` at
   `v1.10.0-beta`.
 * Tag draft: `v1.10.0-beta`. **Not pushed: files delivered in chat.**
-
