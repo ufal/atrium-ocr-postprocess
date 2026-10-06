@@ -410,9 +410,14 @@ Trash. This protects genuine short entries that trail off with punctuation/dashe
 `noisy_threshold`. It never touches a `Trash`, `Noisy`, `Non-text` or `Empty` verdict, it does not need the signal
 half of gate 6, and it is independent of `SHORT_GARBAGE_WITNESS_ENABLE`. The page-level smoothing in
 `apply_document_postprocessing()` acts after it, so with the floor on a line it created can still be moved to `Trash`
-by the surrounded-`Trash` pass or page rule 1. Because it only ever answers `Noisy`, it cannot change the A/B tool's
-`Clear-loss` (gold `Clear` → `Trash` / `Non-text`); the tool also reports `Clear-demoted` (gold `Clear` → any other
-class) for rules like this one.
+by the surrounded-`Trash` pass or page rule 1. Per line it only ever answers `Noisy`, but by lowering a page's `Clear`
+share and median score it can fire page rule 1, which sends every `Noisy` line on that page to `Trash` — so it can
+move `Clear`-loss in the pipeline even though no A/B on the sidecars showed it. The A/B tool also reports
+`Clear-demoted` (gold `Clear` → any other class) for rules like this one. **Stays off** (@david-spacil, 2026-10-05):
+over both collections with the shipped config (no token table) it moved 25,448 lines, and a blind annotation of the
+change found ≈ 3,920 fixed against ≈ 13,509 broken, including ≈ 1,250 lines annotated `Clear` (e.g. the `IV-2`
+table cells) taken to `Trash` by page rule 1. Measure it on a corpus diff (`tools/corpus_change.py`), not on the
+sidecars.
 
 **Quality-score band routing** (reached only if none of the gates above returned):
 

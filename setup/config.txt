@@ -297,18 +297,24 @@ SHORT_GARBAGE_WITNESS_ENABLE            = false
 # SHORT_GARBAGE_WITNESS_ENABLE. Boolean on purpose (Q1: convicted means damaged,
 # not necessarily illegible). Read the lexicon the same way the witness does:
 # without SHORT_GARBAGE_LEXICON_PATH it would convict real words.
-# SHIPS OFF; switching it on is the maintainers' call. Measured in stage 13
-# (13b-13e), witness off, same tree and lexicon: Dana's 826 lines 648 -> 346 errors
+# SHIPS OFF, AND STAYS OFF (@david-spacil, 2026-10-05). Measured in stage 13
+# (13b-13e), witness off, D46 table armed: Dana's 826 lines 648 -> 346 errors
 # (303 fixes / 1 break; the 303 are 53 distinct strings, two of them 56%), the
-# 2,064 gold 510 -> 508 (2 fixes / 0 breaks). The one break is a gold-Clear line
-# (a Czech surname without its diacritic): 1 of 4 gold-Clear lines in Dana's set,
-# 0 of 1,302 in the gold. The floor takes ~516 lines off Clear on Dana's lines and
-# ~10 on the gold, so -302 is not a corpus effect. Clear-loss (gold Clear -> Trash
-# or Non-text) CANNOT move for this rule, since it answers Noisy only: read the
-# breaks and the tool's Clear-demoted figure instead. Alongside the witness flag
-# the picture splits in sign (+12 errors on Dana's lines, -9 on the gold), so the
-# witness flag is held. The eight page-smoothing keys were measured with the floor
-# OFF (stage 14); the floor creates the Noisy lines they act on.
+# 2,064 gold 510 -> 508 (2 fixes / 0 breaks). Neither sidecar holds the strings
+# the floor breaks. Over BOTH FULL COLLECTIONS with this file as shipped (no
+# table), the floor moved 25,448 lines (23,044 Clear -> Noisy, 2,322 Noisy ->
+# Trash, 82 Clear -> Trash), and a blind annotation of the change found ~3,920
+# fixed against ~13,509 broken: ARCHAIA, Latin taxa and `vodovod` (what a table
+# attests) and `PVIII`-type grid labels (what nothing exempts).
+# Clear-loss: per line the floor answers Noisy only, but it lowers its page's
+# Clear share and median score, which can fire page rule 1 in
+# apply_document_postprocessing() -- and that rule sends EVERY Noisy line on the
+# page to Trash. ~1,250 lines annotated Clear (e.g. the `IV-2` table cells)
+# reached Trash that way, invisible to the sidecars' Clear-loss. Read this rule
+# on a corpus diff (tools/corpus_change.py), not on the sidecars. Alongside the
+# witness flag the sidecars split in sign (+12 errors on Dana's lines, -9 on the
+# gold), so the witness flag is held too. Stage 16 measures the floor WITH a
+# table against the same annotation before anyone reconsiders it.
 SHORT_GARBAGE_WITNESS_FLOOR             = false
 # (#30) The hand-maintained word lists. THIS IS THE FILE FOR PEOPLE WHO KNOW THE
 # MATERIAL: units, reference labels, section headings, and -- the section that did
@@ -370,7 +376,9 @@ SHORT_GARBAGE_WITNESS_VARIETY_MIN_ALPHA = 7
 SHORT_GARBAGE_WITNESS_VARIETY_MAX       = 0.50
 # Triple-repeated-character clause applies only up to this many letters.
 # `sektlll` and `NINNNIC` are 7; the cap is what keeps the German compound
-# `Schifffahrt` out.
+# `Schifffahrt` out. Caveat (2026-10-05): @david-spacil annotated `sektlll`
+# (539 lines, one document) `Clear` -- a typescript `III` written with `l`,
+# read correctly. The clause's own example is a legible line.
 SHORT_GARBAGE_WITNESS_TRIPLE_MAX_ALPHA  = 8
 # Vowel-run clause length, decoupled from FUSED_VOWEL_RUN_MIN so it can be tuned
 # without moving `fused_ratio` in the quality score on every line in the corpus.
