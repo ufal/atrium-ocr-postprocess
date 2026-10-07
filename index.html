@@ -3,10 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ALTO XML Files Postprocessing Pipeline — ATRIUM</title>
+<title>OCR Output Postprocessing Pipeline — ATRIUM</title>
 <meta name="description" content="Post-processing of OCR output — ALTO XML, and also PAGE XML, hOCR, PDF, office and text files — into extracted text and a scored line-quality table, plus per-page ALTO.">
 <link rel="stylesheet" href="assets/style.css">
-<link rel="canonical" href="https://ufal.github.io/atrium-alto-postprocess/">
+<link rel="canonical" href="https://ufal.github.io/atrium-ocr-postprocess/">
 </head>
 <body>
 <div class="wrap">
@@ -14,11 +14,11 @@
   <div class="eyebrow">
     <a href="https://ufal.github.io/atrium-project/">ATRIUM</a>
     <span class="sep">/</span>
-    <span>alto-postprocess</span>
+    <span>ocr-postprocess</span>
   </div>
 
   <main class="card">
-    <h1>ALTO XML Files Postprocessing Pipeline</h1>
+    <h1>OCR Output Postprocessing Pipeline</h1>
     <p class="sub">split · stats · extract · classify · aggregate</p>
     <p class="tagline">Post-processing of OCR output — ALTO XML, and also PAGE XML, hOCR, PDF, office and text files — into extracted text and a scored line-quality table, plus per-page ALTO.</p>
     <p class="role">Deserialisation of ALTO and every other OCR or text-bearing input, and OCR quality control. The fan-out point of the whole pipeline.</p>
@@ -33,8 +33,8 @@
     </ul>
 
     <div class="actions">
-      <a class="btn btn-primary" href="https://ufal.github.io/atrium-project/workflows/alto-postprocess/">Documentation &rarr;</a>
-      <a class="btn" href="https://github.com/ufal/atrium-alto-postprocess">Source on GitHub</a>
+      <a class="btn btn-primary" href="https://ufal.github.io/atrium-project/workflows/ocr-postprocess/">Documentation &rarr;</a>
+      <a class="btn" href="https://github.com/ufal/atrium-ocr-postprocess">Source on GitHub</a>
       <a class="btn" href="https://ufal.github.io/atrium-project/">ATRIUM docs home</a>
     </div>
 
@@ -43,24 +43,26 @@
       <ul class="stages">
       <li><a href="https://ufal.github.io/atrium-page-classification/">page-classification</a></li>
       <li class="arrow">&rarr;</li>
-      <li><span class="here">alto-postprocess</span></li>
+      <li><span class="here">ocr-postprocess</span></li>
       <li class="arrow">&rarr;</li>
       <li><a href="https://ufal.github.io/atrium-translator/">translator</a></li>
       <li class="arrow">&rarr;</li>
       <li><a href="https://ufal.github.io/atrium-nlp-enrich/">nlp-enrich</a></li>
       <li class="arrow">&rarr;</li>
-      <li><a href="https://ufal.github.io/atrium-llm-enrich/">llm-enrich</a></li>
+      <li><a href="https://ufal.github.io/atrium-keyword-extract/">keyword-extract</a></li>
+      <li class="arrow">&rarr;</li>
+      <li><a href="https://ufal.github.io/atrium-digital-convert/">digital-convert</a></li>
       </ul>
     </div>
   </main>
 
   <footer>
     <p>This page is a published stub. The documentation itself lives in the
-       <a href="https://ufal.github.io/atrium-project/workflows/alto-postprocess/">ATRIUM hub site</a>; the code lives on the
-       <a href="https://github.com/ufal/atrium-alto-postprocess/tree/master"><code>master</code></a> branch.</p>
+       <a href="https://ufal.github.io/atrium-project/workflows/ocr-postprocess/">ATRIUM hub site</a>; the code lives on the
+       <a href="https://github.com/ufal/atrium-ocr-postprocess/tree/master"><code>master</code></a> branch.</p>
     <p>Developed by <a href="https://ufal.mff.cuni.cz">UFAL</a>, Charles University &middot;
        funded by <a href="https://atrium-research.eu/">ATRIUM</a> &middot;
-       MIT licensed &middot; generated 2026-09-25</p>
+       MIT licensed &middot; generated 2026-10-07</p>
   </footer>
 
 </div>
