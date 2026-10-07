@@ -17,11 +17,19 @@ is executed under a probe name so its ``if __name__ == "__main__"`` block does n
 uvicorn.
 
 Marked ``slow`` because importing the FastAPI app pulls in the ML stack.
+
+The last two tests are static and always run: the ``api`` stage must leave the port to
+``$PORT`` (atrium-project#58), the fast-lane counterpart of the hub's non-default-port
+container probe that the five other tool repositories already carry.
 """
 
 from __future__ import annotations
 
+import ast
+import json
 import os
+import re
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -44,6 +52,15 @@ SERVICE_DIR = REPO_ROOT / "service"
 REQUIRED_ENTRYPOINTS = ["text_api.py"]
 OPTIONAL_ENTRYPOINTS = ["healthcheck.py"]
 SCRIPT_ENTRYPOINTS = REQUIRED_ENTRYPOINTS + OPTIONAL_ENTRYPOINTS
+
+#: The `api` stage's ENTRYPOINT: a script launch, made safe by text_api.py's sys.path
+#: bootstrap (the two tests above).
+API_ENTRYPOINT = ["python", "service/text_api.py"]
+
+#: Environment variables the __main__ block must read for the k8s manifest's `env:` block
+#: to mean anything. PORT is the one with teeth (healthcheck.py probes it); HOST and
+#: GRACEFUL_SHUTDOWN_S are in the same contract (atrium-project#58, #55).
+REQUIRED_ENV_READS = ("PORT", "HOST", "GRACEFUL_SHUTDOWN_S")
 
 
 def _import_as_script(script_name: str, tmp_path: Path) -> subprocess.CompletedProcess:
@@ -123,3 +140,73 @@ def test_repo_root_bootstrap_precedes_first_party_imports():
             f"sys.path bootstrap (line {bootstrap_line + 1}). It will raise "
             f"ModuleNotFoundError under `python service/text_api.py`."
         )
+
+
+def _api_entrypoint() -> list:
+    """argv of the `api` stage's ENTRYPOINT, parsed out of the Dockerfile."""
+    stage, found = None, None
+    for raw in (REPO_ROOT / "Dockerfile").read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        match = re.match(r"^FROM\s+\S+\s+AS\s+(\S+)", line, re.IGNORECASE)
+        if match:
+            stage = match.group(1)
+            continue
+        if stage != "api" or not line.upper().startswith("ENTRYPOINT"):
+            continue
+        payload = line[len("ENTRYPOINT") :].strip()
+        try:
+            found = json.loads(payload) if payload.startswith("[") else shlex.split(payload)
+        except ValueError:
+            found = None
+    return found or []
+
+
+def _main_block_source() -> str:
+    """Source of service/text_api.py's ``if __name__ == "__main__":`` block, or ""."""
+    source = (SERVICE_DIR / "text_api.py").read_text(encoding="utf-8")
+    for node in ast.parse(source).body:
+        if isinstance(node, ast.If) and "__main__" in ast.dump(node.test):
+            return ast.get_source_segment(source, node) or ""
+    return ""
+
+
+def test_api_entrypoint_does_not_hardcode_the_port():
+    """The `api` stage must leave the port to $PORT (atrium-project#58).
+
+    An exec-form ENTRYPOINT array runs no shell, so a `--port` baked in here cannot be
+    overridden by the manifest's `env: PORT`; and because service/healthcheck.py DOES read
+    PORT, the result is a container that reports unhealthy forever rather than one that
+    merely ignores the setting.
+    """
+    argv = _api_entrypoint()
+    assert argv, "the Dockerfile declares no ENTRYPOINT for the `api` stage"
+    assert "--port" not in argv, (
+        f"the `api` stage hardcodes the port in its ENTRYPOINT ({argv}). Exec form runs no "
+        f"shell, so $PORT cannot expand, while service/healthcheck.py reads it: any "
+        f"non-default PORT becomes a permanently unhealthy container. Read the port in "
+        f"service/text_api.py's __main__ block instead (atrium-project#58)."
+    )
+    assert argv == API_ENTRYPOINT, (
+        f"expected the `api` stage to launch {API_ENTRYPOINT}, got {argv}. If the launch "
+        f"changed on purpose, update API_ENTRYPOINT and the import tests above with it."
+    )
+
+
+def test_main_block_reads_the_deployment_environment():
+    """PORT/HOST/GRACEFUL_SHUTDOWN_S must come from the environment, not be literals.
+
+    The manifest the partner deploys from (atrium-project
+    docs/templates/k8s/atrium-service.deployment.yaml) declares `env: PORT`. If this block
+    stops reading it, that declaration silently means nothing again.
+    """
+    block = _main_block_source()
+    assert block, (
+        'service/text_api.py has no `if __name__ == "__main__":` block, so the Dockerfile '
+        "`api` stage ENTRYPOINT starts nothing"
+    )
+    missing = [name for name in REQUIRED_ENV_READS if f'"{name}"' not in block]
+    assert not missing, (
+        f"service/text_api.py's __main__ block does not read {missing} from the environment. "
+        f"The k8s manifest declares these; a hardcoded value makes that declaration inert."
+    )
+    assert "uvicorn.run" in block, "the __main__ block never calls uvicorn.run"

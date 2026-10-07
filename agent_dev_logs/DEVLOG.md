@@ -1392,3 +1392,24 @@ week, ≈ 2026-10-02). Recorded in the #30 digest and plan; nothing switched on.
   with `page=`. This is tracked on atrium-digital-convert#4.
 
   Files delivered in chat.
+
+## 2026-10-07 — The W4 API tests; the port guard
+* **`tests/test_ocr_handoff.py` (new, 17 tests):** the tests drafted with W4 and never pushed (2026-10-05, evening),
+  against `v1.9.1-beta`'s code:
+  * the flagged page's lines replaced; every other page, `content` and the original's `source` kept;
+  * the page row's quality and `ocr.engine` (the ALTO's software, else the configured ALTO origin), the
+    `ocr-handoff` stamps, `ocr_handoff` in the response, `paradata`'s `@id` = the stamps' run_uuid;
+  * `PHYSICAL_IMG_NR` mapped through `page_index`; the empty OCR pass; a JSON upload with and without `page`;
+    `page` on an OCR record; the fan-in (`merge_document_records`);
+  * the 422s before inference: a page the record lacks or does not flag, a multi-page ALTO, `page` without a record
+    or on a document upload, a record that flags nothing;
+  * the batch path: `write_document_block` keys by position, holds back unflagged pages, and refuses `ocr_pages`
+    the record does not flag.
+  * Mutation-checked: skipping the flagged-page check, merging instead of replacing, and ignoring the ALTO's
+    software each fail tests.
+* **`tests/test_service_entrypoint.py`:** `test_api_entrypoint_does_not_hardcode_the_port` and
+  `test_main_block_reads_the_deployment_environment` (atrium-project#58), as the other five tool repositories have
+  them. A `--port` baked into the `api` ENTRYPOINT fails the first.
+* **Checks:** `-m "not slow"`: 2050 passed, 11 skipped, 2 xfailed; ruff clean.
+
+  Files delivered in chat.
