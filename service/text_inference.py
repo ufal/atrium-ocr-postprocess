@@ -370,8 +370,14 @@ class TextModelManager:
         parse_alto_xml also exported by service/utils.py — line granularity is
         what LayoutReader reordering and per-line classification both expect
         here (#8).
+
+        Raises ``service.utils.AltoUnreadable`` when the file is not readable as ALTO (broken
+        XML, no ``<Page>``): the service answers it with 422. An ALTO page without text is not
+        an error; it returns ``cleaned_lines: []``.
         """
-        lines, boxes, (page_w, page_h) = parse_alto_xml_lines(path)
+        # strict: an upload that is not ALTO raises AltoUnreadable (the service's 422), and a page
+        # that merely has no text still comes back as an empty result.
+        lines, boxes, (page_w, page_h) = parse_alto_xml_lines(path, strict=True)
         if not lines:
             return {"type": "alto_xml", "cleaned_lines": []}
 

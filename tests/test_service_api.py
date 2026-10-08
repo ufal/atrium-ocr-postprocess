@@ -575,3 +575,27 @@ def test_a_compressed_alto_upload_goes_to_the_document_reader(mock_alto, mock_do
     files = {"file": ("a.alto.xml.gz", compress_bytes(alto), "application/gzip")}
     assert client.post("/process", files=files).json()["type"] == "document"
     assert (mock_alto.call_count, mock_document.call_count) == (0, 1)
+
+
+# ── an ALTO upload that cannot be read is the caller's input: 422, not an empty 200 ──────────────
+@pytest.mark.parametrize(
+    "content",
+    [b"<alto><Layout><Page WIDTH=", b"<root><not-alto/></root>", b""],
+    ids=["truncated", "not-alto", "empty"],
+)
+def test_process_alto_that_cannot_be_read_is_422_malformed(content):
+    """No patching: the real parse runs first and refuses before any model would be used."""
+    files = {"file": ("p.alto.xml", content, "application/xml")}
+    response = client.post("/process", files=files, data={"task_type": "alto"})
+    assert response.status_code == 422, response.text
+    body = response.json()
+    assert body["cause"] == "malformed" and body["detail"].startswith("malformed: the ALTO upload cannot be read")
+
+
+def test_process_alto_without_text_is_still_200_with_no_lines():
+    blank = b'<alto><Layout><Page WIDTH="1000" HEIGHT="2000"><PrintSpace/></Page></Layout></alto>'
+    response = client.post(
+        "/process", files={"file": ("p.alto.xml", blank, "application/xml")}, data={"task_type": "alto"}
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["cleaned_lines"] == []

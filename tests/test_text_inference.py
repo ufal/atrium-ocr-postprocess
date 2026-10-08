@@ -314,3 +314,24 @@ def test_process_text_file_reports_a_detected_encoding(tmp_path, monkeypatch, in
     components = set()
     _manager_with_mocked_ft().process_text_file(str(path), components=components)
     assert components == {"charset_normalizer"}
+
+
+# ── an upload that is not ALTO (the service answers 422; it used to be an empty result) ──
+
+
+def test_process_alto_raises_for_a_file_that_is_not_alto(tmp_path):
+    """The parse comes first, so no model is needed to refuse a broken upload."""
+    from service.utils import AltoUnreadable
+
+    broken = tmp_path / "broken.alto.xml"
+    broken.write_text("<alto><Layout><Page WIDTH=", encoding="utf-8")
+    with pytest.raises(AltoUnreadable, match="not well-formed"):
+        TextModelManager().process_alto(str(broken))
+
+
+def test_process_alto_returns_an_empty_result_for_a_page_without_text(tmp_path):
+    blank = tmp_path / "blank.alto.xml"
+    blank.write_text(
+        '<alto><Layout><Page WIDTH="1000" HEIGHT="2000"><PrintSpace/></Page></Layout></alto>', encoding="utf-8"
+    )
+    assert TextModelManager().process_alto(str(blank)) == {"type": "alto_xml", "cleaned_lines": []}

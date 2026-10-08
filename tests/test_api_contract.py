@@ -468,3 +468,9 @@ def test_a_draining_replica_refuses_new_work_with_the_error_body():
 
 def test_info_conforms_to_the_published_schema():
     _conforms(200, client.get("/info"), path="/info", method="get")
+
+
+def test_an_alto_upload_that_cannot_be_read_conforms_to_the_published_422():
+    files = {"file": ("p.alto.xml", b"<alto><not-closed>", "application/xml")}
+    body = _conforms(422, client.post("/process", files=files, data={"task_type": "alto"}))
+    assert body["reason"] is None and body["cause"] == "malformed"

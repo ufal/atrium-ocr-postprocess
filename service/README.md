@@ -159,7 +159,8 @@ are assigned by a fast CPU pre-filter before any model inference. The remaining 
   to be read as `text`). An unsupported file (image, legacy `.doc`, other binary) is a `415`
   `unsupported_media_type` naming the reader's code (a `400` before round 2); a document over a
   [limit](#limits) is a `413` (`422` for the reader's time limit) with `reason: "limit_exceeded"`; an
-  unreadable document (encrypted, corrupt, no text) or a JSON upload that does not parse is a `422`. See
+  unreadable document (encrypted, corrupt, no text), a JSON upload that does not parse or an ALTO upload that
+  is not ALTO (broken XML, no `<Page>`; `cause: "malformed"`) is a `422`. See
   [Errors](#errors).
 * `document_json` (optional): a baseline ATRIUM document record, or an AMČR seed (`doc_id`, `source`). The
   response then carries `document_json`: the record with this tool's `pages`/`lines` fields merged in, and
@@ -584,7 +585,7 @@ as `accepted`.
 | 415  | `unsupported_media_type` | a kind of file this service does not read (`binary_content`, `image_needs_ocr`, `legacy_office_unsupported`, `archive_unsupported`); a 400 before round 2                      |
 | 422  | `invalid_record`         | the `document_json` / `document_record` part cannot be opened (not UTF-8 JSON, not an object, a newer `schema_version` major)                                                  |
 | 422  | `limit_exceeded`         | the PDF reader's time limit (`timeout`)                                                                                                                                        |
-| 422  | `null`                   | a supported file that cannot be read (`corrupt`, `encrypted`, `malformed`, `no_text`, …), a JSON upload that does not parse, or request validation (an unknown `task_type`, …) |
+| 422  | `null`                   | a supported file that cannot be read (`corrupt`, `encrypted`, `malformed`, `no_text`, …), a JSON upload that does not parse, an ALTO upload that is not ALTO (`malformed`), or request validation (an unknown `task_type`, …) |
 | 500  | `null`                   | processing failure                                                                                                                                                             |
 | 501  | `null`                   | this deployment lacks a reader's optional dependency (`dependency_missing`: pypdfium2, lxml); a 400 before round 2                                                             |
 | 503  | `null`                   | the replica is shutting down — retry against a live one                                                                                                                        |

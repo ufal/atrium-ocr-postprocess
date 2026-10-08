@@ -8,6 +8,7 @@ import pytest
 pytest.importorskip("lxml")
 
 from service.utils import (  # noqa: E402
+    AltoUnreadable,
     normalize_boxes,
     parse_alto_xml,
     parse_alto_xml_lines,
@@ -134,6 +135,38 @@ def test_parse_lines_missing_page_returns_empty(tmp_path):
 def test_parse_lines_malformed_xml_returns_empty(tmp_path):
     lines, boxes, dims = parse_alto_xml_lines(_write(tmp_path, "bad.xml", "<alto><not-closed>"))
     assert lines == [] and boxes == [] and dims == (0, 0)
+
+
+# strict=True is what the service's process_alto passes: a file that is not ALTO raises instead of
+# coming back as the blank page it is indistinguishable from.
+@pytest.mark.parametrize(
+    "content, why",
+    [
+        ("<alto><not-closed>", "not well-formed"),
+        ("<alto><Layout/></alto>", "no <Page>"),
+        ('<alto><Layout><Page WIDTH="wide" HEIGHT="2000"/></Layout></alto>', "not a number"),
+        ("", "not well-formed"),
+    ],
+    ids=["broken-xml", "no-page", "bad-size", "empty-file"],
+)
+def test_strict_parse_raises_for_a_file_that_is_not_alto(tmp_path, content, why):
+    with pytest.raises(AltoUnreadable, match=why):
+        parse_alto_xml_lines(_write(tmp_path, "x.xml", content), strict=True)
+
+
+def test_strict_parse_still_returns_a_page_without_text_as_empty(tmp_path):
+    blank = '<alto><Layout><Page WIDTH="1000" HEIGHT="2000"><PrintSpace/></Page></Layout></alto>'
+    lines, boxes, dims = parse_alto_xml_lines(_write(tmp_path, "blank.xml", blank), strict=True)
+    assert lines == [] and boxes == [] and dims == (1000, 2000)
+
+
+def test_strict_parse_of_valid_alto_is_the_lenient_result(tmp_path):
+    path = _write(tmp_path, "a.xml", _ALTO_BASIC)
+    assert parse_alto_xml_lines(path, strict=True) == parse_alto_xml_lines(path)
+
+
+def test_alto_unreadable_is_a_value_error():
+    assert issubclass(AltoUnreadable, ValueError)
 
 
 def test_parse_lines_does_not_resolve_external_entities_xxe(tmp_path):

@@ -56,11 +56,15 @@ output CSVs contain — and links here for the decision logic itself.
 > `classify_TEXT.score_line()`, which is the single implementation of "how a line becomes
 > a category". Three entry points call it and none of them reimplements it:
 >
-> | Caller                           | Role                            | Where the model values come from                     |
-> |----------------------------------|---------------------------------|------------------------------------------------------|
-> | `classify_TEXT.py`               | the batch pipeline (Step 4.1)   | FastText + the perplexity LM, live                   |
-> | `tools/recategorize_from_csv.py` | the offline re-scorer           | the frozen `orig_lang_score` / `perplex` CSV columns |
-> | `service/text_inference.py`      | the FastAPI `/process` endpoint | FastText + the LM, per request                       |
+> | Caller                           | Role                                                 | Where the model values come from                     |
+> |----------------------------------|------------------------------------------------------|------------------------------------------------------|
+> | `classify_TEXT.py`               | the batch pipeline (Step 4.1)                        | FastText + the perplexity LM, live                   |
+> | `tools/recategorize_from_csv.py` | the offline re-scorer                                | the frozen `orig_lang_score` / `perplex` CSV columns |
+> | `service/text_inference.py`      | the FastAPI `/process` and `/score_record` endpoints | FastText + the LM, per request                       |
+>
+> `/score_record` scores the lines of a record another tool wrote (a born-digital record's, atrium-digital-convert#4)
+> with these same constants and no reading, splitting or reordering; a line carrying the converter's decode verdict
+> (`Garbage`, `Inverted`) is left as it is.
 >
 > Only the *model-derived* inputs differ — language, language confidence and perplexity.
 > Every other signal is recomputed from the text by the same code, so the three agree by
@@ -81,6 +85,7 @@ output CSVs contain — and links here for the decision logic itself.
 - [Why notation is *not* exempt from `rule_hard_sweep`](#why-notation-is-not-exempt-from-rule_hard_sweep)
 - [Page-relative perplexity (default OFF)](#page-relative-perplexity-default-off)
 - [Post-Processing Smoothing](#post-processing-smoothing)
+- [Configuration invariants, and what is frozen](#configuration-invariants-and-what-is-frozen)
 
 ---
 
@@ -663,3 +668,24 @@ still referenced the now-removed "Override 4" clean-prose promotion and the old 
 | Page-context rules                               | Post-processing pass 3, `classify_TEXT.py`                           | `PAGE_GARBAGE_CLEAR_MAX`, `PAGE_GARBAGE_LANG_MAX`, `PAGE_GARBAGE_MEDIAN_QS_MAX`, `PAGE_GARBAGE_NOISY_QS_MAX`, `PAGE_CLEAN_CLEAR_MIN`, `PAGE_CLEAN_MEDIAN_QS_MIN`, `PAGE_CLEAN_RECOVER_QS_MIN` | Symmetric garbage-page-pulls-down / clean-page-promotes-up rules, run **after** dedup and rolling-window smoothing, **before** the inverted-scan sweep. Recorded as `pp_page_context`.                                                                                                               |
 | Page-level inverted-scan sweep                   | Post-processing pass 4, `classify_TEXT.py`                           | `ROT_RATIO_INVERTED_MIN`, `PPL_INVERTED_MIN`, `LANG_SCORE_ROUGH`, `ROT_HIGH_LANG_CONF`, `INVERTED_RUN_MIN`, `INVERTED_PAGE_MAJORITY`                                                          | Three arms (diacritic-absence, perplexity/weirdness, rotation) — see above. Suspicious lines Trashed via page-majority (checked first) or a run of ≥ 4. Recorded as `pp_inverted_run`.                                                                                                               |
 | Header/footer deduplication                      | Post-processing pass 1, `classify_TEXT.py`                           | none                                                                                                                                                                                          | Based on **exact text match** across the whole document; harmonises to modal category. Recorded as `pp_dedup`. Runs **first**, before the other three passes.                                                                                                                                        |
+
+---
+
+## Configuration invariants, and what is frozen
+
+**Two orderings must hold:** `CATEG_TRASH_SCORE_MAX < CATEG_NOISY_SCORE_MAX` and
+`SHORT_PPL_CAP < PERPLEXITY_THRESHOLD_MAX`. `tools/recategorize_from_csv.py` refuses candidate constants that
+break either (`validate_constants()`); the service and the batch pipeline read `setup/config.txt` without that
+check, so verify both when you edit it.
+
+**Where the original request (ocr-postprocess#1) landed.** Digits glued to letters and symbols inside words are
+separate measures: `detect_letter_digit_letter` counts the letter–digit–letter sandwiches (`ldl_fuses` in the CSV
+and the API), and `detect_strange_symbols` counts the symbols (`sym_count`, which the service reports and does not
+score); the garbage density, which is scored, counts the non-alphanumeric characters over the whole line. A poorly scored language is not ignored
+but discounted: the guards read the trust score, not the stored `lang_score`
+([Two-tier trust score](#two-tier-trust-score--not-the-stored-lang_score)).
+
+**Frozen for the pilot.** The category semantics are frozen for the S2 pilot (the decision of 2026-09-30 on
+ocr-postprocess#2). A change after it is measured on a corpus diff with `tools/corpus_change.py`. Validating the
+categories on a gold set and fine-tuning a model on it (ocr-postprocess#4) are deferred by the AMČR baseline
+(atrium-project#67).

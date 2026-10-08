@@ -1413,3 +1413,40 @@ week, ≈ 2026-10-02). Recorded in the #30 digest and plan; nothing switched on.
 * **Checks:** `-m "not slow"`: 2050 passed, 11 skipped, 2 xfailed; ruff clean.
 
   Files delivered in chat.
+
+## 2026-10-07 (later) — A malformed ALTO is a 422; the category doc closes its open asks
+* **A malformed ALTO upload answered 200 with no lines.** `parse_alto_xml_lines()` returned `([], [], (0, 0))` for
+  broken XML, a file with no `<Page>` and a non-numeric page size, which is also what a blank page looks like, so
+  `POST /process` with `task_type=alto` (or an ALTO that the sniffer let through) came back as an empty success. A
+  JSON upload that does not parse was already a 422.
+  * `service/utils.py`: `AltoUnreadable(ValueError)`, and `parse_alto_xml_lines(path, *, strict=False)`. Lenient stays
+    the default, so every other reader of the function is unchanged; `strict=True` raises on the three cases.
+  * `service/text_inference.py`: `process_alto` parses strictly, before any model is touched. A page that is ALTO but
+    has no text still returns `cleaned_lines: []`.
+  * `service/text_api.py`: the alto branch answers `AltoUnreadable` with 422, `cause: "malformed"`, detail
+    `malformed: the ALTO upload cannot be read: …`, as the JSON branch does. The exception is imported from
+    `service.utils`: `text_inference` imports its parser from that path, and a class matched by identity must be the
+    one that raised.
+  * Spec unchanged (`atrium_openapi.py check`: current); `service/README.md` names the case in both places that list
+    the 422s.
+* **Tests (11 new):** `tests/test_service_utils.py` (strict raises for broken XML, no page, bad size, an empty file;
+  a blank page and valid ALTO are unchanged), `tests/test_text_inference.py` (`process_alto` raises without any model;
+  a blank page is an empty result), `tests/test_service_api.py` (422 for a truncated, a non-ALTO and an empty upload,
+  with the real parse; a blank page is still 200), `tests/test_api_contract.py` (the 422 conforms to the published
+  schema). The four API tests fail on `test` (`8bb4c91`) and pass now.
+* **`docs/categorization_logic.md`** (ocr-postprocess#1, #2, #5):
+  * `/score_record` joins the callers of the one scoring step, with what it does to a born-digital record's lines;
+  * a closing section: the two orderings the constants must keep (`CATEG_TRASH_SCORE_MAX < CATEG_NOISY_SCORE_MAX`,
+    `SHORT_PPL_CAP < PERPLEXITY_THRESHOLD_MAX`) and that only `tools/recategorize_from_csv.py` enforces them, where
+    the two opening prompts of #1 landed (`ldl_fuses`, `sym_count`, the trust score), and that the semantics are
+    frozen for the pilot while gold validation (#4) is deferred.
+  * Not done, on purpose: refusing a bad ordering at import. `tests/test_config_constants.py` sets `SHORT_PPL_CAP`
+    above the threshold to test the reader, and a failure at import would also stop stage-16 runs that vary constants
+    through `ATRIUM_TEXT_UTILS_*`. A choice for the time-box release, not a fix to slip in.
+* **Checks:** full suite 2083 tests, 0 failures, 15 skipped (PIL, sklearn, optuna, SALib and korektor are not in the
+  test venv); ruff check and format clean.
+* The 16 October time-box release (#1, #2, #3, #5) is the maintainer's; the version bump and its CONTRIBUTING row are
+  not made here.
+* **Dev logs:** the pairs of #1 to #5 refreshed. #6 was closed today (14:05); its pair can be deleted.
+
+  Files delivered in chat.

@@ -108,6 +108,11 @@ from document_hook import (  # noqa: E402
     write_document_block,
     write_scores,
 )
+
+# `service.utils`, not the bare `utils` above, on purpose: text_inference.py imports its
+# parser from the package path, and an exception is matched by class object, so this must be
+# the module that raises it.
+from service.utils import AltoUnreadable  # noqa: E402
 from text_formats import (  # noqa: E402
     COMPRESSION_SUFFIXES,
     READERS,
@@ -999,7 +1004,15 @@ async def process_document(
         # an event-loop callback — could not run until the whole document finished, which
         # made --timeout-graceful-shutdown meaningless here.
         if task_type == "alto":
-            result = await asyncio.to_thread(text_manager.process_alto, tmp_path, notes=notes)
+            # An upload that is not ALTO (broken XML, no <Page>) is the caller's input: 422, as a
+            # JSON upload that does not parse. It used to come back as 200 with no lines, which
+            # reads as a blank page.
+            try:
+                result = await asyncio.to_thread(text_manager.process_alto, tmp_path, notes=notes)
+            except AltoUnreadable as exc:
+                raise AtriumHTTPError(
+                    422, f"malformed: the ALTO upload cannot be read: {exc}.", cause="malformed"
+                ) from exc
         elif task_type == "json":
             # A JSON upload that does not decode or parse is the caller's input, not our
             # failure: a 422 with the reader codes the other paths use (it was the catch-all
