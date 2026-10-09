@@ -1,8 +1,8 @@
 cff-version: 1.2.0
 message: "If you use this software, please cite it as below."
 title: "ATRIUM's OCR-output postprocessor: a tool to extract contents, fix word splits, and categorize textlines by language & severity of OCR errors, for ALTO XML and other OCR and text-bearing formats."
-version: "1.9.1-beta"
-date-released: "2026-10-05"
+version: "1.10.0-beta"
+date-released: "2026-10-09"
 authors:
   - family-names: "Lutsai"
     given-names: "Kateryna"
