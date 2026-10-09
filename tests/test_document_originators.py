@@ -1384,4 +1384,3 @@ def test_quality_summary_is_deterministic_and_reads_nothing_else():
     assert quality_summary(noisy) == first
     assert first["pages"]["median"] == 0.7
     assert "band" not in json.dumps(first)
-
