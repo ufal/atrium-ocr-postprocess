@@ -1450,3 +1450,22 @@ week, ≈ 2026-10-02). Recorded in the #30 digest and plan; nothing switched on.
 * **Dev logs:** the pairs of #1 to #5 refreshed. #6 was closed today (14:05); its pair can be deleted.
 
   Files delivered in chat.
+
+## 2026-10-09 — The record's `quality_summary` (atrium-project#73 R6); v1.10.0-beta
+* **`document_hook.py`:** `_set_quality_summary()` sets the block to `atrium_document.quality_summary()` of the record
+  as written. `write_document_block()` calls it when the call wrote `pages` or `lines` (after the §1a guard, so a
+  born-digital record whose OCR rows were dropped gets none); `write_scores()` always. That covers `/process`,
+  `/score_record` and every batch stage. The block is this repository's on every origin (`BLOCK_OWNERS`), so a
+  scored born-digital record carries one, its `Garbage` / `Inverted` lines counted in `by_categ`.
+* **Tests:** `tests/test_quality_summary.py` (8): an OCR write, a later stage recomputing it, a write without pages or
+  lines, the guarded born-digital write, `write_scores()` and `/score_record` on a born-digital record, determinism, an
+  OCR record re-scored.
+* **Docs:** README "Document record schema", `service/README.md` (`document_json`, `/score_record`).
+* `atrium_document.py`, `atrium_document.schema.json`, `service/atrium_service.py`,
+  `tests/test_document_originators.py` and `tests/test_schema_freeze.py` re-vendored from the hub;
+  `service/openapi.json` regenerated.
+* **Version `v1.10.0-beta`:** `CITATION.cff`, the `CONTRIBUTING.md` row, `setup/para_config.txt`, the spec's
+  `info.version`. It can be the 16 October time-box release (#1, #2, #3, #5).
+* **Checks:** 2091 passed, 11 skipped, 2 xfailed; ruff check and format clean; spec current; image closure OK.
+
+  Files delivered in chat.

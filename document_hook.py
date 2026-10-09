@@ -27,6 +27,12 @@ atrium-llm-enrich#13's "normalise the alto-postprocess program names" TODO is do
 (#31 Phase 4) `SOURCE_ORIGIN_BY_KIND` — a per-kind `source.origin` override for the
 text-lines inputs — is parsed and resolved here (`parse_origin_by_kind`,
 `resolve_input_origin`), so text_split.py and the service agree on it.
+
+(atrium-project#73 R6) Both record writers, `write_document_block()` and `write_scores()`, end by
+setting this repo's `quality_summary` block — `atrium_document.quality_summary()` of the record as
+written — whenever the call wrote `pages` or `lines`, so `/process`, `/score_record` and every batch
+stage leave the summary in step with the fields it reads, on both branches. It is numbers only: no
+band, no threshold, and nothing here or elsewhere reads it to route or refuse a document.
 """
 
 from __future__ import annotations
@@ -41,6 +47,7 @@ from atrium_document import (
     DocumentRecord,
     load_document,
     ocr_handoff_pages,
+    quality_summary,
     resolve_originator,
     validate_baseline,
     validate_document,
@@ -359,6 +366,14 @@ def _handoff_writes(
     return merges, replace, notes
 
 
+def _set_quality_summary(doc: DocumentRecord) -> None:
+    """(atrium-project#73 R6) The record's `quality_summary`, recomputed from its pages and lines."""
+    doc.set_block(
+        "quality_summary",
+        quality_summary({"pages": doc.get_block("pages") or [], "lines": doc.get_block("lines") or []}),
+    )
+
+
 def write_document_block(
     document_json_dir: str,
     doc_id: str,
@@ -503,6 +518,9 @@ def write_document_block(
             # (W4) The flagged pages' lines are what the OCR read on them, and nothing else.
             doc.replace_page_rows("lines", replace_pages, replace_lines)
             doc.assert_fields_survived("lines", replace_lines)
+        wrote = set(set_blocks or {}) | {block for block, rows in (merge_blocks or {}).items() if rows}
+        if replace_pages or wrote & {"pages", "lines"}:
+            _set_quality_summary(doc)
         _validate_own_output(doc, baseline_was_invalid)
         # Explicitly, and to `path` (#68): see the docstring. __exit__ then has nothing left to do.
         return doc.finalize(path)
@@ -592,6 +610,7 @@ def write_scores(
         if page_rows:
             doc.merge_block("pages", page_rows, key_fields=["page"], own_fields=SCORE_PAGE_FIELDS)
             doc.assert_fields_survived("pages", page_rows)
+        _set_quality_summary(doc)
         _validate_own_output(doc, baseline_was_invalid)
         return doc.finalize(path)
 

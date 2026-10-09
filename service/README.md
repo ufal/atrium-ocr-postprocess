@@ -163,8 +163,8 @@ are assigned by a fast CPU pre-filter before any model inference. The remaining 
   is not ALTO (broken XML, no `<Page>`; `cause: "malformed"`) is a `422`. See
   [Errors](#errors).
 * `document_json` (optional): a baseline ATRIUM document record, or an AMČR seed (`doc_id`, `source`). The
-  response then carries `document_json`: the record with this tool's `pages`/`lines` fields merged in, and
-  `source` given what it lacks. This service reads the source, so it records `source.origin`; every value
+  response then carries `document_json`: the record with this tool's `pages`/`lines` fields merged in, its
+  `quality_summary` recomputed from them (atrium-project#73; numbers only), and `source` given what it lacks. This service reads the source, so it records `source.origin`; every value
   the record already has is kept (first writer wins), and the upload's `sha256` never joins a seed's
   `sha512`, since the ALTO is not the archive's original (atrium-project#71). A
   record that cannot be opened (not JSON, not an object, a newer `schema_version` major) is a `422`
@@ -298,7 +298,10 @@ curl -X POST "http://localhost:8000/score_record" \
   `pages[].quality_score` / `quality_band`, on rows the record already has — never `text`, never `bbox`, never a new
   row, never `source`. On a born-digital record that is the shared module's scoring co-contribution
   (`atrium_document.SCORING_FIELDS`): the record stays atrium-digital-convert's, and the block's stamp reads
-  `"program": "ocr-postprocess", "contribution": "scoring"`.
+  `"program": "ocr-postprocess", "contribution": "scoring"`. The record's `quality_summary` block
+  (atrium-project#73), this tool's on every origin, is recomputed from the scored record: page and line
+  totals, the mean/median/min/max of the pages' `quality_score`, and the lines per `categ`, the decode verdicts
+  included.
 * **Out** (`ScoreRecordResponse`): `cleaned_lines` (every `AltoLine` field plus the record's `page` and `line`; `line_num`
   restarts per page), `pages` (`lines_scored`, `skipped_decode_verdict`, `skipped_empty`, `quality_score`,
   `quality_band`), `limits_applied`, `document_json` (the record, scored; as sent when nothing was scored) and
