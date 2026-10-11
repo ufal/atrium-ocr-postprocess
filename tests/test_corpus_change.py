@@ -24,7 +24,15 @@ What must not fail silently:
    and the ``Clear``-loss change), refuses an unknown constant, an undefined arm
    and an unexpected unreadable document, and gives the same answer in one
    process and in a pool -- with the real engine, where ``LOWPPL_CLEAR_MAX`` 50
-   against the shipped 35 moves no category of the sample documents.
+   against the shipped 35 moves no category of the sample documents;
+9. ``reach --page-ref`` publishes per page exactly what ``aggregate_STAT`` does
+   (the batch score over Clear and Noisy lines) and the band
+   ``document_hook.quality_band`` does, counts band flips and score moves per
+   pair, and scores the labelled pages; ``pagecheck`` applies stage 17's rule
+   (GO / HOLD / REVERT, record-only arms never decide);
+10. ``recat --expect-missing`` and ``diff --skip`` / ``--summary-only`` -- the
+    options stage 18 needs for the one unreadable document and the
+    whole-corpus release diff.
 """
 
 from __future__ import annotations
@@ -444,6 +452,9 @@ def test_sample_is_seeded_and_respects_the_exclusion(corpus, tmp_path):
 # ---------------------------------------------------------------------------
 
 
+_FAKE_QS = {"Clear": 0.9, "Noisy": 0.6, "Trash": 0.3}
+
+
 def _fake_categorise(frame, constants):
     """Stand-in engine: an arm that overrides LOWPPL_CLEAR_MAX sends every `x...` line to Trash."""
     cats = [str(c) for c in frame["categ"].tolist()]
@@ -452,7 +463,7 @@ def _fake_categorise(frame, constants):
         for i, text in enumerate(frame["text"].tolist()):
             if text.startswith("x"):
                 cats[i], flags[i] = "Trash", "pp_page_context"
-    return cats, flags
+    return cats, flags, [_FAKE_QS.get(c, 0.0) for c in cats]
 
 
 @pytest.fixture
@@ -594,3 +605,205 @@ def test_reach_real_engine_agrees_in_and_out_of_process(tmp_path):
             )
         )
     assert outputs[0] == outputs[1]
+
+
+# ---------------------------------------------------------------------------
+# 9. reach --page-ref and pagecheck
+# ---------------------------------------------------------------------------
+
+
+def _read_gz(path: Path) -> list[dict]:
+    import gzip
+
+    with gzip.open(path, "rt", encoding="utf-8", newline="") as fh:
+        return list(csv.DictReader(fh))
+
+
+def test_quality_band_is_document_hooks():
+    import document_hook
+
+    for c in range(4):
+        for n in range(4):
+            for t in range(4):
+                assert cc.quality_band(c, n, t) == document_hook.quality_band(c, n, t)
+
+
+def test_reach_pages_publish_scores_bands_flips_and_labelled_pages(reach_inputs, monkeypatch):
+    monkeypatch.setattr(cc, "_categorise", _fake_categorise)
+    rc = _reach(
+        reach_inputs,
+        "--pair", "base", "arm",
+        "--labels", "gold", str(reach_inputs["labels"]),
+        "--expect-unreadable", "CTX199900004.csv",
+        "--page-ref", "base", "--page-min-labelled", "1", "--page-min-coverage", "0.5",
+        "--workers", "1",
+    )  # fmt: skip
+    assert rc == 0
+    out = reach_inputs["out"]
+    ref = {(r["doc"], r["page_num"]): r for r in _read_gz(Path(f"{out}_pages_base.csv.gz"))}
+    assert set(ref) == {("CTX200100001", "1"), ("CTX200100001", "2"), ("CTX200100002", "1"), ("CTX199900003", "3")}
+    p1 = ref[("CTX200100001", "1")]
+    assert (p1["lines"], p1["clear"], p1["batch_score"], p1["service_score"], p1["band"]) == (
+        "2",
+        "2",
+        "0.9000",
+        "0.9000",
+        "Clear",
+    )
+    assert ref[("CTX199900003", "3")]["band"] == "Noisy" and ref[("CTX199900003", "3")]["collection"] == "arub"
+
+    changed = {(r["doc"], r["page_num"]): r for r in _read_gz(Path(f"{out}_base__arm_pages.csv.gz"))}
+    assert set(changed) == {("CTX200100001", "1"), ("CTX200100001", "2"), ("CTX199900003", "3")}
+    # One of two Clear lines to Trash: the batch score keeps its Clear line, the service score averages both.
+    c1 = changed[("CTX200100001", "1")]
+    assert (c1["band_ref"], c1["band_arm"], c1["batch_arm"], c1["service_arm"], c1["d_clear"], c1["d_trash"]) == (
+        "Clear", "Clear", "0.9000", "0.6000", "-1", "1"
+    )  # fmt: skip
+    assert changed[("CTX200100001", "2")]["batch_arm"] == ""  # no text line left on the page
+
+    pages = json.loads(Path(f"{out}_summary.json").read_text(encoding="utf-8"))["pages"]
+    assert pages["arms"]["base"]["pages"] == 4 and pages["arms"]["base"]["bands"] == {"Clear": 2, "Noisy": 2}
+    assert pages["arms"]["arm"]["bands"] == {"Clear": 2, "Trash": 2}
+    assert pages["reference_by_collection"] == {"arub": {"Noisy": 1}, "arup": {"Clear": 2, "Noisy": 1}}
+    pp = pages["pairs"]["base->arm"]
+    assert (pp["pages_changed"], pp["band_flips"], pp["band_transitions"]) == (3, 2, {"Noisy->Trash": 2})
+    assert pp["batch_moved_ge_0.05"] == 2
+    gold = pages["labelled"]["gold"]
+    assert (gold["base"]["pages"], gold["base"]["band_agree"], gold["base"]["clear_share_mae"]) == (4, 2, 0.5)
+    assert (gold["arm"]["band_agree"], gold["arm"]["clear_share_mae"], gold["arm"]["trash_share_mae"]) == (2, 0.25, 0.5)
+    rows = _read_csv(Path(f"{out}_labelled_pages.csv"))
+    assert len(rows) == 4 and {"human_Trash", "base_Clear", "arm_Trash"} <= set(rows[0])
+
+
+def test_labelled_page_metrics_skip_thin_pages():
+    row = ("gold", "arup", "D", "1", 10, 4, 4, 0, 0, 0, 0, 4, 0, 0, 0, 0)
+    assert cc.labelled_page_metrics([row], ["a"], 5, 0.8) == {}
+    assert cc.labelled_page_metrics([row], ["a"], 4, 0.4)["gold"]["a"]["band_agreement"] == 1.0
+
+
+def _page_summary(arm_lines: dict, flips: int, moved: int, e2: dict, revert_lines: dict | None = None) -> dict:
+    base = {"pages": 10, "band_pages": 10, "band_agree": 8, "clear_abs": 1.0, "trash_abs": 1.0, "clear_signed": 0.0}
+    labelled = {"gold": {"ship": dict(base), "cand": {**base, **e2}, "old": dict(base), "fl": dict(base)}}
+    pairs = {
+        "ship->cand": {"labelled": arm_lines},
+        "ship->fl": {"labelled": {"gold": {"fixed": 9, "broken": 0, "neither": 0, "clear_loss": 0}}},
+    }
+    page_pairs = {
+        "ship->cand": {"pages_changed": flips + moved, "band_flips": flips, "abs_dbatch_hist": {"7": moved}},
+        "ship->fl": {"pages_changed": 900, "band_flips": 900, "abs_dbatch_hist": {"9": 900}},
+    }
+    if revert_lines is not None:
+        pairs["ship->old"] = {"labelled": revert_lines}
+        page_pairs["ship->old"] = {"pages_changed": 1, "band_flips": 0, "abs_dbatch_hist": {"1": 1}}
+    return {
+        "pairs": pairs,
+        "pages": {"reference": "ship", "arms": {"ship": {"pages": 1000}}, "pairs": page_pairs, "labelled": labelled},
+    }
+
+
+def test_pagecheck_go_hold_revert_and_record_only():
+    good = {"gold": {"fixed": 5, "broken": 1, "neither": 0, "clear_loss": 0}}
+    kw = {"revert_arm": "old", "record_only": ["fl"], "page_sources": ["gold"]}
+    keep = {"gold": {"fixed": 0, "broken": 3, "neither": 0, "clear_loss": 0}}
+    # material (12 of 1,000 flip), better lines, labelled pages not worse -> HOLD
+    res = cc.pagecheck(_page_summary(good, 12, 0, {}, keep), "ship", **kw)
+    assert res["verdict"] == "HOLD" and res["qualifying"] == ["cand"]
+    # the floor arm qualifies on paper but is record only
+    assert next(e for e in res["pairs"] if e["arm"] == "fl")["role"] == "record only"
+    # immaterial -> GO
+    assert cc.pagecheck(_page_summary(good, 1, 2, {}, keep), "ship", **kw)["verdict"] == "GO"
+    # labelled pages worse -> GO (the candidate does not qualify)
+    res = cc.pagecheck(_page_summary(good, 12, 0, {"band_agree": 7}, keep), "ship", **kw)
+    assert res["verdict"] == "GO" and "labelled pages worse" in "; ".join(res["pairs"][0]["reasons"])
+    # a source with Clear-loss -> GO
+    loss = {"gold": {"fixed": 5, "broken": 1, "neither": 0, "clear_loss": 1}}
+    assert cc.pagecheck(_page_summary(loss, 12, 0, {}, keep), "ship", **kw)["verdict"] == "GO"
+    # against the state before it the shipped change is net broken on gold -> REVERT
+    broke = {"gold": {"fixed": 4, "broken": 1, "neither": 0, "clear_loss": 0}}
+    res = cc.pagecheck(_page_summary(good, 1, 0, {}, broke), "ship", **kw)
+    assert res["verdict"] == "REVERT"
+    assert res["pairs"][-1]["reasons"] == ["the shipped change is net broken on gold"]
+
+
+def test_pagecheck_cli_writes_the_decision(tmp_path):
+    good = {"gold": {"fixed": 5, "broken": 1, "neither": 0, "clear_loss": 0}}
+    path = tmp_path / "s.json"
+    path.write_text(json.dumps(_page_summary(good, 1, 0, {})), encoding="utf-8")
+    argv = ["pagecheck", "--summary", str(path), "--ref", "ship", "--page-sources", "gold"]
+    assert cc.main([*argv, "--record-only", "fl", "--out-prefix", str(tmp_path / "17")]) == 0
+    assert json.loads((tmp_path / "17_decision.json").read_text(encoding="utf-8"))["verdict"] == "GO"
+    assert (tmp_path / "17_decision.md").read_text(encoding="utf-8").startswith("# Page-level decision: **GO**")
+    assert cc.main([*argv, "--ref", "other", "--out-prefix", str(tmp_path / "x")]) == 2
+
+
+def test_reach_pages_match_aggregate_stat_on_the_real_engine(tmp_path):
+    pd = pytest.importorskip("pandas")
+    samples = _ROOT / "data_samples" / "DOC_LINE_CATEG"
+    names = sorted(p.name for p in samples.glob("CTX00000000[123].csv"))
+    if len(names) != 3:
+        pytest.skip("the committed sample documents are not present")
+    import aggregate_STAT
+    import document_hook
+
+    inputs = {"arup": tmp_path / "arup", "arub": tmp_path / "arub", "out": tmp_path / "o" / "17"}
+    for name, coll in zip(names, ("arup", "arup", "arub"), strict=True):
+        inputs[coll].mkdir(exist_ok=True)
+        (inputs[coll] / name).write_bytes((samples / name).read_bytes())
+    arms = (("ship",), ("p50", "LOWPPL_CLEAR_MAX=50.0"))
+    assert _reach(inputs, "--pair", "ship", "p50", "--page-ref", "ship", "--workers", "1", arms=arms) == 0
+    table = {(r["doc"], r["page_num"]): r for r in _read_gz(Path(f"{inputs['out']}_pages_ship.csv.gz"))}
+
+    engine = cc._engine_module()
+    numeric = [
+        "quality_score",
+        "word_count",
+        "char_count",
+        "word_weird",
+        "lang_score",
+        "perplex",
+        "vowel_ratio",
+        "rot_ratio",
+    ]
+    checked = 0
+    for name in names:
+        frame = pd.read_csv(samples / name, dtype=str, keep_default_na=False)
+        new = engine.recategorize_dataframe(frame)
+        for col in numeric:
+            new[col] = pd.to_numeric(new[col], errors="coerce")
+        stats = aggregate_STAT._sum_metrics(new, ["Clear", "Noisy", "Trash", "Non-text", "Empty"])
+        for _, row in stats.iterrows():
+            ours = table[(str(row["file"]), str(row["page_num"]))]
+            if pd.notna(row["avg_quality_score"]):
+                assert abs(float(ours["batch_score"]) - row["avg_quality_score"]) < 1e-4
+            else:
+                assert ours["batch_score"] == ""
+            c, n, t = int(row["Clear"]), int(row["Noisy"]), int(row["Trash"])
+            assert (int(ours["clear"]), int(ours["noisy"]), int(ours["trash"])) == (c, n, t)
+            if c + n + t:
+                assert ours["band"] == document_hook.quality_band(c, n, t)
+            checked += 1
+    assert checked == len(table) and checked > 0
+
+
+# ---------------------------------------------------------------------------
+# 10. recat --expect-missing, diff --skip / --summary-only
+# ---------------------------------------------------------------------------
+
+
+def test_recat_expect_missing_is_not_attempted_and_not_a_failure(corpus):
+    assert _recat(corpus, "--expect-missing", "CTX200100004.csv") == 0
+    assert not (corpus["out"] / "CTX200100004.csv").exists()
+    linked = [p.name for d in (corpus["work"] / "shards").iterdir() for p in d.iterdir()]
+    assert "CTX200100004.csv" not in linked
+    assert _recat(corpus, "--expect-missing", "CTX299999999.csv") == 2
+
+
+def test_diff_skip_and_summary_only(trees):
+    for side in ("base", "arm"):
+        (trees[side] / "arub" / "CTX198503026.csv").write_text("categ,file,text\nClear,x,y\n", encoding="utf-8")
+    assert _diff(trees) == 2
+    assert _diff(trees, "--skip", "CTX198503026.csv", "--summary-only", "--verify") == 0
+    summary = json.loads((trees["out"] / "d_summary.json").read_text(encoding="utf-8"))
+    assert summary["skipped"] == ["CTX198503026.csv"] and summary["changes_written"] is False
+    assert summary["overall"]["changed_lines"] == 3 and summary["verify"]["agree"] is True
+    assert _read_csv(trees["out"] / "d_changes.csv") == []

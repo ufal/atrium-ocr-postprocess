@@ -13,8 +13,8 @@ neither sidecar contains (digest AG1-AG3). His scripts lived on his machine. Thi
 tool is that method inside the repository, so every arm stage 16 runs is measured
 the same way, and his labels can score any arm whose changes they cover.
 
-Six subcommands
----------------
+Seven subcommands
+-----------------
 ``recat``
     Sharded, resumable runner around ``tools/recategorize_from_csv.py``. The
     re-scorer is one sequential process; a collection of 113k documents wants N.
@@ -26,6 +26,9 @@ Six subcommands
     environment (``ATRIUM_TEXT_UTILS_*``, inherited) and, for tunables,
     ``--override``. ``--infer-string false`` sets pandas'
     ``future.infer_string = False`` in every shard, as David's wrapper did.
+    ``--expect-missing`` names documents known not to re-score (stage 18's
+    ``CTX198503026.csv``): they are not attempted and not a failure; the caller
+    decides what goes in their place.
 
 ``diff``
     Joins two re-scored trees document by document on ``(page_num, line_num)``
@@ -35,7 +38,9 @@ Six subcommands
     ``--verify`` recounts every transition through a second, independent reader
     (pandas, a dict keyed on the locator -- David's ``cmp_full.py`` semantics,
     where the first pass is positional -- his ``nezavisle.py``) and fails if the
-    two disagree.
+    two disagree. ``--skip`` leaves named documents out; ``--summary-only``
+    counts every change but writes no changed line, for whole-corpus diffs such
+    as stage 18's 307 -> 1110 release record.
 
 ``score``
     Scores a changed-line list against annotated sheets in David's format: TOP
@@ -80,8 +85,27 @@ Six subcommands
     the ones that are known (``CTX198503026.csv`` in ``DOC_LINE_CATEG_307``: no
     ``page_num`` / ``line_num``), and any other exits 3.
 
+    ``--page-ref ARM`` adds the pages (issue #3 stage 17): per arm and page,
+    what the pipeline publishes -- the batch score (mean ``quality_score`` over
+    Clear and Noisy lines, ``aggregate_STAT``), the service score (mean over
+    every scored line, ``service/text_api``) and the band (``document_hook.
+    quality_band``). ARM's full page table is written (keys and numbers, no
+    text), each pair's changed pages, and every labelled page with the human
+    and each arm's counts over its labelled lines; the summary carries band
+    distributions, score quantiles, band transitions, score-change histograms
+    and the labelled-page agreement (``labelled_page_metrics``).
+
+``pagecheck``
+    Stage 17's written rule over a ``reach --page-ref`` summary: a candidate is
+    an area for improvement only if it improves the labelled lines with no
+    source net broken and no ``Clear``-loss, does not worsen the labelled pages,
+    and matters to enough pages. The shipped change is checked against the
+    state before it under a revert condition. The verdict -- GO, HOLD or
+    REVERT -- is what stage 18, the final re-scoring, is gated on.
+
 What is safe to paste into the issue: everything printed to stdout and the
-``*_summary.json`` / ``*_score.json`` / ``*_labelled.tsv`` files (no line text).
+``*_summary.json`` / ``*_score.json`` / ``*_labelled.tsv`` / ``*_decision.*`` files and the page tables (no
+line text).
 ``*_changes.csv``, ``*_groups.csv`` and packs carry line text.
 """
 
@@ -90,6 +114,7 @@ from __future__ import annotations
 import argparse
 import ast
 import csv
+import gzip
 import json
 import math
 import random
@@ -272,10 +297,17 @@ def cmd_recat(args: argparse.Namespace) -> int:
             if dst.exists() and _count_lines(dst) != _count_lines(src):
                 dst.unlink()
                 removed += 1
-    todo = [name for name in files if not (out / name).exists()]
+    expected_missing = set(args.expect_missing or [])
+    unknown = sorted(expected_missing - set(files))
+    if unknown:
+        print(f"error: --expect-missing names no input document: {unknown[:3]}", file=sys.stderr)
+        return 2
+    todo = [name for name in files if not (out / name).exists() and name not in expected_missing]
+    done = sum(1 for name in files if (out / name).exists())
     print(
-        f"recat: {len(files):,} input document(s) in {in_dir}; {len(files) - len(todo):,} already written, "
-        f"{len(todo):,} to do; {len(stray)} stray .part removed"
+        f"recat: {len(files):,} input document(s) in {in_dir}; {done:,} already written, {len(todo):,} to do"
+        + (f", {len(expected_missing)} expected missing" if expected_missing else "")
+        + f"; {len(stray)} stray .part removed"
         + (f"; {removed} short output(s) removed" if args.check_lines else ""),
         flush=True,
     )
@@ -325,9 +357,13 @@ def cmd_recat(args: argparse.Namespace) -> int:
         f"shards with a non-zero exit: {len(bad)}" + (f" ({', '.join(f's{i:02d}' for i in bad)})" if bad else ""),
         flush=True,
     )
-    if missing:
+    known = [n for n in missing if n in expected_missing]
+    if known:
+        print(f"recat: {len(known)} known-unreadable document(s) not re-scored, left to the caller: {known[:5]}")
+    unexpected = [n for n in missing if n not in expected_missing]
+    if unexpected:
         print(
-            f"recat: {len(missing):,} document(s) have no output (list: {work / 'missing.txt'}); "
+            f"recat: {len(unexpected):,} document(s) have no output (list: {work / 'missing.txt'}); "
             "re-run the same command to resume",
             file=sys.stderr,
         )
@@ -432,8 +468,12 @@ def cmd_diff(args: argparse.Namespace) -> int:
     tasks: list[tuple[str, str, str, str]] = []
     problems: list[str] = []
     per_pair_files: dict[str, dict[str, int]] = {}
+    skip = set(args.skip or [])
     for label, base_dir, arm_dir in args.pair:
         base, arm = csv_files(Path(base_dir)), csv_files(Path(arm_dir))
+        for name in skip:
+            base.pop(name, None)
+            arm.pop(name, None)
         extra = sorted(set(arm) - set(base))
         lacking = sorted(set(base) - set(arm))
         if extra:
@@ -493,7 +533,8 @@ def cmd_diff(args: argparse.Namespace) -> int:
                 trash_pp.update(res["trash_pp"])
                 per_doc[(res["label"], res["doc"])] += len(res["changes"])
                 touched.append((res["label"], f"{res['doc']}.csv"))
-                writer.writerows(res["changes"])
+                if not args.summary_only:
+                    writer.writerows(res["changes"])
 
     with open(f"{prefix}_touched.tsv", "w", encoding="utf-8") as fh:
         for label, name in sorted(touched):
@@ -535,6 +576,8 @@ def cmd_diff(args: argparse.Namespace) -> int:
         },
         "errors": errors[:50],
         "error_count": len(errors),
+        "skipped": sorted(skip),
+        "changes_written": not args.summary_only,
         "minutes": round((time.time() - t0) / 60, 1),
     }
 
@@ -1038,6 +1081,230 @@ def load_label_sources(specs: Sequence[Sequence[str]]) -> dict[str, dict[tuple[s
     return sources
 
 
+# Page aggregates (``reach --pages``): what the pipeline publishes per page (digest AJ8).
+PAGE_COUNTS = ("Clear", "Noisy", "Trash", "Non-text", "Empty")
+PAGE_TEXT = frozenset({"Clear", "Noisy"})
+PAGE_ROW_FIELDS = (
+    "collection",
+    "doc",
+    "decade",
+    "page_num",
+    "lines",
+    "clear",
+    "noisy",
+    "trash",
+    "nontext",
+    "empty",
+    "batch_score",
+    "service_score",
+    "band",
+)
+PAGE_DIFF_FIELDS = (
+    "collection",
+    "doc",
+    "decade",
+    "page_num",
+    "lines",
+    "band_ref",
+    "band_arm",
+    "batch_ref",
+    "batch_arm",
+    "service_ref",
+    "service_arm",
+    "d_clear",
+    "d_noisy",
+    "d_trash",
+    "d_nontext",
+    "d_empty",
+)
+_E2_SUMS = ("pages", "band_pages", "band_agree", "clear_abs", "trash_abs", "clear_signed")
+
+
+def quality_band(clear: int, noisy: int, trash: int) -> str:
+    """``document_hook.quality_band``: the plurality, ties to the more optimistic band.
+
+    Restated so reach's workers need not import the record layer; a test pins the two equal.
+    """
+    if clear >= noisy and clear >= trash:
+        return "Clear"
+    if noisy >= trash:
+        return "Noisy"
+    return "Trash"
+
+
+def _score(value: object) -> float | None:
+    try:
+        num = float(value)
+    except (TypeError, ValueError):
+        return None
+    return None if math.isnan(num) else num
+
+
+def page_stats(cats: Sequence[str], scores: Sequence[float | None], rows: Sequence[int]) -> dict:
+    """One page under one arm: the counts, both published page scores and the band.
+
+    ``batch`` is ``aggregate_STAT._sum_metrics``'s ``avg_quality_score``: the mean over the page's Clear and Noisy
+    lines only, which is what the collections get. ``service`` is ``service/text_api._page_records_from_lines``'s:
+    the mean over every scored line. ``band`` is empty when the page has no Clear, Noisy or Trash line (the service
+    omits it there; the batch path's plurality would say Clear).
+    """
+    counts = Counter(cats[i] for i in rows)
+    text = [scores[i] for i in rows if cats[i] in PAGE_TEXT and scores[i] is not None]
+    every = [scores[i] for i in rows if scores[i] is not None]
+    c, n, t = counts["Clear"], counts["Noisy"], counts["Trash"]
+    return {
+        "counts": tuple(counts[k] for k in PAGE_COUNTS),
+        "batch": sum(text) / len(text) if text else None,
+        "service": sum(every) / len(every) if every else None,
+        "band": quality_band(c, n, t) if c + n + t else "",
+    }
+
+
+def _bin(score: float) -> int:
+    return min(99, max(0, int(score * 100 + 1e-9)))
+
+
+def _bucket(score: float | None) -> str:
+    if score is None:
+        return "no text line"
+    return "<0.55" if score < 0.55 else "0.55-0.80" if score < 0.80 else ">=0.80"
+
+
+def _num(value: float | None) -> str:
+    return "" if value is None else f"{value:.4f}"
+
+
+def _page_sort(page: str) -> tuple:
+    return (0, int(page), page) if page.isdigit() else (1, 0, page)
+
+
+def _quantiles(hist: Counter, points: Sequence[float] = (0.05, 0.25, 0.5, 0.75, 0.95)) -> dict:
+    """Quantiles of a 0.01-bin histogram, at bin centres."""
+    total = sum(hist.values())
+    out: dict[str, float] = {}
+    if not total:
+        return out
+    cum, i = 0, 0
+    for b in sorted(hist):
+        cum += hist[b]
+        while i < len(points) and cum >= points[i] * total:
+            out[f"p{round(points[i] * 100):02d}"] = round((int(b) + 0.5) / 100, 3)
+            i += 1
+    return out
+
+
+def _e2_derive(m: dict) -> dict:
+    m["band_agreement"] = round(m["band_agree"] / m["band_pages"], 4) if m["band_pages"] else None
+    m["clear_share_mae"] = round(m["clear_abs"] / m["pages"], 4) if m["pages"] else None
+    m["trash_share_mae"] = round(m["trash_abs"] / m["pages"], 4) if m["pages"] else None
+    m["clear_share_bias"] = round(m["clear_signed"] / m["pages"], 4) if m["pages"] else None
+    return m
+
+
+def labelled_page_metrics(
+    rows: Iterable[Sequence], arms: Sequence[str], min_labelled: int, min_coverage: float
+) -> dict[str, dict[str, dict]]:
+    """E2 per label source and arm, over pages with enough of their lines labelled.
+
+    A row is ``reach``'s labelled-page row: source, collection, doc, page, the page's lines, its labelled lines, the
+    human counts (``PAGE_COUNTS`` order), then each arm's predicted counts over the same labelled lines. Band
+    agreement compares the plurality of the labels with the plurality of the predictions on those lines; the share
+    errors are per page, over its labelled lines. Sums are kept so that sources pool by addition.
+    """
+    k = len(PAGE_COUNTS)
+    out: dict[str, dict[str, dict]] = {}
+    for row in rows:
+        src, lines, n = row[0], int(row[4]), int(row[5])
+        if n < min_labelled or not lines or n / lines < min_coverage:
+            continue
+        human = [int(x) for x in row[6 : 6 + k]]
+        h_band = quality_band(*human[:3]) if sum(human[:3]) else ""
+        for j, arm in enumerate(arms):
+            pred = [int(x) for x in row[6 + k * (j + 1) : 6 + k * (j + 2)]]
+            m = out.setdefault(src, {}).setdefault(arm, dict.fromkeys(_E2_SUMS, 0))
+            m["pages"] += 1
+            if h_band:
+                m["band_pages"] += 1
+                m["band_agree"] += int((quality_band(*pred[:3]) if sum(pred[:3]) else "") == h_band)
+            m["clear_abs"] += abs(pred[0] - human[0]) / n
+            m["trash_abs"] += abs(pred[2] - human[2]) / n
+            m["clear_signed"] += (pred[0] - human[0]) / n
+    for per_arm in out.values():
+        for m in per_arm.values():
+            _e2_derive(m)
+    return out
+
+
+def _page_results(coll: str, dec: str, docs: list, pages: list, results: dict, row_labels: dict) -> dict:
+    """``reach --pages``, one document: every arm's pages, each pair's page changes, the labelled pages."""
+    groups: dict[tuple[str, str], list[int]] = {}
+    for i, key in enumerate(zip(docs, pages, strict=True)):
+        groups.setdefault(key, []).append(i)
+    order = sorted(groups, key=lambda key: (key[0], _page_sort(key[1])))
+    stats = {
+        arm: {key: page_stats(cats, scores, groups[key]) for key in order}
+        for arm, (cats, _flags, scores) in results.items()
+    }
+    arms_out: dict[str, dict] = {}
+    for arm, per_page in stats.items():
+        a = {
+            "pages": 0,
+            "bands": Counter(),
+            "band_by_score": Counter(),
+            "batch_hist": Counter(),
+            "service_hist": Counter(),
+        }
+        for st in per_page.values():
+            a["pages"] += 1
+            a["bands"][st["band"] or "none"] += 1
+            a["band_by_score"][f"{st['band'] or 'none'} | {_bucket(st['batch'])}"] += 1
+            if st["batch"] is not None:
+                a["batch_hist"][_bin(st["batch"])] += 1
+            if st["service"] is not None:
+                a["service_hist"][_bin(st["service"])] += 1
+        arms_out[arm] = a
+    ref = stats[_REACH["page_ref"]]
+    page_rows = [
+        (coll, key[0], dec, key[1], len(groups[key]), *ref[key]["counts"], _num(ref[key]["batch"]),
+         _num(ref[key]["service"]), ref[key]["band"])
+        for key in order
+    ]  # fmt: skip
+    pairs_out: dict[str, dict] = {}
+    for r, a in _REACH["pairs"]:
+        p = {"pages_changed": 0, "band_transitions": Counter(), "abs_dbatch_hist": Counter(), "rows": []}
+        for key in order:
+            x, y = stats[r][key], stats[a][key]
+            if x == y:
+                continue
+            p["pages_changed"] += 1
+            if x["band"] != y["band"]:
+                p["band_transitions"][f"{x['band'] or 'none'}->{y['band'] or 'none'}"] += 1
+            if x["batch"] is None or y["batch"] is None:
+                if x["batch"] != y["batch"]:
+                    p["abs_dbatch_hist"][100] += 1  # the page gains or loses its last text line
+            elif abs(y["batch"] - x["batch"]) > 1e-12:
+                p["abs_dbatch_hist"][min(100, int(abs(y["batch"] - x["batch"]) * 100 + 1e-9))] += 1
+            p["rows"].append(
+                (coll, key[0], dec, key[1], len(groups[key]), x["band"], y["band"], _num(x["batch"]), _num(y["batch"]),
+                 _num(x["service"]), _num(y["service"]), *(b - c for b, c in zip(y["counts"], x["counts"], strict=True)))
+            )  # fmt: skip
+        pairs_out[f"{r}->{a}"] = p
+    labelled = []
+    arm_order = list(results)
+    for src, hits in row_labels.items():
+        by_page: dict[tuple[str, str], list[int]] = {}
+        for i in sorted(hits):
+            by_page.setdefault((docs[i], pages[i]), []).append(i)
+        for key, rows in by_page.items():
+            human = Counter(hits[i] for i in rows)
+            pred = [Counter(results[arm][0][i] for i in rows) for arm in arm_order]
+            labelled.append(
+                (src, coll, key[0], key[1], len(groups[key]), len(rows), *(human[c] for c in PAGE_COUNTS),
+                 *(pc[c] for pc in pred for c in PAGE_COUNTS))
+            )  # fmt: skip
+    return {"page_arms": arms_out, "page_rows": page_rows, "page_pairs": pairs_out, "labelled_pages": labelled}
+
+
 def _engine_module():
     """``tools/recategorize_from_csv.py``: the re-scorer the CLI runs, imported as the CLI imports it."""
     tools = str(_ROOT / "tools")
@@ -1065,17 +1332,19 @@ def _reach_init(state: dict) -> None:
         name: {k: engine._parse_scalar(v) for k, v in over.items()} for name, over in state["arms"].items()
     }
     _REACH["label_docs"] = {src: {k[0] for k in labels} for src, labels in state["labels"].items()}
+    _REACH["page_ref"] = state.get("page_ref") or ""
 
 
 def _categorise(frame, constants: dict):
-    """One arm over one document: normalised categories and the ``pp_*`` flags, by row."""
+    """One arm over one document: normalised categories, ``pp_*`` flags and ``quality_score`` (clamped), by row."""
     engine = _REACH["engine"]
     new = engine.recategorize_dataframe(frame, constants or None)
     cats = [engine.normalize_category(v) for v in new["categ"].tolist()]
     pp_cols = [c for c in new.columns if c.startswith("pp_")]
     columns = [new[c].tolist() for c in pp_cols]
     flags = [";".join(c for c, col in zip(pp_cols, columns, strict=True) if _flagged(col[i])) for i in range(len(new))]
-    return cats, flags
+    scores = [_score(v) for v in new["quality_score"].tolist()] if "quality_score" in new.columns else [None] * len(new)
+    return cats, flags, scores
 
 
 def _reach_document(task: tuple[str, str, str]) -> dict:
@@ -1110,7 +1379,7 @@ def _reach_document(task: tuple[str, str, str]) -> dict:
 
         results = {arm: _categorise(frame, consts) for arm, consts in _REACH["arm_constants"].items()}
         out["arms"] = {
-            arm: sum(a != b for a, b in zip(cats, stored, strict=True)) for arm, (cats, _) in results.items()
+            arm: sum(a != b for a, b in zip(cats, stored, strict=True)) for arm, (cats, _, _) in results.items()
         }
 
         # Label sources that have a key in this document, row index -> label.
@@ -1130,7 +1399,7 @@ def _reach_document(task: tuple[str, str, str]) -> dict:
         dec = decade(stem)
         out["pairs"] = {}
         for ref, arm in _REACH["pairs"]:
-            (c_ref, f_ref), (c_arm, f_arm) = results[ref], results[arm]
+            (c_ref, f_ref, _), (c_arm, f_arm, _) = results[ref], results[arm]
             changed = [i for i, (a, b) in enumerate(zip(c_ref, c_arm, strict=True)) if a != b]
             if not changed:
                 continue
@@ -1163,6 +1432,8 @@ def _reach_document(task: tuple[str, str, str]) -> dict:
                 "changes": rows,
                 "labelled": labelled,
             }
+        if _REACH["page_ref"]:
+            out.update(_page_results(coll, dec, docs, pages, results, row_labels))
     except Exception as exc:  # noqa: BLE001 -- one bad document is reported, not fatal
         out["error"] = f"failed: {type(exc).__name__}: {exc}"
     return out
@@ -1179,6 +1450,9 @@ def cmd_reach(args: argparse.Namespace) -> int:
     problems = [f"pair {r} -> {a}: arm {x!r} is not defined" for r, a in pairs for x in (r, a) if x not in arms]
     if len(set(pairs)) != len(pairs):
         problems.append("a pair is given twice")
+    page_ref = args.page_ref or ""
+    if page_ref and page_ref not in arms:
+        problems.append(f"--page-ref {page_ref!r} is not an arm")
 
     engine = _engine_module()
     for name, over in arms.items():
@@ -1222,7 +1496,7 @@ def cmd_reach(args: argparse.Namespace) -> int:
         return 3
 
     tasks.sort(key=lambda t: (-Path(t[2]).stat().st_size, t[1]))
-    state = {"arms": arms, "pairs": pairs, "labels": labels, "infer_string": args.infer_string}
+    state = {"arms": arms, "pairs": pairs, "labels": labels, "infer_string": args.infer_string, "page_ref": page_ref}
     prefix = Path(args.out_prefix)
     prefix.parent.mkdir(parents=True, exist_ok=True)
     pair_labels = [f"{r}->{a}" for r, a in pairs]
@@ -1249,10 +1523,49 @@ def cmd_reach(args: argparse.Namespace) -> int:
     labelled_rows: list[tuple] = []
     t0 = time.time()
     handles = {pl: open(p, "w", encoding="utf-8", newline="") for pl, p in paths.items()}  # noqa: SIM115
+    page_paths: dict[str, Path] = {}
+    page_agg: dict[str, dict] = {}
+    ref_by_coll: dict[str, Counter] = defaultdict(Counter)
+    ref_by_dec: dict[str, Counter] = defaultdict(Counter)
+    page_pairs: dict[str, dict] = {}
+    labelled_pages: list[tuple] = []
+    if page_ref:
+        page_paths = {
+            "reference": Path(f"{prefix}_pages_{page_ref}.csv.gz"),
+            "labelled": Path(f"{prefix}_labelled_pages.csv"),
+            **{pl: Path(f"{prefix}_{pl.replace('->', '__')}_pages.csv.gz") for pl in pair_labels},
+        }
+        for key, path in page_paths.items():
+            handles[f"page:{key}"] = (gzip.open if path.suffix == ".gz" else open)(
+                path, "wt", encoding="utf-8", newline=""
+            )
+        page_agg = {
+            arm: {
+                "pages": 0,
+                "bands": Counter(),
+                "band_by_score": Counter(),
+                "batch_hist": Counter(),
+                "service_hist": Counter(),
+            }
+            for arm in arms
+        }
+        page_pairs = {
+            pl: {"pages_changed": 0, "band_transitions": Counter(), "abs_dbatch_hist": Counter()} for pl in pair_labels
+        }
     try:
         writers = {pl: csv.writer(fh) for pl, fh in handles.items()}
-        for w in writers.values():
-            w.writerow(CHANGE_FIELDS)
+        for key, w in writers.items():
+            if not key.startswith("page:"):
+                w.writerow(CHANGE_FIELDS)
+        if page_ref:
+            writers["page:reference"].writerow(PAGE_ROW_FIELDS)
+            writers["page:labelled"].writerow(
+                ["source", "collection", "doc", "page_num", "lines", "labelled"]
+                + [f"human_{c}" for c in PAGE_COUNTS]
+                + [f"{arm}_{c}" for arm in arms for c in PAGE_COUNTS]
+            )
+            for pl in pair_labels:
+                writers[f"page:{pl}"].writerow(PAGE_DIFF_FIELDS)
         if args.workers <= 1:
             _reach_init(state)
             results: Iterable[dict] = map(_reach_document, tasks)
@@ -1296,6 +1609,24 @@ def cmd_reach(args: argparse.Namespace) -> int:
                                 tally["clear_demoted"],
                             )
                         )
+                if page_ref:
+                    for arm, a in res.get("page_arms", {}).items():
+                        acc = page_agg[arm]
+                        acc["pages"] += a["pages"]
+                        for key in ("bands", "band_by_score", "batch_hist", "service_hist"):
+                            acc[key].update(a[key])
+                    for row in res.get("page_rows", []):
+                        ref_by_coll[row[0]][row[-1] or "none"] += 1
+                        ref_by_dec[row[2]][row[-1] or "none"] += 1
+                    writers["page:reference"].writerows(res.get("page_rows", []))
+                    for pl, pp in res.get("page_pairs", {}).items():
+                        acc = page_pairs[pl]
+                        acc["pages_changed"] += pp["pages_changed"]
+                        acc["band_transitions"].update(pp["band_transitions"])
+                        acc["abs_dbatch_hist"].update(pp["abs_dbatch_hist"])
+                        writers[f"page:{pl}"].writerows(pp["rows"])
+                    labelled_pages.extend(res.get("labelled_pages", []))
+                    writers["page:labelled"].writerows(res.get("labelled_pages", []))
                 if args.progress and done % args.progress == 0:
                     mins = (time.time() - t0) / 60
                     print(
@@ -1347,6 +1678,40 @@ def cmd_reach(args: argparse.Namespace) -> int:
                 for src, t in sorted(a["labelled"].items())
             },
         }
+    if page_ref:
+        summary["pages"] = {
+            "reference": page_ref,
+            "min_labelled": args.page_min_labelled,
+            "min_coverage": args.page_min_coverage,
+            "files": {key: str(path) for key, path in page_paths.items()},
+            "arms": {
+                arm: {
+                    "pages": a["pages"],
+                    "bands": dict(a["bands"].most_common()),
+                    "band_by_score": dict(sorted(a["band_by_score"].items())),
+                    "batch_quantiles": _quantiles(a["batch_hist"]),
+                    "service_quantiles": _quantiles(a["service_hist"]),
+                    "batch_hist": {str(b): n for b, n in sorted(a["batch_hist"].items())},
+                }
+                for arm, a in page_agg.items()
+            },
+            "reference_by_collection": {c: dict(v.most_common()) for c, v in sorted(ref_by_coll.items())},
+            "reference_by_decade": {d: dict(v.most_common()) for d, v in sorted(ref_by_dec.items())},
+            "pairs": {
+                pl: {
+                    "pages_changed": pp["pages_changed"],
+                    "band_flips": sum(pp["band_transitions"].values()),
+                    "band_transitions": dict(pp["band_transitions"].most_common()),
+                    "abs_dbatch_hist": {str(b): n for b, n in sorted(pp["abs_dbatch_hist"].items())},
+                    "batch_moved_ge_0.01": sum(n for b, n in pp["abs_dbatch_hist"].items() if b >= 1),
+                    "batch_moved_ge_0.05": sum(n for b, n in pp["abs_dbatch_hist"].items() if b >= 5),
+                }
+                for pl, pp in page_pairs.items()
+            },
+            "labelled": labelled_page_metrics(
+                labelled_pages, list(arms), args.page_min_labelled, args.page_min_coverage
+            ),
+        }
     Path(f"{prefix}_summary.json").write_text(json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8")
 
     print(
@@ -1369,6 +1734,21 @@ def cmd_reach(args: argparse.Namespace) -> int:
                 f"      {src:<12} fixed {t['fixed']:,} / broken {t['broken']:,} / neither {t['neither']:,}; "
                 f"Clear-loss {t['clear_loss']:+,}, Clear-demoted {t['clear_demoted']:+,}"
             )
+    if page_ref:
+        pg = summary["pages"]
+        ref_pages = pg["arms"][page_ref]["pages"]
+        print(f"  pages ({ref_pages:,} under {page_ref}): bands {pg['arms'][page_ref]['bands']}")
+        for pl, pp in pg["pairs"].items():
+            print(
+                f"  {pl} pages: {pp['pages_changed']:,} changed, {pp['band_flips']:,} band flip(s), "
+                f"{pp['batch_moved_ge_0.05']:,} batch score(s) moved >= 0.05"
+            )
+        for src, per_arm in pg["labelled"].items():
+            m = per_arm.get(page_ref, {})
+            print(
+                f"  labelled pages {src}: {m.get('pages', 0)} page(s) with >= {args.page_min_labelled} labelled lines "
+                f"and coverage >= {args.page_min_coverage}; band agreement under {page_ref} {m.get('band_agreement')}"
+            )
     rc = 0
     if unexpected or absent:
         if unexpected:
@@ -1377,6 +1757,188 @@ def cmd_reach(args: argparse.Namespace) -> int:
             print(f"error: expected unreadable but read: {absent}", file=sys.stderr)
         rc = 3
     return rc
+
+
+# ---------------------------------------------------------------------------
+# pagecheck
+# ---------------------------------------------------------------------------
+
+
+def _pool(labelled: dict, sources: Sequence[str], arm: str) -> dict:
+    m = dict.fromkeys(_E2_SUMS, 0)
+    for src in sources:
+        got = labelled.get(src, {}).get(arm)
+        if got:
+            for key in _E2_SUMS:
+                m[key] += got[key]
+    return _e2_derive(m)
+
+
+def _e2_worse(arm: dict, ref: dict) -> list[str]:
+    worse = []
+    if ref["band_pages"] and arm["band_agree"] < ref["band_agree"]:
+        worse.append(f"band agreement {arm['band_agree']} < {ref['band_agree']} of {ref['band_pages']}")
+    if ref["pages"]:
+        for key, name in (("clear_abs", "Clear-share"), ("trash_abs", "Trash-share")):
+            if arm[key] > ref[key] + 1e-9:
+                worse.append(f"{name} error {arm[key] / arm['pages']:.4f} > {ref[key] / ref['pages']:.4f}")
+    return worse
+
+
+def pagecheck(
+    summary: dict,
+    ref: str,
+    *,
+    revert_arm: str = "",
+    record_only: Sequence[str] = (),
+    page_sources: Sequence[str] = ("gold", "dana"),
+    flip_share: float = 0.005,
+    move_share: float = 0.01,
+    move_by: float = 0.05,
+) -> dict:
+    """Stage 17's written rule over a ``reach --pages`` summary (plan, 2026-10-11).
+
+    A candidate (a pair ``ref -> arm``) is an area for improvement only if all three hold:
+    (1) on the labelled lines it improves the total and leaves no source net broken and no source with ``Clear``-loss;
+    (2) on the labelled pages (``page_sources``, pooled) it worsens neither band agreement nor the Clear- or
+    Trash-share error; (3) it matters: at least ``flip_share`` of the pages flip band, or ``move_share`` move their
+    batch score by ``move_by`` or more. ``record_only`` arms are reported and never decide. ``revert_arm`` is the
+    state before the shipped change: the shipped change is reverted if, against it, the change is net broken on any
+    source, adds ``Clear``-loss on any source, or worsens the labelled pages.
+
+    Verdict: REVERT (the shipped change fails), HOLD (a candidate qualifies: ship it, then measure again), or GO (no
+    area for improvement is left: the final re-scoring may run with the shipped settings).
+    """
+    pages = summary.get("pages")
+    if not pages:
+        raise ValueError("the summary has no page section: run reach with --page-ref")
+    if pages["reference"] != ref:
+        raise ValueError(f"the page tables were written for {pages['reference']!r}, not {ref!r}")
+    total = pages["arms"][ref]["pages"]
+    e_ref = _pool(pages["labelled"], page_sources, ref)
+    moved_bin = round(move_by * 100)
+    rows = []
+    revert = None
+    for pl, p in summary["pairs"].items():
+        r, arm = pl.split("->")
+        if r != ref:
+            continue
+        lab = p["labelled"]
+        pp = pages["pairs"][pl]
+        flips = pp["band_flips"]
+        moved = sum(n for b, n in pp["abs_dbatch_hist"].items() if int(b) >= moved_bin)
+        e_arm = _pool(pages["labelled"], page_sources, arm)
+        entry = {
+            "pair": pl,
+            "arm": arm,
+            "role": "record only" if arm in record_only else "revert" if arm == revert_arm else "candidate",
+            "lines": lab,
+            "pages_changed": pp["pages_changed"],
+            "band_flips": flips,
+            "batch_moved": moved,
+            "band_flip_share": round(flips / total, 6) if total else 0.0,
+            "batch_moved_share": round(moved / total, 6) if total else 0.0,
+            "labelled_pages": {"ref": e_ref, "arm": e_arm},
+        }
+        if arm == revert_arm:
+            # Read the other way round: in ref -> revert_arm a "fixed" line is one the shipped change broke.
+            reasons = [
+                f"the shipped change is net broken on {s}" for s, t in sorted(lab.items()) if t["fixed"] > t["broken"]
+            ]
+            reasons += [
+                f"the shipped change adds Clear-loss on {s}" for s, t in sorted(lab.items()) if t["clear_loss"] < 0
+            ]
+            reasons += [f"the shipped change worsens the labelled pages: {w}" for w in _e2_worse(e_ref, e_arm)]
+            entry["revert"] = bool(reasons)
+            entry["reasons"] = reasons or ["no source net broken, no Clear-loss, labelled pages not worse"]
+            revert = entry
+        else:
+            why = []
+            fixed = sum(t["fixed"] for t in lab.values())
+            broken = sum(t["broken"] for t in lab.values())
+            why += [f"net broken on {s}" for s, t in sorted(lab.items()) if t["broken"] > t["fixed"]]
+            why += [f"Clear-loss on {s}" for s, t in sorted(lab.items()) if t["clear_loss"] > 0]
+            if fixed <= broken:
+                why.append(f"labelled lines not improved ({fixed} fixed / {broken} broken)")
+            why += [f"labelled pages worse: {w}" for w in _e2_worse(e_arm, e_ref)]
+            if not total or (flips / total < flip_share and moved / total < move_share):
+                why.append(
+                    f"immaterial: {flips:,} band flip(s), {moved:,} batch score(s) moved >= {move_by} of {total:,} pages"
+                )
+            entry["qualifies"] = not why
+            entry["reasons"] = why or ["improves the labelled lines, not worse on labelled pages, material"]
+        rows.append(entry)
+    candidates = [e["arm"] for e in rows if e["role"] == "candidate" and e["qualifies"]]
+    verdict = "REVERT" if revert and revert["revert"] else "HOLD" if candidates else "GO"
+    return {
+        "verdict": verdict,
+        "reference": ref,
+        "qualifying": candidates,
+        "thresholds": {"flip_share": flip_share, "move_share": move_share, "move_by": move_by},
+        "page_sources": list(page_sources),
+        "pages_total": total,
+        "labelled_pages_ref": e_ref,
+        "arms": summary.get("arms", {}),
+        "documents": summary.get("documents"),
+        "lines": summary.get("lines_read"),
+        "pairs": rows,
+    }
+
+
+def cmd_pagecheck(args: argparse.Namespace) -> int:
+    try:
+        summary = json.loads(Path(args.summary).read_text(encoding="utf-8"))
+        res = pagecheck(
+            summary,
+            args.ref,
+            revert_arm=args.revert_arm or "",
+            record_only=args.record_only,
+            page_sources=args.page_sources,
+            flip_share=args.flip_share,
+            move_share=args.move_share,
+            move_by=args.move_by,
+        )
+    except (OSError, ValueError, KeyError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    res["summary"] = str(args.summary)
+    prefix = Path(args.out_prefix)
+    prefix.parent.mkdir(parents=True, exist_ok=True)
+    Path(f"{prefix}_decision.json").write_text(json.dumps(res, indent=2, ensure_ascii=False), encoding="utf-8")
+    md = [
+        f"# Page-level decision: **{res['verdict']}**",
+        "",
+        f"Reference `{res['reference']}`, {res['pages_total']:,} pages. Material: >= {args.flip_share:.1%} band flips "
+        f"or >= {args.move_share:.1%} of pages moving their batch score by >= {args.move_by}. Labelled pages: "
+        f"{', '.join(res['page_sources'])} pooled ({res['labelled_pages_ref']['pages']} page(s)).",
+        "",
+        "| pair | role | labelled lines (fixed / broken; Clear-loss) | band flips | moved | labelled pages, ref -> arm: "
+        "band agreement, Clear / Trash share error | verdict |",
+        "|---|---|---|---|---|---|---|",
+    ]
+    for e in res["pairs"]:
+        lab = "; ".join(f"{s} {t['fixed']}/{t['broken']} ({t['clear_loss']:+d})" for s, t in sorted(e["lines"].items()))
+        lr, la = e["labelled_pages"]["ref"], e["labelled_pages"]["arm"]
+        pages = (
+            f"{la['pages']} page(s): {lr['band_agreement']} -> {la['band_agreement']}, "
+            f"{lr['clear_share_mae']} -> {la['clear_share_mae']} / {lr['trash_share_mae']} -> {la['trash_share_mae']}"
+            if la["pages"]
+            else "no labelled page"
+        )
+        verdict = (
+            ("REVERT" if e["revert"] else "keep")
+            if e["role"] == "revert"
+            else ("qualifies" if e["qualifies"] else "no") + (" (record only)" if e["role"] == "record only" else "")
+        )
+        md.append(
+            f"| {e['pair']} | {e['role']} | {lab or 'no labelled change'} | {e['band_flips']:,} "
+            f"({e['band_flip_share']:.2%}) | {e['batch_moved']:,} ({e['batch_moved_share']:.2%}) | "
+            f"{pages} | {verdict}: "
+            f"{'; '.join(e['reasons'])} |"
+        )
+    Path(f"{prefix}_decision.md").write_text("\n".join(md) + "\n", encoding="utf-8")
+    print("\n".join(md))
+    return 0
 
 
 # ---------------------------------------------------------------------------
@@ -1412,6 +1974,13 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="before resuming, delete outputs whose line count differs from the input",
     )
+    r.add_argument(
+        "--expect-missing",
+        nargs="*",
+        default=[],
+        metavar="NAME",
+        help="documents known not to re-score: not attempted, and their missing output is not a failure",
+    )
     r.add_argument("--runner", default=str(_ROOT / "tools" / "recategorize_from_csv.py"))
     r.add_argument("--python", default=sys.executable)
     r.add_argument("--cwd", default=None, help="working directory of the shards (default: the current one)")
@@ -1430,6 +1999,12 @@ def build_parser() -> argparse.ArgumentParser:
     d.add_argument("--workers", type=int, default=8)
     d.add_argument("--verify", action="store_true", help="recount with an independent reader and require agreement")
     d.add_argument("--concentration", type=float, default=0.10)
+    d.add_argument("--skip", nargs="*", default=[], metavar="NAME", help="documents left out of the comparison")
+    d.add_argument(
+        "--summary-only",
+        action="store_true",
+        help="count every change but write no changed line (the CSV keeps its header): for whole-corpus diffs",
+    )
     d.add_argument("--out-prefix", required=True)
     d.set_defaults(func=cmd_diff)
 
@@ -1499,8 +2074,27 @@ def build_parser() -> argparse.ArgumentParser:
         help="'false' sets pandas future.infer_string=False, as David's 2026-10-05 run",
     )
     h.add_argument("--progress", type=int, default=0, help="print a progress line every N documents")
+    h.add_argument(
+        "--page-ref",
+        metavar="ARM",
+        help="also aggregate pages (batch score, service score, band) under every arm; ARM's full page table is written",
+    )
+    h.add_argument("--page-min-labelled", type=int, default=5, help="labelled pages: at least this many labelled lines")
+    h.add_argument("--page-min-coverage", type=float, default=0.8, help="labelled pages: at least this share labelled")
     h.add_argument("--out-prefix", required=True)
     h.set_defaults(func=cmd_reach)
+
+    c = sub.add_parser("pagecheck", help="stage 17's written rule over a reach --page-ref summary")
+    c.add_argument("--summary", required=True)
+    c.add_argument("--ref", required=True, help="the shipped arm the page tables were written for")
+    c.add_argument("--revert-arm", help="the state before the shipped change (checked under the revert condition)")
+    c.add_argument("--record-only", nargs="*", default=[], metavar="ARM", help="arms reported but never deciding")
+    c.add_argument("--page-sources", nargs="+", default=["gold", "dana"], help="label sources pooled for the pages")
+    c.add_argument("--flip-share", type=float, default=0.005)
+    c.add_argument("--move-share", type=float, default=0.01)
+    c.add_argument("--move-by", type=float, default=0.05)
+    c.add_argument("--out-prefix", required=True)
+    c.set_defaults(func=cmd_pagecheck)
     return ap
 
 
