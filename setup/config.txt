@@ -501,7 +501,20 @@ SYM_LET_DIG_NONTEXT         = true
 MOSTLY_READABLE_VALID_MIN   = 0.85
 SHORT_NOISY_QS_PENALTY      = 0.20
 
-LOWPPL_CLEAR_MAX            = 50.0
+# (#3 stage 16, 2026-10-11) Lowered 50 -> 35, the pilot's one value change.
+# Section 8 of determine_category() (rule_lowppl_clear) settles a line of three
+# or more words below this perplexity: Clear, or Noisy when its valid-word ratio
+# is under MOSTLY_READABLE_VALID_MIN. A line in [35, 50) now meets sections 9-10
+# instead. Measured with the floor off, nothing broken on any labelled set:
+# Dana's 826 lines identical; the 2,064 gold 510 -> 507 errors, 3 fixes / 0
+# breaks (16c1); David's 2026-10-05 groups joined onto both collections, 60 fixes
+# / 0 breaks (16d1 p01: `m` / `M` of one document, sent to Trash by the page
+# rule) and identical on p02. The importance sweep's consensus value is 35.9 and
+# 15j's grid has its best cell here. The floor-off gold pin moves with it to 507
+# errors, Trash 22 / 180 (Dana's stays 648 / 108). Its corpus reach is measured
+# by stage 16 group r with a blind pack: back to 50 if that pack comes back net
+# broken or with Clear-loss.
+LOWPPL_CLEAR_MAX            = 35.0
 HARD_SWEEP_LANG_MAX        = 0.45
 HARD_SWEEP_PPL_MIN         = 1000.0
 GHOST_DOMINATED_MIN_RATIO  = 0.5

@@ -307,17 +307,17 @@
     "CTX000000001:1:2": [
       "Clear",
       0.968,
-      "lowppl_clear"
+      "clear_threshold"
     ],
     "CTX000000001:2:1": [
       "Clear",
       0.9751,
-      "lowppl_clear"
+      "clear_threshold"
     ],
     "CTX000000001:2:2": [
       "Clear",
       0.9607,
-      "lowppl_clear"
+      "clear_threshold"
     ],
     "CTX000000002:1:1": [
       "Clear",
@@ -357,7 +357,7 @@
     "CTX000000002:4:1": [
       "Clear",
       0.9701,
-      "lowppl_clear"
+      "clear_threshold"
     ],
     "CTX000000002:4:2": [
       "Non-text",

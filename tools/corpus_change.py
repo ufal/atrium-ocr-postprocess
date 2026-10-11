@@ -13,8 +13,8 @@ neither sidecar contains (digest AG1-AG3). His scripts lived on his machine. Thi
 tool is that method inside the repository, so every arm stage 16 runs is measured
 the same way, and his labels can score any arm whose changes they cover.
 
-Five subcommands
-----------------
+Six subcommands
+---------------
 ``recat``
     Sharded, resumable runner around ``tools/recategorize_from_csv.py``. The
     re-scorer is one sequential process; a collection of 113k documents wants N.
@@ -63,9 +63,26 @@ Five subcommands
     A seeded fraction of the documents NOT in a list -- the untouched-document
     guard of stage 16's floor arms.
 
+``reach``
+    ``recat`` + ``diff`` without the trees. Every document is read once and
+    re-scored IN MEMORY under each ``--arm`` (a name and the constants it
+    overrides; none = the shipped config) through the re-scorer's own
+    ``recategorize_dataframe`` -- the per-``file`` path ``ab_constant_eval`` uses
+    too -- and for each ``--pair REF ARM`` the lines whose category differs are
+    written in ``diff``'s changed-line format, so ``score`` and ``pack`` read them
+    unchanged. No re-scored document is written anywhere (stage 16's constraint
+    of 2026-10-08). ``--labels`` joins key-only sidecars (``file``, ``page_num``,
+    ``line_num``, ``gold_categ``) onto every changed line: fixed / broken /
+    neither and the ``Clear``-loss change per source, per pair and per document
+    -- the per-document table is what pins this path to the per-part A/Bs of
+    stage 16 (same rows, same engine, so the counts must be equal). A document
+    that cannot be re-scored is reported by name; ``--expect-unreadable`` names
+    the ones that are known (``CTX198503026.csv`` in ``DOC_LINE_CATEG_307``: no
+    ``page_num`` / ``line_num``), and any other exits 3.
+
 What is safe to paste into the issue: everything printed to stdout and the
-``*_summary.json`` / ``*_score.json`` files (no line text). ``*_changes.csv``,
-``*_groups.csv`` and packs carry line text.
+``*_summary.json`` / ``*_score.json`` / ``*_labelled.tsv`` files (no line text).
+``*_changes.csv``, ``*_groups.csv`` and packs carry line text.
 """
 
 from __future__ import annotations
@@ -961,6 +978,408 @@ def cmd_sample(args: argparse.Namespace) -> int:
 
 
 # ---------------------------------------------------------------------------
+# reach
+# ---------------------------------------------------------------------------
+
+#: Worker state, set by ``_reach_init``: the engine module, the arms with their
+#: parsed constants, the pairs, and the label sources. Read-only once set.
+_REACH: dict = {}
+
+
+def _locator(value: object) -> str:
+    """``'149'``, ``' 149'``, ``'149.0'`` -> ``'149'``; anything else stripped as it is."""
+    raw = str(value).strip()
+    try:
+        num = float(raw)
+    except ValueError:
+        return raw
+    return str(int(num)) if num.is_integer() else raw
+
+
+def _flagged(value: object) -> bool:
+    return value is True or str(value) == "True"
+
+
+def parse_arms(specs: Sequence[Sequence[str]]) -> dict[str, dict[str, str]]:
+    """``[[NAME, KEY=VALUE, ...], ...]`` -> ``{NAME: {KEY: VALUE}}`` (values still text)."""
+    arms: dict[str, dict[str, str]] = {}
+    for spec in specs:
+        name, *items = spec
+        if "=" in name or not name:
+            raise ValueError(f"an arm starts with its name, not {name!r}")
+        if name in arms:
+            raise ValueError(f"arm {name!r} is defined twice")
+        overrides: dict[str, str] = {}
+        for item in items:
+            key, sep, value = item.partition("=")
+            if not sep or not key.strip():
+                raise ValueError(f"arm {name}: {item!r} is not KEY=VALUE")
+            overrides[key.strip()] = value.strip()
+        arms[name] = overrides
+    return arms
+
+
+def load_label_sources(specs: Sequence[Sequence[str]]) -> dict[str, dict[tuple[str, str, str], str]]:
+    """``--labels NAME SIDECAR``: key-only sidecars (``file,page_num,line_num,gold_categ``)."""
+    sources: dict[str, dict[tuple[str, str, str], str]] = {}
+    for name, path in specs:
+        if name in sources:
+            raise ValueError(f"label source {name!r} is given twice")
+        with open(path, encoding="utf-8-sig", newline="") as fh:
+            reader = csv.DictReader(fh)
+            if not {"file", "page_num", "line_num", "gold_categ"} <= set(reader.fieldnames or ()):
+                raise ValueError(f"{path}: a label sidecar needs file, page_num, line_num and gold_categ columns")
+            labels: dict[tuple[str, str, str], str] = {}
+            for row in reader:
+                lab = _label(row["gold_categ"])
+                if lab:
+                    labels[(row["file"].strip(), _locator(row["page_num"]), _locator(row["line_num"]))] = lab
+        sources[name] = labels
+    return sources
+
+
+def _engine_module():
+    """``tools/recategorize_from_csv.py``: the re-scorer the CLI runs, imported as the CLI imports it."""
+    tools = str(_ROOT / "tools")
+    if tools not in sys.path:
+        sys.path.insert(0, tools)
+    import recategorize_from_csv
+
+    return recategorize_from_csv
+
+
+def _reach_init(state: dict) -> None:
+    """Pool initializer (and the in-process path): import the engine, pin pandas."""
+    engine = _engine_module()
+    if state.get("infer_string") == "false":
+        try:
+            import pandas as pd
+
+            pd.set_option("future.infer_string", False)
+        except Exception as exc:  # noqa: BLE001 -- an older pandas has no such option
+            print(f"note: future.infer_string not set: {exc}", file=sys.stderr)
+    _REACH.clear()
+    _REACH.update(state)
+    _REACH["engine"] = engine
+    _REACH["arm_constants"] = {
+        name: {k: engine._parse_scalar(v) for k, v in over.items()} for name, over in state["arms"].items()
+    }
+    _REACH["label_docs"] = {src: {k[0] for k in labels} for src, labels in state["labels"].items()}
+
+
+def _categorise(frame, constants: dict):
+    """One arm over one document: normalised categories and the ``pp_*`` flags, by row."""
+    engine = _REACH["engine"]
+    new = engine.recategorize_dataframe(frame, constants or None)
+    cats = [engine.normalize_category(v) for v in new["categ"].tolist()]
+    pp_cols = [c for c in new.columns if c.startswith("pp_")]
+    columns = [new[c].tolist() for c in pp_cols]
+    flags = [";".join(c for c, col in zip(pp_cols, columns, strict=True) if _flagged(col[i])) for i in range(len(new))]
+    return cats, flags
+
+
+def _reach_document(task: tuple[str, str, str]) -> dict:
+    coll, name, path = task
+    out: dict = {"collection": coll, "name": name, "doc": Path(name).stem, "rows": 0, "error": ""}
+    try:
+        import pandas as pd
+
+        frame = pd.read_csv(path, dtype=str, keep_default_na=False)
+        renames = {}
+        if "page" in frame.columns and "page_num" not in frame.columns:
+            renames["page"] = "page_num"
+        if "line" in frame.columns and "line_num" not in frame.columns:
+            renames["line"] = "line_num"
+        elif "line_order" in frame.columns and "line_num" not in frame.columns:
+            renames["line_order"] = "line_num"
+        frame = frame.rename(columns=renames)
+        missing = [c for c in ("categ", "page_num", "line_num", "text") if c not in frame.columns]
+        if missing:
+            out["error"] = f"unreadable: no {'/'.join(missing)} column"
+            return out
+        out["rows"] = len(frame)
+        if frame.empty:
+            out.update(arms={}, pairs={}, resolved={})
+            return out
+        stem = Path(name).stem
+        docs = [(f.strip() or stem) for f in frame["file"].tolist()] if "file" in frame.columns else [stem] * len(frame)
+        pages = [_locator(v) for v in frame["page_num"].tolist()]
+        lines = [_locator(v) for v in frame["line_num"].tolist()]
+        texts = frame["text"].tolist()
+        stored = [_REACH["engine"].normalize_category(v) for v in frame["categ"].tolist()]
+
+        results = {arm: _categorise(frame, consts) for arm, consts in _REACH["arm_constants"].items()}
+        out["arms"] = {
+            arm: sum(a != b for a, b in zip(cats, stored, strict=True)) for arm, (cats, _) in results.items()
+        }
+
+        # Label sources that have a key in this document, row index -> label.
+        keys = None
+        row_labels: dict[str, dict[int, str]] = {}
+        out["resolved"] = {}
+        for src, labels in _REACH["labels"].items():
+            if not _REACH["label_docs"][src] & set(docs):
+                continue
+            if keys is None:
+                keys = list(zip(docs, pages, lines, strict=True))
+            hits = {i: labels[k] for i, k in enumerate(keys) if k in labels}
+            if hits:
+                row_labels[src] = hits
+                out["resolved"][src] = len({keys[i] for i in hits})
+
+        dec = decade(stem)
+        out["pairs"] = {}
+        for ref, arm in _REACH["pairs"]:
+            (c_ref, f_ref), (c_arm, f_arm) = results[ref], results[arm]
+            changed = [i for i, (a, b) in enumerate(zip(c_ref, c_arm, strict=True)) if a != b]
+            if not changed:
+                continue
+            transitions: Counter = Counter()
+            trash_pp: Counter = Counter()
+            rows = []
+            for i in changed:
+                frm, to = c_ref[i], c_arm[i]
+                transitions[f"{frm}->{to}"] += 1
+                if to == "Trash" and frm != "Trash":
+                    trash_pp[f_arm[i] or "(none)"] += 1
+                rows.append((coll, docs[i], dec, pages[i], lines[i], frm, to, texts[i], f_arm[i], f_ref[i]))
+            labelled: dict[str, Counter] = {}
+            for src, hits in row_labels.items():
+                tally: Counter = Counter()
+                for i in changed:
+                    lab = hits.get(i)
+                    if lab is None:
+                        continue
+                    frm, to = c_ref[i], c_arm[i]
+                    tally[verdict(lab, frm, to)] += 1
+                    if lab == "Clear":
+                        tally["clear_loss"] += (to in LOSS_TARGETS) - (frm in LOSS_TARGETS)
+                        tally["clear_demoted"] += (to != "Clear") - (frm != "Clear")
+                if tally:
+                    labelled[src] = tally
+            out["pairs"][f"{ref}->{arm}"] = {
+                "transitions": transitions,
+                "trash_pp": trash_pp,
+                "changes": rows,
+                "labelled": labelled,
+            }
+    except Exception as exc:  # noqa: BLE001 -- one bad document is reported, not fatal
+        out["error"] = f"failed: {type(exc).__name__}: {exc}"
+    return out
+
+
+def cmd_reach(args: argparse.Namespace) -> int:
+    try:
+        arms = parse_arms(args.arm)
+        labels = load_label_sources(args.labels or [])
+    except (OSError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    pairs = [tuple(p) for p in args.pair]
+    problems = [f"pair {r} -> {a}: arm {x!r} is not defined" for r, a in pairs for x in (r, a) if x not in arms]
+    if len(set(pairs)) != len(pairs):
+        problems.append("a pair is given twice")
+
+    engine = _engine_module()
+    for name, over in arms.items():
+        for key in over:
+            if not any(hasattr(mod, key) for mod in engine._CONST_MODULES):
+                problems.append(f"arm {name}: {key} is not a constant of the production modules")
+    for name, over in arms.items():
+        try:
+            engine.validate_constants(engine.coerce_constants({k: engine._parse_scalar(v) for k, v in over.items()}))
+        except (TypeError, ValueError) as exc:
+            problems.append(f"arm {name}: {exc}")
+
+    tasks: list[tuple[str, str, str]] = []
+    seen: dict[str, str] = {}
+    only = set(read_names(Path(args.only))) if args.only else None
+    for coll, directory in args.input:
+        if not Path(directory).is_dir():
+            problems.append(f"{coll}: not a directory: {directory}")
+            continue
+        for name, path in csv_files(Path(directory)).items():
+            if only is not None and name not in only:
+                continue
+            if name in seen:
+                problems.append(f"{name} is in both {seen[name]} and {coll}")
+                continue
+            seen[name] = coll
+            tasks.append((coll, name, str(path)))
+    if only is not None and set(only) - set(seen):
+        problems.append(
+            f"{len(set(only) - set(seen))} --only document(s) are in no input, e.g. {sorted(set(only) - set(seen))[:3]}"
+        )
+    if problems:
+        for p in problems:
+            print(f"error: {p}", file=sys.stderr)
+        return 2
+    if args.expect_docs is not None and len(tasks) != args.expect_docs:
+        print(
+            f"error: the inputs hold {len(tasks):,} document(s), --expect-docs says {args.expect_docs:,}",
+            file=sys.stderr,
+        )
+        return 3
+
+    tasks.sort(key=lambda t: (-Path(t[2]).stat().st_size, t[1]))
+    state = {"arms": arms, "pairs": pairs, "labels": labels, "infer_string": args.infer_string}
+    prefix = Path(args.out_prefix)
+    prefix.parent.mkdir(parents=True, exist_ok=True)
+    pair_labels = [f"{r}->{a}" for r, a in pairs]
+    paths = {pl: Path(f"{prefix}_{pl.replace('->', '__')}_changes.csv") for pl in pair_labels}
+
+    lines_read = 0
+    docs_read = 0
+    differs: Counter = Counter()
+    resolved: Counter = Counter()
+    errors: dict[str, str] = {}
+    agg = {
+        pl: {
+            "changed_lines": 0,
+            "changed_documents": 0,
+            "transitions": Counter(),
+            "by_collection": defaultdict(Counter),
+            "by_decade": defaultdict(Counter),
+            "trash_arrivals_by_pp": Counter(),
+            "per_doc": Counter(),
+            "labelled": defaultdict(Counter),
+        }
+        for pl in pair_labels
+    }
+    labelled_rows: list[tuple] = []
+    t0 = time.time()
+    handles = {pl: open(p, "w", encoding="utf-8", newline="") for pl, p in paths.items()}  # noqa: SIM115
+    try:
+        writers = {pl: csv.writer(fh) for pl, fh in handles.items()}
+        for w in writers.values():
+            w.writerow(CHANGE_FIELDS)
+        if args.workers <= 1:
+            _reach_init(state)
+            results: Iterable[dict] = map(_reach_document, tasks)
+            executor = None
+        else:
+            executor = ProcessPoolExecutor(max_workers=args.workers, initializer=_reach_init, initargs=(state,))
+            results = executor.map(_reach_document, tasks, chunksize=4)
+        try:
+            for done, res in enumerate(results, 1):
+                if res["error"]:
+                    errors[res["name"]] = res["error"]
+                    continue
+                docs_read += 1
+                lines_read += res["rows"]
+                differs.update(res.get("arms", {}))
+                resolved.update(res.get("resolved", {}))
+                for pl, p in res.get("pairs", {}).items():
+                    a = agg[pl]
+                    n = len(p["changes"])
+                    a["changed_lines"] += n
+                    a["changed_documents"] += 1
+                    a["transitions"].update(p["transitions"])
+                    a["by_collection"][res["collection"]].update(p["transitions"])
+                    a["by_decade"][decade(res["doc"])].update(p["transitions"])
+                    a["trash_arrivals_by_pp"].update(p["trash_pp"])
+                    a["per_doc"][(res["collection"], res["doc"])] += n
+                    writers[pl].writerows(p["changes"])
+                    for src, tally in p["labelled"].items():
+                        a["labelled"][src].update(tally)
+                        labelled_rows.append(
+                            (
+                                pl,
+                                src,
+                                res["collection"],
+                                res["doc"],
+                                res["name"],
+                                tally["fixed"],
+                                tally["broken"],
+                                tally["neither"],
+                                tally["clear_loss"],
+                                tally["clear_demoted"],
+                            )
+                        )
+                if args.progress and done % args.progress == 0:
+                    mins = (time.time() - t0) / 60
+                    print(
+                        f"  ... {done:,} / {len(tasks):,} document(s), {lines_read:,} line(s), {mins:.1f} min",
+                        flush=True,
+                    )
+        finally:
+            if executor is not None:
+                executor.shutdown(cancel_futures=True)
+    finally:
+        for fh in handles.values():
+            fh.close()
+
+    with open(f"{prefix}_labelled.tsv", "w", encoding="utf-8") as fh:
+        fh.write("pair\tsource\tcollection\tdoc\tname\tfixed\tbroken\tneither\tclear_loss_delta\tclear_demoted_delta\n")
+        for row in sorted(labelled_rows):
+            fh.write("\t".join(str(x) for x in row) + "\n")
+
+    unexpected = sorted(set(errors) - set(args.expect_unreadable))
+    absent = sorted(set(args.expect_unreadable) - set(errors))
+    summary: dict = {
+        "documents": len(tasks),
+        "documents_read": docs_read,
+        "lines_read": lines_read,
+        "unreadable": errors,
+        "expected_unreadable": sorted(args.expect_unreadable),
+        "arms": {name: {"overrides": over, "differs_from_stored": differs[name]} for name, over in arms.items()},
+        "labels": {src: {"keys": len(lab), "resolved": resolved[src]} for src, lab in labels.items()},
+        "pairs": {},
+        "minutes": round((time.time() - t0) / 60, 1),
+    }
+    for pl in pair_labels:
+        a = agg[pl]
+        total = a["changed_lines"]
+        summary["pairs"][pl] = {
+            "changes_csv": str(paths[pl]),
+            "changed_lines": total,
+            "changed_documents": a["changed_documents"],
+            "transitions": dict(a["transitions"].most_common()),
+            "by_collection": {c: dict(v.most_common()) for c, v in sorted(a["by_collection"].items())},
+            "by_decade": {d: dict(v.most_common()) for d, v in sorted(a["by_decade"].items())},
+            "trash_arrivals_by_pp": dict(a["trash_arrivals_by_pp"].most_common()),
+            "top_documents": [
+                {"collection": c, "doc": d, "changes": n, "share": round(n / total, 4) if total else 0.0}
+                for (c, d), n in a["per_doc"].most_common(10)
+            ],
+            "labelled": {
+                src: {k: t[k] for k in (*VERDICTS, "clear_loss", "clear_demoted")}
+                for src, t in sorted(a["labelled"].items())
+            },
+        }
+    Path(f"{prefix}_summary.json").write_text(json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8")
+
+    print(
+        f"reach: {docs_read:,} of {len(tasks):,} document(s), {lines_read:,} line(s), {len(arms)} arm(s), "
+        f"{len(pairs)} pair(s) in {summary['minutes']} min"
+    )
+    if errors:
+        print(f"  unreadable: {', '.join(f'{n} ({e})' for n, e in sorted(errors.items())[:5])}")
+    for src, s in summary["labels"].items():
+        print(f"  labels {src}: {s['resolved']:,} of {s['keys']:,} key(s) found in the inputs")
+    print(f"  {'arm':<12} {'differs from stored':>20}  overrides")
+    for name, s in summary["arms"].items():
+        over = " ".join(f"{k}={v}" for k, v in s["overrides"].items()) or "(shipped)"
+        print(f"  {name:<12} {s['differs_from_stored']:>20,}  {over}")
+    for pl, s in summary["pairs"].items():
+        trans = ", ".join(f"{t} {n:,}" for t, n in list(s["transitions"].items())[:6]) or "no change"
+        print(f"  {pl}: {s['changed_lines']:,} line(s) in {s['changed_documents']:,} document(s): {trans}")
+        for src, t in s["labelled"].items():
+            print(
+                f"      {src:<12} fixed {t['fixed']:,} / broken {t['broken']:,} / neither {t['neither']:,}; "
+                f"Clear-loss {t['clear_loss']:+,}, Clear-demoted {t['clear_demoted']:+,}"
+            )
+    rc = 0
+    if unexpected or absent:
+        if unexpected:
+            print(f"error: {len(unexpected)} document(s) could not be re-scored: {unexpected[:5]}", file=sys.stderr)
+        if absent:
+            print(f"error: expected unreadable but read: {absent}", file=sys.stderr)
+        rc = 3
+    return rc
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
@@ -1044,6 +1463,44 @@ def build_parser() -> argparse.ArgumentParser:
     m.add_argument("--seed", type=int, default=20261006)
     m.add_argument("--out", required=True)
     m.set_defaults(func=cmd_sample)
+
+    h = sub.add_parser("reach", help="in-memory re-score of whole collections under several arms; changed lines only")
+    h.add_argument("--input", nargs=2, action="append", required=True, metavar=("COLLECTION", "DIR"))
+    h.add_argument(
+        "--arm",
+        nargs="+",
+        action="append",
+        required=True,
+        metavar="NAME [KEY=VALUE ...]",
+        help="an arm: its name, then the constants it overrides (none = the shipped config); repeatable",
+    )
+    h.add_argument("--pair", nargs=2, action="append", required=True, metavar=("REF", "ARM"))
+    h.add_argument(
+        "--labels",
+        nargs=2,
+        action="append",
+        metavar=("NAME", "SIDECAR"),
+        help="key-only label sidecar (file, page_num, line_num, gold_categ) scored on every changed line",
+    )
+    h.add_argument("--only", help="file of document names (one per line) to restrict the run to")
+    h.add_argument("--expect-docs", type=int, help="refuse (exit 3) unless the inputs hold exactly this many documents")
+    h.add_argument(
+        "--expect-unreadable",
+        nargs="*",
+        default=[],
+        metavar="NAME",
+        help="documents known not to re-score; any other failure, or one of these reading, exits 3",
+    )
+    h.add_argument("--workers", type=int, default=8, help="processes; 1 runs in this process")
+    h.add_argument(
+        "--infer-string",
+        choices=("false", "keep"),
+        default="false",
+        help="'false' sets pandas future.infer_string=False, as David's 2026-10-05 run",
+    )
+    h.add_argument("--progress", type=int, default=0, help="print a progress line every N documents")
+    h.add_argument("--out-prefix", required=True)
+    h.set_defaults(func=cmd_reach)
     return ap
 
 

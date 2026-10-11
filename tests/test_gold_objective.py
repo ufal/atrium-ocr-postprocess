@@ -955,6 +955,35 @@ def test_mcnemar_is_the_exact_binomial_tail():
     assert ab.mcnemar_exact(20, 2) < 0.001
 
 
+@pytest.mark.parametrize("path", ["tools/ab_constant_eval.py", "tools/quality_model/ab_constant_eval.py"])
+def test_mcnemar_survives_corpus_sized_discordance(path):
+    """Issue #3 stage 16v: parts of 20k-65k labelled rows, discordance in the thousands.
+
+    The float form ``2.0 * tail / 2.0**n`` raised OverflowError once n passed 1,023,
+    after both arms had been scored, so no top part printed its fixes and breaks.
+    Both copies of the function must return a probability there, and agree with the
+    float form wherever that form was defined.
+    """
+    import importlib.util
+    import math
+
+    spec = importlib.util.spec_from_file_location("_ab_n", _ROOT / path)
+    ab = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(ab)
+
+    for b, c in ((184, 565), (382, 582), (1680, 10455), (11000, 9000), (0, 5000), (2500, 2500)):
+        p = ab.mcnemar_exact(b, c)
+        assert isinstance(p, float) and 0.0 <= p <= 1.0
+    assert ab.mcnemar_exact(2500, 2500) == 1.0
+    assert ab.mcnemar_exact(0, 5000) == 0.0  # underflows, never raises
+    assert ab.mcnemar_exact(11000, 9000) == ab.mcnemar_exact(9000, 11000) < 1e-40
+
+    for b, c in ((60, 0), (98, 17), (7, 12), (22, 29), (300, 700), (511, 512)):
+        n = b + c
+        legacy = min(1.0, 2.0 * sum(math.comb(n, k) for k in range(min(b, c) + 1)) / (2.0**n))
+        assert ab.mcnemar_exact(b, c) == pytest.approx(legacy, rel=1e-12, abs=1e-300)
+
+
 def test_paired_counts_are_row_aligned():
     """b and c come from masks over the same rows in the same order."""
     import numpy as np

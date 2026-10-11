@@ -664,7 +664,7 @@ REPEATED_DOUBLE_MIN         = 2         # Minimum occurrence count for doubled-c
 SHORT_NOISY_QS_PENALTY      = 0.20      # Opt-in QS penalty for short strings exhibiting OCR oddities
 
 # --- New since last revision: Phase-2 categoriser overrides ---
-LOWPPL_CLEAR_MAX            = 50.0      # ppl ceiling for Override 3 (was hardcoded)
+LOWPPL_CLEAR_MAX            = 35.0      # ppl ceiling for Override 3 (#3 2026-10-11: lowered 50 -> 35)
 HARD_SWEEP_LANG_MAX         = 0.45      # orig_lang_score ceiling for the hard-sweep route
 HARD_SWEEP_PPL_MIN          = 1000.0    # ppl floor for the hard-sweep route
 GHOST_DOMINATED_MIN_RATIO   = 0.5       # min ghost-token share to flag ghost_dominated

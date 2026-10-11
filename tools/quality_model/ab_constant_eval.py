@@ -28,7 +28,6 @@ Example
 """
 
 import argparse
-import math
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
@@ -75,7 +74,14 @@ def mcnemar_exact(b: int, c: int) -> float:
     Exact rather than the chi-square approximation because the counts this issue
     deals in are single digits: stage 5a moved 14 lines one way and 2 the other,
     where the continuity-corrected chi-square is not trustworthy. No scipy --
-    it is not a dependency of this repo and ``math.comb`` is enough.
+    it is not a dependency of this repo, and exact integers are enough.
+
+    Integers to the end. The float form ``2.0 * tail / 2.0**n`` raises
+    ``OverflowError`` once ``n`` passes 1,023 (``2.0**1024`` is not a float):
+    issue #3 stage 16v scored David's corpus lines in parts of 20k-65k labelled
+    rows, and every top part died here after both arms had been scored, before it
+    printed its fixes and breaks. A ratio of two ints is correctly rounded and
+    cannot overflow; a vanishing p underflows to 0.0.
 
     ``b + c == 0`` means the two arms agree on every scored row; the p-value is
     1.0 and the caller should say "identical", not quote a statistic.
@@ -83,8 +89,11 @@ def mcnemar_exact(b: int, c: int) -> float:
     n = b + c
     if n == 0:
         return 1.0
-    tail = sum(math.comb(n, k) for k in range(min(b, c) + 1))
-    return min(1.0, 2.0 * tail / (2.0**n))
+    term = tail = 1  # C(n, 0)
+    for i in range(min(b, c)):
+        term = term * (n - i) // (i + 1)  # C(n, i + 1), exact
+        tail += term
+    return min(1.0, (2 * tail) / (1 << n))
 
 
 def _paired_counts(candidate: Any, incumbent: Any) -> Tuple[int, int]:

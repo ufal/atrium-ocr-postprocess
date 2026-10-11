@@ -18,7 +18,13 @@ What must not fail silently:
 5. ``--expect-results`` passes on matching counts and fails (exit 4) otherwise;
 6. ``pack`` is blind (no category in a sheet), deterministic for a seed, and
    leaves already-labelled groups out;
-7. ``recat`` shards, resumes, and fails when a document has no output.
+7. ``recat`` shards, resumes, and fails when a document has no output;
+8. ``reach`` writes ``diff``'s changed-line format per pair from in-memory arms,
+   scores every changed line against the label sidecars (fixed / broken / neither
+   and the ``Clear``-loss change), refuses an unknown constant, an undefined arm
+   and an unexpected unreadable document, and gives the same answer in one
+   process and in a pool -- with the real engine, where ``LOWPPL_CLEAR_MAX`` 50
+   against the shipped 35 moves no category of the sample documents.
 """
 
 from __future__ import annotations
@@ -431,3 +437,160 @@ def test_sample_is_seeded_and_respects_the_exclusion(corpus, tmp_path):
         outs.append(out.read_text(encoding="utf-8").split())
     assert outs[0] == outs[1] and len(outs[0]) == 2
     assert not {"CTX200100000.csv", "CTX200100001.csv"} & set(outs[0])
+
+
+# ---------------------------------------------------------------------------
+# 8. reach
+# ---------------------------------------------------------------------------
+
+
+def _fake_categorise(frame, constants):
+    """Stand-in engine: an arm that overrides LOWPPL_CLEAR_MAX sends every `x...` line to Trash."""
+    cats = [str(c) for c in frame["categ"].tolist()]
+    flags = [""] * len(cats)
+    if constants and "LOWPPL_CLEAR_MAX" in constants:
+        for i, text in enumerate(frame["text"].tolist()):
+            if text.startswith("x"):
+                cats[i], flags[i] = "Trash", "pp_page_context"
+    return cats, flags
+
+
+@pytest.fixture
+def reach_inputs(tmp_path: Path) -> dict[str, Path]:
+    arup, arub = tmp_path / "arup", tmp_path / "arub"
+    _write_doc(
+        arup / "CTX200100001.csv",
+        [("Clear", 1, 1, "xyzzy", 0), ("Clear", 1, 2, "Archaia Brno", 0), ("Noisy", 2, 1, "xqq", 0)],
+    )
+    _write_doc(arup / "CTX200100002.csv", [("Clear", 1, 1, "nothing moves", 0)])
+    _write_doc(arub / "CTX199900003.csv", [("Noisy", 3, 7, "xkcd", 0)])
+    (arub / "CTX199900004.csv").write_text("categ,file,text\nClear,CTX199900004,no locators\n", encoding="utf-8")
+    fields = ["file", "page_num", "line_num", "gold_categ"]
+    labels = _write_sheet(
+        tmp_path / "labels.csv",
+        fields,
+        [
+            {"file": "CTX200100001", "page_num": "1", "line_num": "1", "gold_categ": "Trash"},  # fixed
+            {"file": "CTX200100001", "page_num": "2", "line_num": "1", "gold_categ": "Noisy"},  # broken
+            {"file": "CTX199900003", "page_num": "3.0", "line_num": "7", "gold_categ": "Clear"},  # neither, loss +1
+            {"file": "CTX200100002", "page_num": "1", "line_num": "1", "gold_categ": "Clear"},  # does not move
+            {"file": "CTX209900009", "page_num": "1", "line_num": "1", "gold_categ": "Clear"},  # in no input
+        ],
+    )
+    return {"arup": arup, "arub": arub, "labels": labels, "out": tmp_path / "out" / "16r"}
+
+
+def _reach(inputs: dict[str, Path], *extra: str, arms: tuple = (("base",), ("arm", "LOWPPL_CLEAR_MAX=1"))) -> int:
+    argv = ["reach", "--input", "arup", str(inputs["arup"]), "--input", "arub", str(inputs["arub"])]
+    for arm in arms:
+        argv += ["--arm", *arm]
+    return cc.main([*argv, "--infer-string", "keep", "--out-prefix", str(inputs["out"]), *extra])
+
+
+def test_reach_writes_the_diff_format_and_scores_every_changed_line(reach_inputs, monkeypatch):
+    monkeypatch.setattr(cc, "_categorise", _fake_categorise)
+    rc = _reach(
+        reach_inputs,
+        "--pair", "base", "arm",
+        "--pair", "arm", "base",
+        "--labels", "gold", str(reach_inputs["labels"]),
+        "--expect-docs", "4",
+        "--expect-unreadable", "CTX199900004.csv",
+        "--workers", "1",
+    )  # fmt: skip
+    assert rc == 0
+    out = reach_inputs["out"]
+    rows = _read_csv(Path(f"{out}_base__arm_changes.csv"))
+    assert list(rows[0]) == list(cc.CHANGE_FIELDS)
+    got = {(r["collection"], r["doc"], r["decade"], r["page_num"], r["line_num"], r["from"], r["to"]) for r in rows}
+    assert got == {
+        ("arup", "CTX200100001", "2000", "1", "1", "Clear", "Trash"),
+        ("arup", "CTX200100001", "2000", "2", "1", "Noisy", "Trash"),
+        ("arub", "CTX199900003", "1990", "3", "7", "Noisy", "Trash"),
+    }
+    assert {r["pp_arm"] for r in rows} == {"pp_page_context"} and {r["pp_base"] for r in rows} == {""}
+
+    summary = json.loads(Path(f"{out}_summary.json").read_text(encoding="utf-8"))
+    assert (summary["documents"], summary["documents_read"], summary["lines_read"]) == (4, 3, 5)
+    assert list(summary["unreadable"]) == ["CTX199900004.csv"]
+    assert summary["labels"] == {"gold": {"keys": 5, "resolved": 4}}
+    fwd, back = summary["pairs"]["base->arm"], summary["pairs"]["arm->base"]
+    assert fwd["changed_lines"] == 3 and fwd["changed_documents"] == 2
+    assert fwd["transitions"] == {"Noisy->Trash": 2, "Clear->Trash": 1}
+    assert fwd["by_collection"] == {"arub": {"Noisy->Trash": 1}, "arup": {"Clear->Trash": 1, "Noisy->Trash": 1}}
+    assert fwd["trash_arrivals_by_pp"] == {"pp_page_context": 3}
+    assert fwd["labelled"]["gold"] == {"fixed": 1, "broken": 1, "neither": 1, "clear_loss": 1, "clear_demoted": 0}
+    assert back["labelled"]["gold"] == {"fixed": 1, "broken": 1, "neither": 1, "clear_loss": -1, "clear_demoted": 0}
+
+    per_doc = _read_csv_tsv(Path(f"{out}_labelled.tsv"))
+    assert {(r["pair"], r["doc"], r["fixed"], r["broken"], r["clear_loss_delta"]) for r in per_doc} == {
+        ("base->arm", "CTX200100001", "1", "1", "0"),
+        ("base->arm", "CTX199900003", "0", "0", "1"),
+        ("arm->base", "CTX200100001", "1", "1", "0"),
+        ("arm->base", "CTX199900003", "0", "0", "-1"),
+    }
+
+    # score and pack read reach's output as they read diff's.
+    changes = f"{out}_base__arm_changes.csv"
+    assert cc.main(["score", "--changes", changes, "--out-prefix", str(out.parent / "s")]) == 0
+    pack = ["pack", "--changes", changes, "--top", "1", "--tail", "1", "--tag", "t"]
+    assert cc.main([*pack, "--out-dir", str(out.parent / "p")]) == 0
+    assert (out.parent / "p" / "t_top.csv").exists() and (out.parent / "p" / "t_tail.csv").exists()
+
+
+def _read_csv_tsv(path: Path) -> list[dict]:
+    with open(path, encoding="utf-8", newline="") as fh:
+        return list(csv.DictReader(fh, delimiter="\t"))
+
+
+def test_reach_refuses_unknown_constants_and_undefined_arms(reach_inputs, monkeypatch, capsys):
+    monkeypatch.setattr(cc, "_categorise", _fake_categorise)
+    bad_key = (("base",), ("arm", "NOT_A_CONSTANT_ANYWHERE=1"))
+    assert _reach(reach_inputs, "--pair", "base", "arm", "--workers", "1", arms=bad_key) == 2
+    assert "NOT_A_CONSTANT_ANYWHERE is not a constant" in capsys.readouterr().err
+    assert _reach(reach_inputs, "--pair", "base", "nope", "--workers", "1") == 2
+    assert "'nope' is not defined" in capsys.readouterr().err
+    assert _reach(reach_inputs, "--pair", "base", "arm", "--workers", "1", arms=(("base",), ("base", "X=1"))) == 2
+
+
+def test_reach_fails_on_unexpected_documents(reach_inputs, monkeypatch, capsys):
+    monkeypatch.setattr(cc, "_categorise", _fake_categorise)
+    assert _reach(reach_inputs, "--pair", "base", "arm", "--workers", "1") == 3  # the locator-less one
+    assert "could not be re-scored" in capsys.readouterr().err
+    unread = ("--expect-unreadable", "CTX199900004.csv", "CTX200100002.csv")
+    assert _reach(reach_inputs, "--pair", "base", "arm", "--workers", "1", *unread) == 3  # one of them reads
+    assert _reach(reach_inputs, "--pair", "base", "arm", "--workers", "1", "--expect-docs", "5") == 3
+    dup = reach_inputs["arub"] / "CTX200100002.csv"
+    _write_doc(dup, [("Clear", 1, 1, "same name, other collection", 0)])
+    assert _reach(reach_inputs, "--pair", "base", "arm", "--workers", "1") == 2
+    assert "is in both" in capsys.readouterr().err
+
+
+def test_reach_real_engine_agrees_in_and_out_of_process(tmp_path):
+    samples = _ROOT / "data_samples" / "DOC_LINE_CATEG"
+    names = sorted(p.name for p in samples.glob("CTX00000000[123].csv"))
+    if len(names) != 3:
+        pytest.skip("the committed sample documents are not present")
+    inputs = {"arup": tmp_path / "arup", "arub": tmp_path / "arub"}
+    for name, coll in zip(names, ("arup", "arup", "arub"), strict=True):
+        inputs[coll].mkdir(exist_ok=True)
+        (inputs[coll] / name).write_bytes((samples / name).read_bytes())
+    outputs = []
+    for workers in ("1", "2"):
+        inputs["out"] = tmp_path / f"w{workers}" / "16r"
+        arms = (("p50", "LOWPPL_CLEAR_MAX=50.0"), ("ship",), ("floor", "SHORT_GARBAGE_WITNESS_FLOOR=true"))
+        rc = _reach(inputs, "--pair", "p50", "ship", "--pair", "ship", "floor", "--workers", workers, arms=arms)
+        assert rc == 0
+        summary = json.loads(Path(f"{inputs['out']}_summary.json").read_text(encoding="utf-8"))
+        assert summary["lines_read"] == 15 and not summary["unreadable"]
+        # LOWPPL_CLEAR_MAX 50 -> 35 changes only the route of the four sample lines in
+        # [35, 50), never their category (tests/fixtures/pipeline_characterization.json).
+        assert summary["pairs"]["p50->ship"]["changed_lines"] == 0
+        outputs.append(
+            (
+                {k: v for k, v in summary["arms"].items()},
+                {k: {x: y for x, y in v.items() if x != "changes_csv"} for k, v in summary["pairs"].items()},
+                Path(f"{inputs['out']}_ship__floor_changes.csv").read_text(encoding="utf-8"),
+            )
+        )
+    assert outputs[0] == outputs[1]
