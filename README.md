@@ -907,8 +907,11 @@ For each page, the aggregation computes features outputted in the following stri
 * `main_lang` — the statistical mode (most frequent) language 🌐 predicted for the page
 
 > [!NOTE]
-> `avg_*` columns and `main_lang` will be `NaN` / `None` for pages whose only lines are
-> `Empty` or `Non-text` (i.e., pages with no scoreable text content).
+> `avg_*` columns and `main_lang` will be `NaN` / `None` for pages with no `Clear` or `Noisy` line, i.e. pages
+> whose only lines are `Trash`, `Empty` or `Non-text`.
+> `avg_quality_score` leaves `Trash` lines out, so a page made mostly of `Trash` lines can still score ≥ 0.80:
+> read it together with the page's `Trash` count. In a document record, a page with no `Clear`, `Noisy` or
+> `Trash` line carries no `quality_band` (the service path omits it too) and no `quality_score`.
 > Additional per-line diagnostic variables (e.g. `weird_wx`, `original_lang`, `original_text`) and flags added
 > and ignored for this page-level aggregation to ensure stability.
 

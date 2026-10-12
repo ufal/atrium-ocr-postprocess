@@ -203,15 +203,19 @@ def _page_records_from_stats(page_stats_df) -> list:
     quality_band, reduced from the same Clear/Noisy/Trash counts already computed
     by _sum_metrics — the schema's three-way enum is exactly this repo's own
     category vocabulary, so the reduction has nothing to invent.
+
+    `quality_band` is omitted when none of the three is counted (an all-`Empty` /
+    all-`Non-text` page), as `service/text_api._page_records_from_lines` omits it:
+    the vote's tie-break favours "Clear", so counting zeros would call a page with
+    no text on it pristine. On the 307 collections that is 48,544 of 1,226,349
+    pages (ocr-postprocess#3, stage 17).
     """
     records = []
     for _, row in page_stats_df.iterrows():
-        rec = {
-            "page": str(row["page_num"]),
-            "quality_band": document_hook.quality_band(
-                int(row.get("Clear", 0)), int(row.get("Noisy", 0)), int(row.get("Trash", 0))
-            ),
-        }
+        rec = {"page": str(row["page_num"])}
+        clear, noisy, trash = int(row.get("Clear", 0)), int(row.get("Noisy", 0)), int(row.get("Trash", 0))
+        if clear or noisy or trash:
+            rec["quality_band"] = document_hook.quality_band(clear, noisy, trash)
         qs = row.get("avg_quality_score")
         if pd.notna(qs):
             rec["quality_score"] = float(qs)

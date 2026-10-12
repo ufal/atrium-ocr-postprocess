@@ -61,6 +61,34 @@ def test_sum_metrics_empty():
     assert res.empty
 
 
+def test_page_records_carry_no_band_for_a_page_without_text_lines():
+    """(ocr-postprocess#3, stage 17) A page of only `Empty` / `Non-text` lines gets neither a
+    score nor a band, as the service path does: the plurality's tie-break would call it Clear."""
+    from aggregate_STAT import _page_records_from_stats
+
+    categ = ["Clear", "Noisy", "Trash", "Trash", "Trash", "Empty", "Non-text"]
+    df = pd.DataFrame(
+        {
+            "file": ["doc1"] * 7,
+            "page_num": [1, 1, 1, 2, 2, 3, 3],
+            "categ": categ,
+            "word_count": [10, 5, 2, 2, 1, 0, 0],
+            "char_count": [50, 20, 5, 5, 3, 0, 1],
+            "quality_score": [0.9, 0.6, 0.2, 0.3, 0.1, 0.0, 0.0],
+            "word_weird": [0.0] * 7,
+            "lang_score": [0.9] * 7,
+            "perplex": [100.0] * 7,
+            "vowel_ratio": [0.4] * 7,
+            "rot_ratio": [0.0] * 7,
+            "lang": ["ces"] * 7,
+        }
+    )
+    pages = {rec["page"]: rec for rec in _page_records_from_stats(_sum_metrics(df, STANDARD_COLS))}
+    assert pages["1"] == {"page": "1", "quality_band": "Clear", "quality_score": pytest.approx(0.75)}
+    assert pages["2"] == {"page": "2", "quality_band": "Trash"}  # Trash only: a band, no batch score
+    assert pages["3"] == {"page": "3"}  # no text line: neither
+
+
 def test_load_config_reads_standard_cols(tmp_path):
     """(#7 Phase 0) [AGGREGATE] STANDARD_COLS must round-trip from the config
     file instead of always falling back to the hardcoded default."""

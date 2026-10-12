@@ -32,7 +32,10 @@ What must not fail silently:
    (GO / HOLD / REVERT, record-only arms never decide);
 10. ``recat --expect-missing`` and ``diff --skip`` / ``--summary-only`` -- the
     options stage 18 needs for the one unreadable document and the
-    whole-corpus release diff.
+    whole-corpus release diff;
+11. ``diff --pages`` compares what each page publishes in the two trees (band,
+    batch score, service score), and a tree written by the re-scorer's own CLI
+    publishes exactly the pages ``reach`` computed in memory for that arm.
 """
 
 from __future__ import annotations
@@ -807,3 +810,98 @@ def test_diff_skip_and_summary_only(trees):
     assert summary["skipped"] == ["CTX198503026.csv"] and summary["changes_written"] is False
     assert summary["overall"]["changed_lines"] == 3 and summary["verify"]["agree"] is True
     assert _read_csv(trees["out"] / "d_changes.csv") == []
+
+
+# ---------------------------------------------------------------------------
+# 11. diff --pages: what each page publishes, before and after
+# ---------------------------------------------------------------------------
+
+SCORED = ["categ", "quality_score", "file", "page_num", "line_num", "text"]
+
+
+def _write_scored(path: Path, rows: list[tuple]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", encoding="utf-8", newline="") as fh:
+        w = csv.writer(fh)
+        w.writerow(SCORED)
+        for categ, score, page, line in rows:
+            w.writerow([categ, f"{score:.4f}", path.stem, page, line, f"line {page}.{line}"])
+
+
+def test_diff_pages_compare_what_each_page_publishes(tmp_path):
+    base, arm = tmp_path / "base", tmp_path / "arm"
+    doc = "CTX200100001.csv"
+    # page 1: Clear -> Noisy (a tie for Clear becomes Noisy; the batch score falls by 0.10);
+    # page 2: no text line (no band, no batch score), unchanged; page 3: its one Noisy line goes to Trash.
+    _write_scored(
+        base / "arup" / doc,
+        [("Clear", 0.9, 1, 1), ("Noisy", 0.6, 1, 2), ("Trash", 0.3, 1, 3), ("Empty", 0.0, 2, 1),
+         ("Non-text", 0.0, 2, 2), ("Noisy", 0.6, 3, 1)],
+    )  # fmt: skip
+    _write_scored(
+        arm / "arup" / doc,
+        [("Noisy", 0.7, 1, 1), ("Noisy", 0.6, 1, 2), ("Trash", 0.3, 1, 3), ("Empty", 0.0, 2, 1),
+         ("Non-text", 0.0, 2, 2), ("Trash", 0.3, 3, 1)],
+    )  # fmt: skip
+    for side in (base, arm):
+        _write_scored(side / "arub" / "MTX199900003.csv", [("Clear", 0.95, 1, 1), ("Clear", 0.95, 1, 2)])
+    out = tmp_path / "out" / "d"
+    argv = ["diff", "--pair", "arup", str(base / "arup"), str(arm / "arup"), "--pair", "arub", str(base / "arub")]
+    assert (
+        cc.main([*argv, str(arm / "arub"), "--workers", "1", "--pages", "--summary-only", "--out-prefix", str(out)])
+        == 0
+    )
+
+    summary = json.loads(Path(f"{out}_summary.json").read_text(encoding="utf-8"))
+    pg = summary["pages"]["overall"]
+    assert pg["base"]["pages"] == pg["arm"]["pages"] == 4
+    assert pg["base"]["bands"] == {"Clear": 2, "none": 1, "Noisy": 1}
+    assert pg["arm"]["bands"] == {"Noisy": 1, "none": 1, "Trash": 1, "Clear": 1}
+    assert pg["pages_changed"] == 2 and pg["band_flips"] == 2
+    assert pg["band_transitions"] == {"Clear->Noisy": 1, "Noisy->Trash": 1}
+    assert pg["abs_dbatch_hist"] == {"10": 1, "100": 1} and pg["batch_moved_ge_0.05"] == 2
+    assert pg["arm"]["band_by_score"]["Trash | no text line"] == 1
+    assert summary["pages"]["pairs"]["arub"]["pages_changed"] == 0
+    rows = {r["page_num"]: r for r in _read_gz(Path(f"{out}_pages.csv.gz"))}
+    assert set(rows) == {"1", "3"}
+    assert (rows["1"]["band_ref"], rows["1"]["band_arm"], rows["1"]["batch_ref"], rows["1"]["batch_arm"]) == (
+        "Clear",
+        "Noisy",
+        "0.7500",
+        "0.6500",
+    )
+    assert (rows["1"]["service_ref"], rows["1"]["d_clear"], rows["1"]["d_noisy"]) == ("0.6000", "-1", "1")
+    assert (rows["3"]["batch_ref"], rows["3"]["batch_arm"], rows["3"]["band_arm"]) == ("0.6000", "", "Trash")
+    # the line-level record is unchanged by --pages
+    assert summary["overall"]["transitions"] == {"Clear->Noisy": 1, "Noisy->Trash": 1}
+    assert "pages" not in json.loads(Path(f"{out}_summary.json").read_text(encoding="utf-8"))["overall"]
+
+
+def test_diff_pages_of_a_rescored_tree_are_reachs_pages(tmp_path):
+    """The written tree (the re-scorer's own CLI, as ``recat``'s shards run it) publishes, page by page, what
+    ``reach`` computed in memory for the same arm: stage 18's page record is stage 17's reference."""
+    pytest.importorskip("pandas")
+    samples = _ROOT / "data_samples" / "DOC_LINE_CATEG"
+    names = sorted(p.name for p in samples.glob("CTX00000000[123].csv"))
+    if len(names) != 3:
+        pytest.skip("the committed sample documents are not present")
+    stored = {"arup": tmp_path / "arup", "arub": tmp_path / "arub"}
+    for name, coll in zip(names, ("arup", "arup", "arub"), strict=True):
+        stored[coll].mkdir(exist_ok=True)
+        (stored[coll] / name).write_bytes((samples / name).read_bytes())
+    engine = cc._engine_module()
+    for coll in ("arup", "arub"):
+        assert engine.main(["--input-dir", str(stored[coll]), "--out", str(tmp_path / "new" / coll)]) == 0
+
+    out = tmp_path / "d" / "18d"
+    argv = ["diff", "--workers", "1", "--pages", "--summary-only", "--out-prefix", str(out)]
+    for coll in ("arup", "arub"):
+        argv += ["--pair", coll, str(stored[coll]), str(tmp_path / "new" / coll)]
+    assert cc.main(argv) == 0
+    diffed = json.loads(Path(f"{out}_summary.json").read_text(encoding="utf-8"))["pages"]["overall"]
+
+    inputs = {**stored, "out": tmp_path / "r" / "17"}
+    arms = (("ship",), ("p50", "LOWPPL_CLEAR_MAX=50.0"))
+    assert _reach(inputs, "--pair", "ship", "p50", "--page-ref", "ship", "--workers", "1", arms=arms) == 0
+    reached = json.loads(Path(f"{inputs['out']}_summary.json").read_text(encoding="utf-8"))["pages"]["arms"]["ship"]
+    assert diffed["arm"] == reached and reached["pages"] > 0

@@ -687,7 +687,9 @@ but discounted: the guards read the trust score, not the stored `lang_score`
 
 **Frozen for the pilot.** The category semantics are frozen for the S2 pilot (the decision of 2026-09-30 on
 ocr-postprocess#2). A change after it is measured on a corpus diff with `tools/corpus_change.py`. One threshold moved inside the pilot:
-`LOWPPL_CLEAR_MAX` 50 → 35 (ocr-postprocess#3, stage 16, 2026-10-11), which broke no line on any labelled set; its
-corpus reach is measured in memory by `tools/corpus_change.py reach`. Validating the
+`LOWPPL_CLEAR_MAX` 50 → 35 (ocr-postprocess#3, stage 16, 2026-10-11), which broke no line on any labelled set. Measured
+in memory over both collections (`tools/corpus_change.py reach`, stage 17, 2026-10-12), it moves 62,859 lines and the
+page band of 1,128 of 1,226,349 pages, and of the labelled lines it moves 63 become right and none wrong; the pilot's
+parameter work ended there, and the collections are re-scored with it as `DOC_LINE_CATEG_1210`. Validating the
 categories on a gold set and fine-tuning a model on it (ocr-postprocess#4) are deferred by the AMČR baseline
 (atrium-project#67).

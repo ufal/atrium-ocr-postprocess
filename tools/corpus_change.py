@@ -40,7 +40,11 @@ Seven subcommands
     where the first pass is positional -- his ``nezavisle.py``) and fails if the
     two disagree. ``--skip`` leaves named documents out; ``--summary-only``
     counts every change but writes no changed line, for whole-corpus diffs such
-    as stage 18's 307 -> 1110 release record.
+    as stage 18's 307 -> 1210 release record. ``--pages`` adds what end users
+    read: every page's published outputs in both trees (the batch score, the
+    service score, the band -- ``reach --page-ref``'s definitions), the band
+    transitions and score moves between them, and the changed pages (keys and
+    numbers, no text).
 
 ``score``
     Scores a changed-line list against annotated sheets in David's format: TOP
@@ -83,7 +87,7 @@ Seven subcommands
     stage 16 (same rows, same engine, so the counts must be equal). A document
     that cannot be re-scored is reported by name; ``--expect-unreadable`` names
     the ones that are known (``CTX198503026.csv`` in ``DOC_LINE_CATEG_307``: no
-    ``page_num`` / ``line_num``), and any other exits 3.
+    columns at all, pandas' ``EmptyDataError``), and any other exits 3.
 
     ``--page-ref ARM`` adds the pages (issue #3 stage 17): per arm and page,
     what the pipeline publishes -- the batch score (mean ``quality_score`` over
@@ -126,6 +130,8 @@ import time
 from collections import Counter, defaultdict
 from collections.abc import Iterable, Sequence
 from concurrent.futures import ProcessPoolExecutor
+from contextlib import nullcontext
+from functools import partial
 from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parent.parent
@@ -384,10 +390,11 @@ def _header_index(header: Sequence[str], path: Path) -> dict[str, int]:
     return idx
 
 
-def _diff_document(task: tuple[str, str, str, str]) -> dict:
+def _diff_document(task: tuple[str, str, str, str], pages: bool = False) -> dict:
     label, name, base_path, arm_path = task
     stem = Path(name).stem
     dec = decade(stem)
+    by_page: dict[str, list[tuple[str, str, str, str]]] = {}
     out = {
         "label": label,
         "doc": stem,
@@ -408,6 +415,7 @@ def _diff_document(task: tuple[str, str, str, str]) -> dict:
                     out["error"] = "one side is empty"
                 return out
             ib, ia = _header_index(hb, Path(base_path)), _header_index(ha, Path(arm_path))
+            qb, qa = ib.get("quality_score"), ia.get("quality_score")
             pp_b = [(h, i) for i, h in enumerate(hb) if h.startswith("pp_")]
             pp_a = [(h, i) for i, h in enumerate(ha) if h.startswith("pp_")]
             for row_b in rb:
@@ -423,6 +431,15 @@ def _diff_document(task: tuple[str, str, str, str]) -> dict:
                     out["unpaired"] += 1
                     continue
                 cb, ca = row_b[ib["categ"]], row_a[ia["categ"]]
+                if pages:
+                    by_page.setdefault(key_b[0], []).append(
+                        (
+                            cb,
+                            row_b[qb] if qb is not None and qb < len(row_b) else "",
+                            ca,
+                            row_a[qa] if qa is not None and qa < len(row_a) else "",
+                        )
+                    )
                 if cb == ca:
                     continue
                 out["transitions"][f"{cb}->{ca}"] += 1
@@ -436,7 +453,23 @@ def _diff_document(task: tuple[str, str, str, str]) -> dict:
                 out["unpaired"] += 1
     except (OSError, ValueError, IndexError, csv.Error) as exc:
         out["error"] = f"{type(exc).__name__}: {exc}"
+    if pages and not out["error"]:
+        out.update(_diff_pages(label, stem, dec, by_page))
     return out
+
+
+def _diff_pages(label: str, stem: str, dec: str, by_page: dict[str, list[tuple[str, str, str, str]]]) -> dict:
+    """``diff --pages``, one document: both trees' page profiles and the pages whose outputs differ."""
+    base, arm, change = _page_side(), _page_side(), _page_change()
+    for page in sorted(by_page, key=_page_sort):
+        rows = by_page[page]
+        idx = range(len(rows))
+        x = page_stats([r[0] for r in rows], [_score(r[1]) for r in rows], idx)
+        y = page_stats([r[2] for r in rows], [_score(r[3]) for r in rows], idx)
+        _page_side_add(base, x)
+        _page_side_add(arm, y)
+        _page_change_add(change, x, y, (label, stem, dec, page, len(rows)))
+    return {"page_base": base, "page_arm": arm, "page_change": change}
 
 
 def _verify_document(task: tuple[str, str, str, str]) -> tuple[str, Counter]:
@@ -511,20 +544,34 @@ def cmd_diff(args: argparse.Namespace) -> int:
     per_doc: Counter = Counter()
     errors: list[str] = []
     touched: list[tuple[str, str]] = []
+    page_path = Path(f"{prefix}_pages.csv.gz") if args.pages else None
+    page_acc: dict[str, dict] = defaultdict(
+        lambda: {"base": _page_side(), "arm": _page_side(), "change": _page_change()}
+    )
     t0 = time.time()
     with (
         open(f"{prefix}_changes.csv", "w", encoding="utf-8", newline="") as fh,
+        gzip.open(page_path, "wt", encoding="utf-8", newline="") if page_path else nullcontext() as fp,
         ProcessPoolExecutor(max_workers=args.workers) as ex,
     ):
         writer = csv.writer(fh)
         writer.writerow(CHANGE_FIELDS)
-        for res in ex.map(_diff_document, tasks, chunksize=64):
+        page_writer = csv.writer(fp) if fp is not None else None
+        if page_writer is not None:
+            page_writer.writerow(PAGE_DIFF_FIELDS)
+        for res in ex.map(partial(_diff_document, pages=args.pages), tasks, chunksize=64):
             agg = pairs[res["label"]]
             agg["documents_compared"] += 1
             agg["rows_compared"] += res["rows_base"]
             agg["unpaired"] += res["unpaired"]
             if res["error"]:
                 errors.append(f"{res['label']}/{res['doc']}: {res['error']}")
+            if page_writer is not None and "page_base" in res:
+                acc = page_acc[res["label"]]
+                _page_side_merge(acc["base"], res["page_base"])
+                _page_side_merge(acc["arm"], res["page_arm"])
+                _page_change_merge(acc["change"], res["page_change"])
+                page_writer.writerows(res["page_change"]["rows"])
             if res["changes"]:
                 agg["changed_documents"] += 1
                 agg["changed_lines"] += len(res["changes"])
@@ -580,6 +627,25 @@ def cmd_diff(args: argparse.Namespace) -> int:
         "changes_written": not args.summary_only,
         "minutes": round((time.time() - t0) / 60, 1),
     }
+    if args.pages:
+        everything = {"base": _page_side(), "arm": _page_side(), "change": _page_change()}
+        for acc in page_acc.values():
+            _page_side_merge(everything["base"], acc["base"])
+            _page_side_merge(everything["arm"], acc["arm"])
+            _page_change_merge(everything["change"], acc["change"])
+
+        def _block(acc: dict) -> dict:
+            return {
+                "base": _page_side_summary(acc["base"]),
+                "arm": _page_side_summary(acc["arm"]),
+                **_page_change_summary(acc["change"]),
+            }
+
+        summary["pages"] = {
+            "file": str(page_path),
+            "pairs": {label: _block(acc) for label, acc in sorted(page_acc.items())},
+            "overall": _block(everything),
+        }
 
     rc = 0
     if args.verify:
@@ -620,6 +686,16 @@ def cmd_diff(args: argparse.Namespace) -> int:
             print(f"    {c['collection']}/{c['doc']}: {c['changes']:,} ({c['share']:.1%})")
     if args.verify:
         print(f"  independent recount agrees: {summary['verify']['agree']}")
+    if args.pages:
+        pg = summary["pages"]["overall"]
+        print(
+            f"  pages: {pg['base']['pages']:,}; {pg['pages_changed']:,} changed, {pg['band_flips']:,} band flip(s), "
+            f"{pg['batch_moved_ge_0.05']:,} batch score(s) moved >= 0.05"
+        )
+        print(f"    bands, base: {pg['base']['bands']}")
+        print(f"    bands, arm:  {pg['arm']['bands']}")
+        for t, n in list(pg["band_transitions"].items())[:6]:
+            print(f"    {t:<20} {n:>10,}")
     if errors:
         print(f"error: {len(errors)} document(s) could not be read; first: {errors[0]}", file=sys.stderr)
         rc = rc or 2
@@ -1193,6 +1269,88 @@ def _quantiles(hist: Counter, points: Sequence[float] = (0.05, 0.25, 0.5, 0.75, 
     return out
 
 
+def _page_side() -> dict:
+    """One arm's (or tree's) page profile, summed page by page and document by document."""
+    return {
+        "pages": 0,
+        "bands": Counter(),
+        "band_by_score": Counter(),
+        "batch_hist": Counter(),
+        "service_hist": Counter(),
+    }
+
+
+def _page_side_add(side: dict, st: dict) -> None:
+    side["pages"] += 1
+    side["bands"][st["band"] or "none"] += 1
+    side["band_by_score"][f"{st['band'] or 'none'} | {_bucket(st['batch'])}"] += 1
+    if st["batch"] is not None:
+        side["batch_hist"][_bin(st["batch"])] += 1
+    if st["service"] is not None:
+        side["service_hist"][_bin(st["service"])] += 1
+
+
+def _page_side_merge(dst: dict, src: dict) -> None:
+    dst["pages"] += src["pages"]
+    for key in ("bands", "band_by_score", "batch_hist", "service_hist"):
+        dst[key].update(src[key])
+
+
+def _page_side_summary(side: dict) -> dict:
+    return {
+        "pages": side["pages"],
+        "bands": dict(side["bands"].most_common()),
+        "band_by_score": dict(sorted(side["band_by_score"].items())),
+        "batch_quantiles": _quantiles(side["batch_hist"]),
+        "service_quantiles": _quantiles(side["service_hist"]),
+        "batch_hist": {str(b): n for b, n in sorted(side["batch_hist"].items())},
+    }
+
+
+def _page_change() -> dict:
+    """One pair's page changes: the pages whose outputs differ, their band transitions, |Δ batch score| in 0.01
+    bins (bin 100: the page gains or loses its last text line), and their rows (``PAGE_DIFF_FIELDS``)."""
+    return {"pages_changed": 0, "band_transitions": Counter(), "abs_dbatch_hist": Counter(), "rows": []}
+
+
+def _page_change_add(change: dict, x: dict, y: dict, head: tuple) -> None:
+    """One page, reference ``x`` against arm ``y`` (``page_stats``); ``head`` is collection, doc, decade, page,
+    lines."""
+    if x == y:
+        return
+    change["pages_changed"] += 1
+    if x["band"] != y["band"]:
+        change["band_transitions"][f"{x['band'] or 'none'}->{y['band'] or 'none'}"] += 1
+    if x["batch"] is None or y["batch"] is None:
+        if x["batch"] != y["batch"]:
+            change["abs_dbatch_hist"][100] += 1
+    elif abs(y["batch"] - x["batch"]) > 1e-12:
+        change["abs_dbatch_hist"][min(100, int(abs(y["batch"] - x["batch"]) * 100 + 1e-9))] += 1
+    change["rows"].append(
+        (*head, x["band"], y["band"], _num(x["batch"]), _num(y["batch"]), _num(x["service"]), _num(y["service"]),
+         *(b - c for b, c in zip(y["counts"], x["counts"], strict=True)))
+    )  # fmt: skip
+
+
+def _page_change_merge(dst: dict, src: dict) -> None:
+    """Sums only: the rows are written as they come, never kept."""
+    dst["pages_changed"] += src["pages_changed"]
+    dst["band_transitions"].update(src["band_transitions"])
+    dst["abs_dbatch_hist"].update(src["abs_dbatch_hist"])
+
+
+def _page_change_summary(change: dict) -> dict:
+    hist = change["abs_dbatch_hist"]
+    return {
+        "pages_changed": change["pages_changed"],
+        "band_flips": sum(change["band_transitions"].values()),
+        "band_transitions": dict(change["band_transitions"].most_common()),
+        "abs_dbatch_hist": {str(b): n for b, n in sorted(hist.items())},
+        "batch_moved_ge_0.01": sum(n for b, n in hist.items() if b >= 1),
+        "batch_moved_ge_0.05": sum(n for b, n in hist.items() if b >= 5),
+    }
+
+
 def _e2_derive(m: dict) -> dict:
     m["band_agreement"] = round(m["band_agree"] / m["band_pages"], 4) if m["band_pages"] else None
     m["clear_share_mae"] = round(m["clear_abs"] / m["pages"], 4) if m["pages"] else None
@@ -1247,22 +1405,10 @@ def _page_results(coll: str, dec: str, docs: list, pages: list, results: dict, r
     }
     arms_out: dict[str, dict] = {}
     for arm, per_page in stats.items():
-        a = {
-            "pages": 0,
-            "bands": Counter(),
-            "band_by_score": Counter(),
-            "batch_hist": Counter(),
-            "service_hist": Counter(),
-        }
+        side = _page_side()
         for st in per_page.values():
-            a["pages"] += 1
-            a["bands"][st["band"] or "none"] += 1
-            a["band_by_score"][f"{st['band'] or 'none'} | {_bucket(st['batch'])}"] += 1
-            if st["batch"] is not None:
-                a["batch_hist"][_bin(st["batch"])] += 1
-            if st["service"] is not None:
-                a["service_hist"][_bin(st["service"])] += 1
-        arms_out[arm] = a
+            _page_side_add(side, st)
+        arms_out[arm] = side
     ref = stats[_REACH["page_ref"]]
     page_rows = [
         (coll, key[0], dec, key[1], len(groups[key]), *ref[key]["counts"], _num(ref[key]["batch"]),
@@ -1271,24 +1417,10 @@ def _page_results(coll: str, dec: str, docs: list, pages: list, results: dict, r
     ]  # fmt: skip
     pairs_out: dict[str, dict] = {}
     for r, a in _REACH["pairs"]:
-        p = {"pages_changed": 0, "band_transitions": Counter(), "abs_dbatch_hist": Counter(), "rows": []}
+        change = _page_change()
         for key in order:
-            x, y = stats[r][key], stats[a][key]
-            if x == y:
-                continue
-            p["pages_changed"] += 1
-            if x["band"] != y["band"]:
-                p["band_transitions"][f"{x['band'] or 'none'}->{y['band'] or 'none'}"] += 1
-            if x["batch"] is None or y["batch"] is None:
-                if x["batch"] != y["batch"]:
-                    p["abs_dbatch_hist"][100] += 1  # the page gains or loses its last text line
-            elif abs(y["batch"] - x["batch"]) > 1e-12:
-                p["abs_dbatch_hist"][min(100, int(abs(y["batch"] - x["batch"]) * 100 + 1e-9))] += 1
-            p["rows"].append(
-                (coll, key[0], dec, key[1], len(groups[key]), x["band"], y["band"], _num(x["batch"]), _num(y["batch"]),
-                 _num(x["service"]), _num(y["service"]), *(b - c for b, c in zip(y["counts"], x["counts"], strict=True)))
-            )  # fmt: skip
-        pairs_out[f"{r}->{a}"] = p
+            _page_change_add(change, stats[r][key], stats[a][key], (coll, key[0], dec, key[1], len(groups[key])))
+        pairs_out[f"{r}->{a}"] = change
     labelled = []
     arm_order = list(results)
     for src, hits in row_labels.items():
@@ -1539,19 +1671,8 @@ def cmd_reach(args: argparse.Namespace) -> int:
             handles[f"page:{key}"] = (gzip.open if path.suffix == ".gz" else open)(
                 path, "wt", encoding="utf-8", newline=""
             )
-        page_agg = {
-            arm: {
-                "pages": 0,
-                "bands": Counter(),
-                "band_by_score": Counter(),
-                "batch_hist": Counter(),
-                "service_hist": Counter(),
-            }
-            for arm in arms
-        }
-        page_pairs = {
-            pl: {"pages_changed": 0, "band_transitions": Counter(), "abs_dbatch_hist": Counter()} for pl in pair_labels
-        }
+        page_agg = {arm: _page_side() for arm in arms}
+        page_pairs = {pl: _page_change() for pl in pair_labels}
     try:
         writers = {pl: csv.writer(fh) for pl, fh in handles.items()}
         for key, w in writers.items():
@@ -1610,20 +1731,14 @@ def cmd_reach(args: argparse.Namespace) -> int:
                             )
                         )
                 if page_ref:
-                    for arm, a in res.get("page_arms", {}).items():
-                        acc = page_agg[arm]
-                        acc["pages"] += a["pages"]
-                        for key in ("bands", "band_by_score", "batch_hist", "service_hist"):
-                            acc[key].update(a[key])
+                    for arm, side in res.get("page_arms", {}).items():
+                        _page_side_merge(page_agg[arm], side)
                     for row in res.get("page_rows", []):
                         ref_by_coll[row[0]][row[-1] or "none"] += 1
                         ref_by_dec[row[2]][row[-1] or "none"] += 1
                     writers["page:reference"].writerows(res.get("page_rows", []))
                     for pl, pp in res.get("page_pairs", {}).items():
-                        acc = page_pairs[pl]
-                        acc["pages_changed"] += pp["pages_changed"]
-                        acc["band_transitions"].update(pp["band_transitions"])
-                        acc["abs_dbatch_hist"].update(pp["abs_dbatch_hist"])
+                        _page_change_merge(page_pairs[pl], pp)
                         writers[f"page:{pl}"].writerows(pp["rows"])
                     labelled_pages.extend(res.get("labelled_pages", []))
                     writers["page:labelled"].writerows(res.get("labelled_pages", []))
@@ -1684,30 +1799,10 @@ def cmd_reach(args: argparse.Namespace) -> int:
             "min_labelled": args.page_min_labelled,
             "min_coverage": args.page_min_coverage,
             "files": {key: str(path) for key, path in page_paths.items()},
-            "arms": {
-                arm: {
-                    "pages": a["pages"],
-                    "bands": dict(a["bands"].most_common()),
-                    "band_by_score": dict(sorted(a["band_by_score"].items())),
-                    "batch_quantiles": _quantiles(a["batch_hist"]),
-                    "service_quantiles": _quantiles(a["service_hist"]),
-                    "batch_hist": {str(b): n for b, n in sorted(a["batch_hist"].items())},
-                }
-                for arm, a in page_agg.items()
-            },
+            "arms": {arm: _page_side_summary(side) for arm, side in page_agg.items()},
             "reference_by_collection": {c: dict(v.most_common()) for c, v in sorted(ref_by_coll.items())},
             "reference_by_decade": {d: dict(v.most_common()) for d, v in sorted(ref_by_dec.items())},
-            "pairs": {
-                pl: {
-                    "pages_changed": pp["pages_changed"],
-                    "band_flips": sum(pp["band_transitions"].values()),
-                    "band_transitions": dict(pp["band_transitions"].most_common()),
-                    "abs_dbatch_hist": {str(b): n for b, n in sorted(pp["abs_dbatch_hist"].items())},
-                    "batch_moved_ge_0.01": sum(n for b, n in pp["abs_dbatch_hist"].items() if b >= 1),
-                    "batch_moved_ge_0.05": sum(n for b, n in pp["abs_dbatch_hist"].items() if b >= 5),
-                }
-                for pl, pp in page_pairs.items()
-            },
+            "pairs": {pl: _page_change_summary(pp) for pl, pp in page_pairs.items()},
             "labelled": labelled_page_metrics(
                 labelled_pages, list(arms), args.page_min_labelled, args.page_min_coverage
             ),
@@ -2004,6 +2099,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--summary-only",
         action="store_true",
         help="count every change but write no changed line (the CSV keeps its header): for whole-corpus diffs",
+    )
+    d.add_argument(
+        "--pages",
+        action="store_true",
+        help="also compare what each page publishes (batch score, service score, band) between the two trees",
     )
     d.add_argument("--out-prefix", required=True)
     d.set_defaults(func=cmd_diff)
