@@ -35,7 +35,12 @@ What must not fail silently:
     whole-corpus release diff;
 11. ``diff --pages`` compares what each page publishes in the two trees (band,
     batch score, service score), and a tree written by the re-scorer's own CLI
-    publishes exactly the pages ``reach`` computed in memory for that arm.
+    publishes exactly the pages ``reach`` computed in memory for that arm;
+12. ``diff`` pairs lines on ``(page_num, line_num)``, not by position: a document
+    stored in another order (the re-scorer writes it sorted, the July batch did
+    not always) is counted as reordered, not refused; a locator that occurs twice
+    is paired in order of occurrence; ``149.0`` is ``149``; and the independent
+    recount agrees in every case.
 """
 
 from __future__ import annotations
@@ -905,3 +910,48 @@ def test_diff_pages_of_a_rescored_tree_are_reachs_pages(tmp_path):
     assert _reach(inputs, "--pair", "ship", "p50", "--page-ref", "ship", "--workers", "1", arms=arms) == 0
     reached = json.loads(Path(f"{inputs['out']}_summary.json").read_text(encoding="utf-8"))["pages"]["arms"]["ship"]
     assert diffed["arm"] == reached and reached["pages"] > 0
+
+
+# ---------------------------------------------------------------------------
+# 12. diff pairs by key: order, duplicates, number formats
+# ---------------------------------------------------------------------------
+
+
+def _key_diff(tmp_path: Path, base_rows: list[tuple], arm_rows: list[tuple], *extra: str) -> tuple[int, dict]:
+    base, arm, out = tmp_path / "base", tmp_path / "arm", tmp_path / "out" / "d"
+    _write_scored(base / "CTX200100001.csv", base_rows)
+    _write_scored(arm / "CTX200100001.csv", arm_rows)
+    argv = ["diff", "--pair", "arup", str(base), str(arm), "--workers", "1", "--verify", "--out-prefix", str(out)]
+    rc = cc.main([*argv, *extra])
+    return rc, json.loads(Path(f"{out}_summary.json").read_text(encoding="utf-8"))
+
+
+def test_diff_pairs_a_reordered_document_by_key(tmp_path):
+    base = [("Clear", 0.9, 1, 1), ("Noisy", 0.6, 1, 2), ("Trash", 0.3, 2, 1), ("Clear", 0.9, 10, 1)]
+    # the re-scorer's order is (page, line) sorted; the stored one put page 10 before page 2
+    stored = [base[0], base[1], base[3], base[2]]
+    arm = [("Clear", 0.9, 1, 1), ("Clear", 0.85, 1, 2), ("Noisy", 0.6, 2, 1), ("Clear", 0.9, 10, 1)]
+    rc, summary = _key_diff(tmp_path, stored, arm, "--pages")
+    ov = summary["overall"]
+    assert rc == 0 and ov["unpaired"] == 0
+    assert ov["transitions"] == {"Noisy->Clear": 1, "Trash->Noisy": 1}
+    assert (ov["rows_out_of_order"], ov["documents_out_of_order"]) == (2, 1)
+    assert summary["verify"]["agree"] is True
+    assert summary["pages"]["overall"]["band_transitions"] == {"Trash->Noisy": 1}
+
+
+def test_diff_pairs_repeated_locators_in_order_and_normalises_numbers(tmp_path):
+    base = [("Clear", 0.9, 1, 1), ("Noisy", 0.6, 1, 1), ("Trash", 0.3, 1, 2)]
+    arm = [("Clear", 0.9, "1.0", 1), ("Trash", 0.3, 1, "1.0"), ("Trash", 0.3, 1, 2)]
+    rc, summary = _key_diff(tmp_path, base, arm)
+    ov = summary["overall"]
+    assert rc == 0 and ov["unpaired"] == 0 and ov["rows_out_of_order"] == 0
+    assert ov["transitions"] == {"Noisy->Trash": 1}
+    assert summary["verify"]["agree"] is True
+
+
+def test_diff_still_refuses_a_line_without_a_partner(tmp_path):
+    base = [("Clear", 0.9, 1, 1), ("Noisy", 0.6, 1, 2)]
+    arm = [("Clear", 0.9, 1, 1), ("Noisy", 0.6, 1, 3)]
+    rc, summary = _key_diff(tmp_path, base, arm)
+    assert rc == 2 and summary["overall"]["unpaired"] == 2

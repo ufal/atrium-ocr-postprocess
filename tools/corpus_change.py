@@ -34,11 +34,17 @@ Seven subcommands
     Joins two re-scored trees document by document on ``(page_num, line_num)``
     and writes the changed lines, the touched documents and a summary
     (transitions overall / per collection / per decade, the ``pp_*`` flags of
-    every arrival in ``Trash``, and the documents that carry the change).
-    ``--verify`` recounts every transition through a second, independent reader
-    (pandas, a dict keyed on the locator -- David's ``cmp_full.py`` semantics,
-    where the first pass is positional -- his ``nezavisle.py``) and fails if the
-    two disagree. ``--skip`` leaves named documents out; ``--summary-only``
+    every arrival in ``Trash``, and the documents that carry the change). The
+    join is by key, not by position: the re-scorer writes a document's lines
+    sorted by page and line, and the stored July batch (``DOC_LINE_CATEG_307``)
+    does not always hold them in that order -- stage 18's first, positional
+    pass refused 285,135 lines that were only stored differently. A locator
+    that occurs more than once is paired in its order of occurrence; the lines
+    whose position differs between the two trees are counted
+    (``rows_out_of_order``), not refused. ``--verify`` recounts every transition
+    through a second, independent reader (pandas, a dict keyed on the locator
+    and its occurrence -- David's ``nezavisle.py``) and fails if the two
+    disagree. ``--skip`` leaves named documents out; ``--summary-only``
     counts every change but writes no changed line, for whole-corpus diffs such
     as stage 18's 307 -> 1210 release record. ``--pages`` adds what end users
     read: every page's published outputs in both trees (the batch score, the
@@ -391,6 +397,12 @@ def _header_index(header: Sequence[str], path: Path) -> dict[str, int]:
 
 
 def _diff_document(task: tuple[str, str, str, str], pages: bool = False) -> dict:
+    """One document, base against arm, its lines paired on the ``_locator``-normalised ``(page_num, line_num)``.
+
+    The arm is indexed (category, score and ``pp_*`` flags per line, a key seen again queued in order) and the base is
+    streamed against it, so a document costs one compact index, not two copies. A base line no arm line answers, and an
+    arm line no base line claims, are unpaired; a base line whose position holds another key in the arm is out of order.
+    """
     label, name, base_path, arm_path = task
     stem = Path(name).stem
     dec = decade(stem)
@@ -401,6 +413,7 @@ def _diff_document(task: tuple[str, str, str, str], pages: bool = False) -> dict
         "rows_base": 0,
         "rows_arm": 0,
         "unpaired": 0,
+        "out_of_order": 0,
         "transitions": Counter(),
         "trash_pp": Counter(),
         "changes": [],
@@ -418,39 +431,48 @@ def _diff_document(task: tuple[str, str, str, str], pages: bool = False) -> dict
             qb, qa = ib.get("quality_score"), ia.get("quality_score")
             pp_b = [(h, i) for i, h in enumerate(hb) if h.startswith("pp_")]
             pp_a = [(h, i) for i, h in enumerate(ha) if h.startswith("pp_")]
-            for row_b in rb:
+            index: dict[tuple[str, str], tuple[str, str, str]] = {}
+            queued: dict[tuple[str, str], list[tuple[str, str, str]]] = {}
+            order: list[tuple[str, str]] = []
+            for row_a in ra:
+                key = (_locator(row_a[ia["page_num"]]), _locator(row_a[ia["line_num"]]))
+                line = (
+                    row_a[ia["categ"]],
+                    row_a[qa] if qa is not None and qa < len(row_a) else "",
+                    ";".join(h for h, i in pp_a if i < len(row_a) and row_a[i] == "True"),
+                )
+                order.append(key)
+                if key in index:
+                    queued.setdefault(key, []).append(line)
+                else:
+                    index[key] = line
+            out["rows_arm"] = len(order)
+            for pos, row_b in enumerate(rb):
                 out["rows_base"] += 1
-                row_a = next(ra, None)
-                if row_a is None:
+                page_b, line_b = row_b[ib["page_num"]], row_b[ib["line_num"]]
+                key = (_locator(page_b), _locator(line_b))
+                if pos >= len(order) or order[pos] != key:
+                    out["out_of_order"] += 1
+                hit = index.pop(key, None)
+                if hit is None:
                     out["unpaired"] += 1
                     continue
-                out["rows_arm"] += 1
-                key_b = (row_b[ib["page_num"]], row_b[ib["line_num"]])
-                key_a = (row_a[ia["page_num"]], row_a[ia["line_num"]])
-                if key_b != key_a:
-                    out["unpaired"] += 1
-                    continue
-                cb, ca = row_b[ib["categ"]], row_a[ia["categ"]]
+                if queued.get(key):
+                    index[key] = queued[key].pop(0)
+                ca, score_a, on_a = hit
+                cb = row_b[ib["categ"]]
                 if pages:
-                    by_page.setdefault(key_b[0], []).append(
-                        (
-                            cb,
-                            row_b[qb] if qb is not None and qb < len(row_b) else "",
-                            ca,
-                            row_a[qa] if qa is not None and qa < len(row_a) else "",
-                        )
+                    by_page.setdefault(key[0], []).append(
+                        (cb, row_b[qb] if qb is not None and qb < len(row_b) else "", ca, score_a)
                     )
                 if cb == ca:
                     continue
                 out["transitions"][f"{cb}->{ca}"] += 1
-                on_a = ";".join(h for h, i in pp_a if i < len(row_a) and row_a[i] == "True")
                 on_b = ";".join(h for h, i in pp_b if i < len(row_b) and row_b[i] == "True")
                 if ca == "Trash" and cb != "Trash":
                     out["trash_pp"][on_a or "(none)"] += 1
-                out["changes"].append((label, stem, dec, key_b[0], key_b[1], cb, ca, row_b[ib["text"]], on_a, on_b))
-            for _ in ra:
-                out["rows_arm"] += 1
-                out["unpaired"] += 1
+                out["changes"].append((label, stem, dec, page_b, line_b, cb, ca, row_b[ib["text"]], on_a, on_b))
+            out["unpaired"] += len(index) + sum(len(rest) for rest in queued.values())
     except (OSError, ValueError, IndexError, csv.Error) as exc:
         out["error"] = f"{type(exc).__name__}: {exc}"
     if pages and not out["error"]:
@@ -473,7 +495,7 @@ def _diff_pages(label: str, stem: str, dec: str, by_page: dict[str, list[tuple[s
 
 
 def _verify_document(task: tuple[str, str, str, str]) -> tuple[str, Counter]:
-    """Independent recount: pandas, a dict keyed on the locator (last row wins)."""
+    """Independent recount: pandas, a dict keyed on the normalised locator and its occurrence (``cumcount``)."""
     import pandas as pd
 
     label, _name, base_path, arm_path = task
@@ -484,8 +506,9 @@ def _verify_document(task: tuple[str, str, str, str]) -> tuple[str, Counter]:
             frame = pd.read_csv(path, usecols=cols, dtype=str, keep_default_na=False)
         except pd.errors.EmptyDataError:
             return {}
-        locators = zip(frame["page_num"], frame["line_num"], strict=True)
-        return dict(zip(locators, frame["categ"], strict=True))
+        page, line = frame["page_num"].map(_locator), frame["line_num"].map(_locator)
+        occurrence = frame.groupby([page, line], sort=False).cumcount()
+        return dict(zip(zip(page, line, occurrence, strict=True), frame["categ"], strict=True))
 
     old, new = read(base_path), read(arm_path)
     counts: Counter = Counter()
@@ -534,6 +557,8 @@ def cmd_diff(args: argparse.Namespace) -> int:
             "documents_compared": 0,
             "rows_compared": 0,
             "unpaired": 0,
+            "rows_out_of_order": 0,
+            "documents_out_of_order": 0,
             "changed_lines": 0,
             "changed_documents": 0,
             "transitions": Counter(),
@@ -564,6 +589,8 @@ def cmd_diff(args: argparse.Namespace) -> int:
             agg["documents_compared"] += 1
             agg["rows_compared"] += res["rows_base"]
             agg["unpaired"] += res["unpaired"]
+            agg["rows_out_of_order"] += res.get("out_of_order", 0)
+            agg["documents_out_of_order"] += int(res.get("out_of_order", 0) > 0)
             if res["error"]:
                 errors.append(f"{res['label']}/{res['doc']}: {res['error']}")
             if page_writer is not None and "page_base" in res:
@@ -612,6 +639,8 @@ def cmd_diff(args: argparse.Namespace) -> int:
             "documents_compared": sum(p["documents_compared"] for p in pairs.values()),
             "rows_compared": sum(p["rows_compared"] for p in pairs.values()),
             "unpaired": sum(p["unpaired"] for p in pairs.values()),
+            "rows_out_of_order": sum(p["rows_out_of_order"] for p in pairs.values()),
+            "documents_out_of_order": sum(p["documents_out_of_order"] for p in pairs.values()),
             "changed_lines": total_changed,
             "changed_documents": len(per_doc),
             "transitions": dict(transitions.most_common()),
@@ -674,6 +703,11 @@ def cmd_diff(args: argparse.Namespace) -> int:
             f"{p['changed_lines']:,} changed in {p['changed_documents']:,} docs, unpaired {p['unpaired']:,}"
         )
     print(f"  changed lines: {total_changed:,} in {ov['changed_documents']:,} document(s)")
+    if ov["rows_out_of_order"]:
+        print(
+            f"  stored in another order: {ov['rows_out_of_order']:,} line(s) in {ov['documents_out_of_order']:,} "
+            "document(s), paired by (page_num, line_num)"
+        )
     for t, n in ov["transitions"].items():
         print(f"    {t:<20} {n:>10,}")
     if ov["trash_arrivals_by_pp"]:
