@@ -156,10 +156,24 @@ derived labels; the patch's agreement drops from 76.7% to 68.8% on the corrected
 set. The quality figures (76.5 / 9.6 / 13.9, 5.5 : 1) are computed from the
 grades directly and are unaffected.
 
+**Corrected since delivery.** One label, in place:
+
+| key                      | text      | was     | now     | by                        |
+|--------------------------|-----------|---------|---------|---------------------------|
+| `CTX201703691`, 149, 287 | `sektlll` | `Trash` | `Noisy` | @david-spacil, 2026-10-13 |
+
+The scan has `lll`, not `III`, so the line is decipherable damage; the old label was
+given without checking the source (#3, `#issuecomment-6139869076`).
+
+Class support is now Trash 179 and Noisy 333; rows, documents and sources are
+unchanged. Every figure quoted before 2026-10-13 used `Trash` here. Under the
+shipped configuration the line reads `Clear`, wrong under either label, so the
+shipped gold pins (510 at `LOWPPL_CLEAR_MAX` 50, 507 at 35) stand.
+
 ### It is a sidecar, not a per-document CSV
 
-This file breaks the one-CSV-per-document rule above, deliberately and as the
-only exception. It is a **key-indexed sidecar**: `file`, `page_num`, `line_num`,
+This file breaks the one-CSV-per-document rule above, deliberately, as every
+file in `sidecars/` does. It is a **key-indexed sidecar**: `file`, `page_num`, `line_num`,
 `gold_categ`, `gold_source` and nothing else.
 
 It cannot take the documented form. The 40 feature columns live in the delivered
@@ -293,3 +307,75 @@ that to both of her `Clear` lines).
 Two cautions. The sidecar counts every joined line once; the frame weights live
 only in the `report` output. And every blank in this return is a non-Czech line,
 so neither the sidecar nor the projection says anything about German text.
+
+## The fourth set — @david-spacil's floor annotation, keys only (2026-10-05)
+
+**`tools/gold/sidecars/floor_2026-10-05_keys.csv`**, committed on 2026-10-13 with his
+consent (#3, `#issuecomment-6139869076`): keys and labels, no text.
+
+**What he labelled.** A blind annotation of the lines `SHORT_GARBAGE_WITNESS_FLOOR = true`
+moved over both collections, in his own run on the `2907` batch (#3, 2026-10-05):
+
+- the 200 largest groups of changed lines, grouped by text (casefolded, non-word
+  characters removed); 199 of them are labelled, one label per group;
+- 100 lines drawn at random from the rest; 98 are labelled.
+
+His sheets carry the line text and stay outside the repository.
+
+**How the file was built.** Stage 16's compose step (`16n1`, on the cluster) joined his
+labels onto the July batch `DOC_LINE_CATEG_307`, the release's base. It used
+`tools/corpus_change.py`'s own readers: `group_key`, `load_top_labels`, `load_tail_labels`.
+
+- **A group's label sits on every 307 line with that group key, changed or not.** His
+  annotation judged the text, so the label travels with it. But it covered 15,463 changed
+  lines; the file carries 141,195.
+- Two generic groups hold 83 % of those rows, and their labels are the most extrapolated:
+  - `m` (group 19, `M`, `Trash`): 54,334 lines in 9,861 documents;
+  - `mater` (group 188, `[ ] (Mater.)`, `Clear`): 62,365 lines in 6,074 documents.
+- A tail line keeps its own key. One of the 98, `CTX198401467A:237:78`, is not in 307.
+- Eight of his keys disagree with @DanaKriv's labels. The composed sidecar of stage 16 dropped them; this file, being
+  his alone, keeps them: group 174 (7 lines) and one tail line.
+
+| column        | values                                            |
+|---------------|---------------------------------------------------|
+| `file`        | the document id, stripped (see the caution below) |
+| `page_num`    | as in 307                                         |
+| `line_num`    | as in 307                                         |
+| `gold_categ`  | `Clear` 80,719 · `Trash` 57,073 · `Noisy` 3,500   |
+| `gold_source` | `david_top` 141,195 · `david_tail` 97             |
+| `group`       | his sheet's rank (199 groups), or `tail`          |
+
+141,292 rows over 14,487 documents, no duplicate keys.
+
+**Corrected since delivery** (@david-spacil, 2026-10-13). Groups 8 (`sektlll`, 543 lines)
+and 99 (`seklll`, 19 lines) are `Noisy`; his sheet says `Clear`. Both come from one
+typescript in `CTX201703691`, where the scan shows `lll` and not `III`. He named
+`sektlll`; `seklll` is the same misreading and is relabelled with it, as said in the thread.
+
+**Against the 2,067 gold.** 20 keys are in both; five disagree, all in the two generic groups:
+
+| key                    | gold    | this file | group |
+|------------------------|---------|-----------|-------|
+| `CTX196006127`, 1, 17  | `Noisy` | `Trash`   | 19    |
+| `MTX200000550`, 2, 172 | `Noisy` | `Clear`   | 188   |
+| `MTX200704303`, 3, 63  | `Noisy` | `Clear`   | 188   |
+| `MTX200901043`, 2, 49  | `Noisy` | `Clear`   | 188   |
+| `MTX201300089`, 2, 137 | `Noisy` | `Clear`   | 188   |
+
+The sixth, `sektlll` at `CTX201703691`, 149, 287, is `Noisy` in both since the correction.
+
+**Using it.** It is scored against the 307 batch, never `2907`:
+
+```bash
+# per-part A/B on the documents it names (stage it as stage 16 did; never point --input-dir at tools/gold/)
+python tools/ab_constant_eval.py --input-dir <307 documents> --const ... --values ... \
+    --gold-sidecar tools/gold/sidecars/floor_2026-10-05_keys.csv --gold-column gold_categ
+
+# the whole collections in memory, labels joined on every changed line
+python tools/corpus_change.py reach ... --labels david tools/gold/sidecars/floor_2026-10-05_keys.csv
+```
+
+One caution. Two ARUP documents carry a name that ends in a space in 307:
+`CTX201604080 .csv` and `CTX201604151 .csv`. This file stores their ids stripped, as compose
+did. So 92 rows (group 19) do not join through `recategorize_from_csv.attach_gold_sidecar`,
+which matches the id as stored, while `corpus_change.py` strips both sides and joins them.

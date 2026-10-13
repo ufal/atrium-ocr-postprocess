@@ -39,6 +39,7 @@ GOLD_DIR = _ROOT / "tools" / "gold"
 SAMPLE_DIR = _ROOT / "data_samples" / "DOC_LINE_CATEG"
 SIDECAR_DIR = GOLD_DIR / "sidecars"
 ISSUE30_SIDECAR = SIDECAR_DIR / "issue30_gold_2067.csv"
+FLOOR_KEYS_SIDECAR = SIDECAR_DIR / "floor_2026-10-05_keys.csv"
 
 
 # ---------------------------------------------------------------------------
@@ -215,6 +216,32 @@ def test_issue30_sidecar_has_the_documented_shape():
     assert not df.duplicated(subset=list(GOLD_SIDECAR_KEYS)).any(), "duplicate keys would double-count"
     assert df["gold_source"].value_counts().to_dict() == {"calibration_1567": 1559, "issue30_508": 508}
     assert set(df["gold_categ"]) <= {"Clear", "Noisy", "Trash", "Non-text", "Empty"}
+
+    # The one correction since delivery (GOLD.md): `sektlll`, "lll" typed, not "III" -- decipherable damage.
+    key = (df["file"] == "CTX201703691") & (df["page_num"] == "149") & (df["line_num"] == "287")
+    assert df.loc[key, "gold_categ"].tolist() == ["Noisy"]
+
+
+def test_floor_keys_sidecar_has_the_documented_shape():
+    """@david-spacil's floor labels (2026-10-05), keys only, as GOLD.md's fourth set describes them.
+
+    No text column: his consent (#3, 2026-10-13) covers keys and labels only. Every group label sits on each 307
+    line of that group key, so the top rows far outnumber the lines he saw; the counts below are the file's
+    contract. Groups 8 (`sektlll`) and 99 (`seklll`) carry his 2026-10-13 correction.
+    """
+    df = pd.read_csv(FLOOR_KEYS_SIDECAR, dtype=str, keep_default_na=False)
+
+    assert list(df.columns) == ["file", "page_num", "line_num", "gold_categ", "gold_source", "group"]
+    assert len(df) == 141292
+    assert df["file"].nunique() == 14487
+    assert not df.duplicated(subset=list(GOLD_SIDECAR_KEYS)).any(), "duplicate keys would double-count"
+    assert df["gold_source"].value_counts().to_dict() == {"david_top": 141195, "david_tail": 97}
+    assert set(df["gold_categ"]) <= {"Clear", "Noisy", "Trash"}
+    assert df.loc[df["gold_source"] == "david_top", "group"].nunique() == 199
+    assert set(df.loc[df["gold_source"] == "david_tail", "group"]) == {"tail"}
+    for group, lines in (("8", 543), ("99", 19)):
+        labels = df.loc[df["group"] == group, "gold_categ"]
+        assert len(labels) == lines and set(labels) == {"Noisy"}, f"group {group} lost its 2026-10-13 correction"
 
 
 def test_sidecar_join_survives_a_locator_type_mismatch():
