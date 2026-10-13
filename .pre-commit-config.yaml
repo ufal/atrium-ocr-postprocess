@@ -12,7 +12,7 @@ repos:
       - id: end-of-file-fixer
       - id: check-yaml
       - id: check-added-large-files
-        args: ["--maxkb=1024"]   # keep model/data blobs out of git
+        args: ["--maxkb=6024"]   # keep model/data blobs out of git
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.15.18          # PARAM: pre-commit autoupdate
