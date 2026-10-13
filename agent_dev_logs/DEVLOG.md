@@ -494,6 +494,21 @@ running; stage 8 written, validated and not yet submitted.
 
   Files delivered in chat; pushed by the maintainer as `2464756`.
 
+## 2026-10-13 — Shared modules re-vendored (atrium-project#51, atrium-nlp-enrich#41)
+* `atrium_rocrate.py`, `atrium_vocab.py`, `atrium_document.schema.json`, `service/atrium_service.py`,
+  `tests/test_atrium_rocrate.py` and `tests/test_schema_freeze.py` re-vendored from the hub:
+  * the crate names AMČR/TEATER concepts by their source URIs, from `teater_category_ids`, and no longer mints
+    `w3id.org/atrium/theme/<label>`;
+  * the schema declares `enrichment.items[].teater_category_ids`;
+  * the registry's theme maps follow keyword-extract's taxonomy;
+  * the shared 502 text says when to retry.
+* `service/openapi.json` regenerated (the record schema and its sha, the 502 description). No behaviour change, no
+  release.
+* **Checks:** the API-contract and vendored shared tests, 227 passed; spec current. The committed spec's
+  `info.version` now reads `1.11.0-beta`, as `para_config.txt` does (it said `1.10.0-beta`; the release stamps it anyway).
+
+  Files delivered in chat.
+
 ---
 _Timeline index refreshed 2026-09-09 against live `test`/`master` HEAD, the current release list, open-issue state
 via the GitHub API, and the refreshed `30.digest.md`/`37.digest.md`; 2026-09-20 entry appended from the stage-7
