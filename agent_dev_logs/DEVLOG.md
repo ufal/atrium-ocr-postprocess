@@ -1,5 +1,5 @@
-# 📓 atrium-alto-postprocess — agent_dev_logs/DEVLOG.md (timeline index)
-> _OCR/ALTO post-processing + line categorization. 6 open issues (#2, #3, #4, #23, #30, #31); #5/#6/#37/#50 closed. AMČR baseline (atrium-project#67, 2026-09-26): #2, #3, #4, #30 finish, time-boxed (proposed 2026-10-16) · #31 close · #23 defer. **v1.6.0-beta** released 2026-09-25 (#31 Phase 5, `e256e2d`). `test` = `bcd7e01` (2026-09-26: the `doc-schema-v1` freeze files and the re-vendored freeze test)._
+# 📓 atrium-ocr-postprocess — agent_dev_logs/DEVLOG.md (timeline index)
+> _OCR/ALTO post-processing and line categorization; the successor of atrium-alto-postprocess since 2026-10-01 (#56 there; the open issues were transferred and renumbered). 4 open issues: #1 (category definitions), #2 (calibration), #4 (fine-tuning the quality model), #5 (documentation of the categorization logic); #3 closed 2026-10-13 and #6 2026-10-07. `test` = `35bb9a7` (2026-10-14) · **v1.11.0-beta** (2026-10-13, `247b6ae`; #3's parameter work). #3's parameter stages after 2026-10-09, up to `v1.11.0-beta`, are recorded in its digest and plan, not here. Entries before 2026-10-01 use atrium-alto-postprocess's issue numbers._
 > _Per-issue detail: `digests/{id}.digest.md` · `plans/{id}.plan.md` · `issues/` exports (source of truth). Cross-repo/hub history lives in `ufal/atrium-project/agent_dev_logs/DEVLOG.md` (deduplicated out of this file)._
 
 ## 2026-03-13
@@ -507,7 +507,7 @@ running; stage 8 written, validated and not yet submitted.
 * **Checks:** the API-contract and vendored shared tests, 227 passed; spec current. The committed spec's
   `info.version` now reads `1.11.0-beta`, as `para_config.txt` does (it said `1.10.0-beta`; the release stamps it anyway).
 
-  Files delivered in chat.
+  Files delivered in chat; pushed as `8dd601f`.
 
 ---
 _Timeline index refreshed 2026-09-09 against live `test`/`master` HEAD, the current release list, open-issue state
@@ -1406,7 +1406,7 @@ week, ≈ 2026-10-02). Recorded in the #30 digest and plan; nothing switched on.
   shared-module level (`tests/test_document_originators.py`, vendored from the hub), but no test calls `POST /process`
   with `page=`. This is tracked on atrium-digital-convert#4.
 
-  Files delivered in chat.
+  Files delivered in chat; pushed as `98820b4`.
 
 ## 2026-10-07 — The W4 API tests; the port guard
 * **`tests/test_ocr_handoff.py` (new, 17 tests):** the tests drafted with W4 and never pushed (2026-10-05, evening),
@@ -1427,7 +1427,7 @@ week, ≈ 2026-10-02). Recorded in the #30 digest and plan; nothing switched on.
   them. A `--port` baked into the `api` ENTRYPOINT fails the first.
 * **Checks:** `-m "not slow"`: 2050 passed, 11 skipped, 2 xfailed; ruff clean.
 
-  Files delivered in chat.
+  Files delivered in chat; pushed as `8bb4c91`.
 
 ## 2026-10-07 (later) — A malformed ALTO is a 422; the category doc closes its open asks
 * **A malformed ALTO upload answered 200 with no lines.** `parse_alto_xml_lines()` returned `([], [], (0, 0))` for
@@ -1464,7 +1464,7 @@ week, ≈ 2026-10-02). Recorded in the #30 digest and plan; nothing switched on.
   not made here.
 * **Dev logs:** the pairs of #1 to #5 refreshed. #6 was closed today (14:05); its pair can be deleted.
 
-  Files delivered in chat.
+  Files delivered in chat; pushed as `b09fc38`.
 
 ## 2026-10-09 — The record's `quality_summary` (atrium-project#73 R6); v1.10.0-beta
 * **`document_hook.py`:** `_set_quality_summary()` sets the block to `atrium_document.quality_summary()` of the record
@@ -1483,4 +1483,4 @@ week, ≈ 2026-10-02). Recorded in the #30 digest and plan; nothing switched on.
   `info.version`. It can be the 16 October time-box release (#1, #2, #3, #5).
 * **Checks:** 2091 passed, 11 skipped, 2 xfailed; ruff check and format clean; spec current; image closure OK.
 
-  Files delivered in chat.
+  Files delivered in chat; pushed as `9060c22`, tagged `v1.10.0-beta` at `95fc0c0`.
