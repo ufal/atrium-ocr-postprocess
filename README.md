@@ -639,7 +639,7 @@ Parameters are organized into **three sections**: `[CLASSIFY]`, `[AGGREGATE]`, a
 
 ```ini
 [CLASSIFY]
-BATCH_SIZE = 128        # Batch size for processing lines
+BATCH_SIZE = 128        # Batch size for processing lines (the service: PPL_BATCH_LINES, 32)
 WORKERS_MAX = 32        # Max CPU workers for parallel tasks
 EXPECTED_LANGS = ces,deu,eng    # Expected languages (ISO codes); first is default
 TRUSTED_FOREIGN_LANGS = deu,eng,fra,pol,ita     # Allowed foreign languages (ISO codes)

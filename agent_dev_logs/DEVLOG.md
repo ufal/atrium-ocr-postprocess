@@ -509,6 +509,33 @@ running; stage 8 written, validated and not yet submitted.
 
   Files delivered in chat; pushed as `8dd601f`.
 
+## 2026-10-15 — `PPL_BATCH_LINES` 128 → 32: the service fits a 24 GB card it shares (atrium-digital-convert#5)
+* **Measured** by digital-convert's sample runs (`/describe` calling `/score_record` on the 15 AMČR records,
+  177,473 lines, next to page-classification's 4 GB):
+  * 128 lines, A40: a GPU peak of 23.3 GB;
+  * 128 lines, A30 (24 GB): 36 out-of-memory allocations, 10 of them fatal. 1,280 lines in 6 documents were
+    scored 99999, and only the `ppl_batch_lines` `skipped` note said so;
+  * 32 lines, A40: a peak of 9.5 GB and no out-of-memory event. The categories and page bands match the
+    128-line run on the same GPU type (1 line of 177,473 differs), and scoring takes about a quarter longer
+    (301 → 374 s).
+
+  Each failing allocation was one more copy of a batch's logits (lines × padded tokens × 151,936 × 4 bytes:
+  4.1–7.75 GiB at 128 lines). `calculate_perplexity_batch` holds up to three such copies: `labels=`, the shift
+  and its `.contiguous()`.
+* **The default** is 32 in `tool_limits.py`, `.env.example` and `service/README.md`'s limits table: the three
+  places `test_limits_contract.py` and `test_env_contract.py` compare. The stale text is fixed in
+  `docs/text_inputs.md` and the `DOCUMENT_BATCH_LINES` comment.
+  * The batch pipeline's `[CLASSIFY].BATCH_SIZE` stays 128, for dedicated GPU runs.
+  * A `.env` copied from an older example still sets 128, and `/info` then reports source `env`.
+* **Not changed:**
+  * the spec (no limit defaults in it);
+  * the version (the change ships with the next tag);
+  * the logits copies. Fewer copies would lower the peak at any batch size: an issue to open.
+* **Checks:** `test_limits_contract.py`, `test_env_contract.py`, `test_limits.py`, `test_openapi_contract.py`,
+  `test_api_contract.py`: 78 passed. ruff clean.
+
+  Files delivered in chat.
+
 ---
 _Timeline index refreshed 2026-09-09 against live `test`/`master` HEAD, the current release list, open-issue state
 via the GitHub API, and the refreshed `30.digest.md`/`37.digest.md`; 2026-09-20 entry appended from the stage-7

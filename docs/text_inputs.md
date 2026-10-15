@@ -531,7 +531,7 @@ blocks. A `pdf = …` entry overrides the per-document text-layer test.
 `.xml` and every other extension from the bytes: an uncompressed ALTO root keeps the ALTO path;
 anything else readable, a compressed ALTO included, is a `document`. Documents are read with
 `read_document_isolated()` and shaped with `shape_lines()`, the same code as the batch method, and
-classified page by page in batches of 128 lines. Each result line carries `page`/`page_label`, and
+classified page by page in batches of `PPL_BATCH_LINES` (32) lines. Each result line carries `page`/`page_label`, and
 `line_num` restarts per page. A `.txt` upload keeps its `plain_text` response, but it is decoded and
 shaped like the batch path (any common encoding, cp1250 first).
 

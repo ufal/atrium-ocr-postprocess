@@ -565,7 +565,7 @@ checks this table against `tool_limits.py` and `.env.example`.
 | `pdf_object_cap`     | `ATRIUM_TEXT_INGEST_PDF_OBJECT_CAP`     | 20000   | objects | the text layer is judged on the first N objects (the text is read in full) — `sampled` note                 |
 | `lr_chunk_size`      | `LR_CHUNK_SIZE`                         | 350     | lines   | an ALTO page is ordered window by window — `split` note                                                     |
 | `lr_min_chunk_size`  | `LR_MIN_CHUNK_SIZE`                     | 50      | lines   | out of memory below it: the page keeps its document order — `skipped` note                                  |
-| `ppl_batch_lines`    | `PPL_BATCH_LINES`                       | 128     | lines   | lines per perplexity pass; a failed batch scores its lines 99999 — `skipped` note                           |
+| `ppl_batch_lines`    | `PPL_BATCH_LINES`                       | 32      | lines   | lines per perplexity pass; a failed batch scores its lines 99999 — `skipped` note                           |
 | `ppl_max_tokens`     | — (derived from `GPT2_MODEL_NAME`)      | —       | tokens  | the perplexity model reads the first N tokens of a line — `trimmed` note (`null` until the model loads)     |
 
 Platform limits (not settings): libxml2's default limits (parsed without `huge_tree`); Starlette's multipart
@@ -582,16 +582,16 @@ Since atrium-project#32 round 2 a reader refusal also carries the reader's code 
 not registered: it may change; `reason` is the stable one), and a `415` lists the extensions the readers take
 as `accepted`.
 
-| Code | `reason`                 | When                                                                                                                                                                           |
-|------|--------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| 413  | `limit_exceeded`         | over `MAX_UPLOAD_MB` or a `[TEXT_INGEST]` size/count limit (`too_large`, `zip_limits_exceeded`)                                                                                |
-| 415  | `unsupported_media_type` | a kind of file this service does not read (`binary_content`, `image_needs_ocr`, `legacy_office_unsupported`, `archive_unsupported`); a 400 before round 2                      |
-| 422  | `invalid_record`         | the `document_json` / `document_record` part cannot be opened (not UTF-8 JSON, not an object, a newer `schema_version` major)                                                  |
-| 422  | `limit_exceeded`         | the PDF reader's time limit (`timeout`)                                                                                                                                        |
+| Code | `reason`                 | When                                                                                                                                                                                                                          |
+|------|--------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| 413  | `limit_exceeded`         | over `MAX_UPLOAD_MB` or a `[TEXT_INGEST]` size/count limit (`too_large`, `zip_limits_exceeded`)                                                                                                                               |
+| 415  | `unsupported_media_type` | a kind of file this service does not read (`binary_content`, `image_needs_ocr`, `legacy_office_unsupported`, `archive_unsupported`); a 400 before round 2                                                                     |
+| 422  | `invalid_record`         | the `document_json` / `document_record` part cannot be opened (not UTF-8 JSON, not an object, a newer `schema_version` major)                                                                                                 |
+| 422  | `limit_exceeded`         | the PDF reader's time limit (`timeout`)                                                                                                                                                                                       |
 | 422  | `null`                   | a supported file that cannot be read (`corrupt`, `encrypted`, `malformed`, `no_text`, …), a JSON upload that does not parse, an ALTO upload that is not ALTO (`malformed`), or request validation (an unknown `task_type`, …) |
-| 500  | `null`                   | processing failure                                                                                                                                                             |
-| 501  | `null`                   | this deployment lacks a reader's optional dependency (`dependency_missing`: pypdfium2, lxml); a 400 before round 2                                                             |
-| 503  | `null`                   | the replica is shutting down — retry against a live one                                                                                                                        |
+| 500  | `null`                   | processing failure                                                                                                                                                                                                            |
+| 501  | `null`                   | this deployment lacks a reader's optional dependency (`dependency_missing`: pypdfium2, lxml); a 400 before round 2                                                                                                            |
+| 503  | `null`                   | the replica is shutting down — retry against a live one                                                                                                                                                                       |
 
 ```json
 {"status": 413, "reason": "limit_exceeded",

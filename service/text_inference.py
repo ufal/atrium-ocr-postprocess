@@ -90,10 +90,11 @@ LR_CHUNK_SIZE = tool_limits.LR_CHUNK_SIZE.get()
 LR_MIN_CHUNK_SIZE = tool_limits.LR_MIN_CHUNK_SIZE.get()
 
 # (#31) Lines per perplexity forward pass: calculate_perplexity_batch pads one batch to
-# its longest line, so a 500-page PDF must not be one batch. Same as the batch pipeline's
-# [CLASSIFY].BATCH_SIZE default. A limit since atrium-project#53 (PPL_BATCH_LINES), applied
-# to EVERY path — the ALTO, JSON and text paths used to score a whole file in one batch,
-# where any failure scored every line 99999. This name is its value at import.
+# its longest line, so a 500-page PDF must not be one batch. A limit since atrium-project#53
+# (PPL_BATCH_LINES), applied to EVERY path — the ALTO, JSON and text paths used to score a
+# whole file in one batch, where any failure scored every line 99999. Its default is 32
+# since 2026-10-15, below the batch pipeline's [CLASSIFY].BATCH_SIZE (128), so the service
+# fits a GPU it shares (tool_limits.py). This name is its value at import.
 DOCUMENT_BATCH_LINES = tool_limits.PPL_BATCH_LINES.get()
 
 #: What calculate_perplexity_batch returns for every line of a batch it could not score.
