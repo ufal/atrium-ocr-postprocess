@@ -38,8 +38,11 @@ jobs:
     # (Trivy/SBOM read a public GHCR image, version-check reads the tree).
     # It previously carried `secrets: inherit` for no reason (#18).
     with:
-      # The published image to scan/SBOM.
-      image-ref: ghcr.io/ufal/atrium-ocr-postprocess:latest
+      # The published image to scan/SBOM: the `-api` one, which the pilot pins
+      # (.github/production-image.json). It is built `FROM base`, so it carries every package the
+      # batch image has and the service's own; scanning the batch image alone left the one that
+      # serves requests unscanned.
+      image-ref: ghcr.io/ufal/atrium-ocr-postprocess-api:latest
       citation-path: CITATION.cff
       # CRITICAL: this repo stores para_config.txt in the setup folder
       para-config-path: setup/para_config.txt

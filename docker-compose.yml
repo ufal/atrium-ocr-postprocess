@@ -68,7 +68,7 @@ services:
     ports:
     # PORT is passed through so `PORT=9000 docker compose --profile api up` moves the
     # listener, the published port and the container's own HEALTHCHECK together — the
-    # service reads it in service/api.py's __main__ block and service/healthcheck.py
+    # service reads it in service/text_api.py's __main__ block and service/healthcheck.py
     # probes it. (atrium-project#58)
       - "${PORT:-8000}:${PORT:-8000}"
     # HEALTHCHECK comes from the `api` stage — no override needed. stop_grace_period

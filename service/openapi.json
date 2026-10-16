@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "ATRIUM Text Processor",
-    "version": "1.11.0-beta",
+    "version": "1.12.0-beta",
     "x-atrium-service": "atrium-ocr-postprocess",
     "x-atrium-service-previous": "atrium-alto-postprocess"
   },
@@ -438,7 +438,7 @@
           "text": {
             "type": "string",
             "title": "Text",
-            "description": "The cleaned text, with split-word merges applied."
+            "description": "The cleaned text: split-word merges and the pre-filter's OCR repairs applied (the line as the CSV's `text`)."
           },
           "lang": {
             "type": "string",
@@ -2776,7 +2776,7 @@
           "text": {
             "type": "string",
             "title": "Text",
-            "description": "The cleaned text, with split-word merges applied."
+            "description": "The cleaned text: split-word merges and the pre-filter's OCR repairs applied (the line as the CSV's `text`)."
           },
           "lang": {
             "type": "string",
@@ -2906,7 +2906,7 @@
           "lines_scored": {
             "type": "integer",
             "title": "Lines Scored",
-            "description": "Lines the model scored on this page."
+            "description": "Lines classified on this page, those the CPU pre-filter answered `Non-text` or `Empty` included."
           },
           "skipped_decode_verdict": {
             "type": "integer",

@@ -80,12 +80,14 @@ LR_CHUNK_SIZE = limit("LR_CHUNK_SIZE", 350, unit="lines", minimum=1)
 #: Smallest window the out-of-memory fallback halves down to; below it the page keeps its
 #: document order unordered by the model → ``skipped`` note.
 LR_MIN_CHUNK_SIZE = limit("LR_MIN_CHUNK_SIZE", 50, unit="lines", minimum=1)
-#: Lines per perplexity forward pass (one batch is padded to its longest line). A failed
-#: batch scores its lines 99999 (worst quality) → ``skipped`` note. 32 since 2026-10-15: a
-#: batch's logits (lines × padded tokens × the 152k vocabulary) are copied up to three
-#: times, and at 128 the service peaked at 23.3 GB and ran out of memory on a 24 GB card
-#: shared with page-classification; 32 peaked at 9.5 GB with the same categories
-#: (atrium-digital-convert#5).
+#: Lines per perplexity forward pass (one batch is padded to its longest line). A batch
+#: that runs out of memory is split in halves and retried, down to one line
+#: (text_util.calculate_perplexity_batch); a line that fails even on its own scores 99999
+#: (worst quality) → ``skipped`` note. 32 since 2026-10-15: a batch's logits (lines × padded
+#: tokens × the 152k vocabulary) were copied up to three times, and at 128 the service
+#: peaked at 23.3 GB and ran out of memory on a 24 GB card shared with page-classification;
+#: 32 peaked at 9.5 GB with the same categories (atrium-digital-convert#5; both figures
+#: measured before the unused `labels=` loss, one of the copies, was dropped).
 PPL_BATCH_LINES = limit("PPL_BATCH_LINES", 32, unit="lines", minimum=1)
 
 #: The [TEXT_INGEST] keys, by the environment variable that overrides each.

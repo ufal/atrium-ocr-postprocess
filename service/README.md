@@ -93,42 +93,47 @@ The pipeline applies three models in sequence, balancing structural layout under
 > Perplexity is one weighted signal; on short 1–2 word lines it is capped before scoring because the LM has too
 > little context. `distilgpt2` remains available as an English-only alternative via the `GPT2_MODEL_NAME`
 > environment variable (re-tune `PERPLEXITY_THRESHOLD_MAX`, see [Troubleshooting](#hardware--configuration-troubleshooting)).
-> Full logic: main [README → Composite Quality Score](../README.md#composite-quality-score) and
-> [Categorisation Logic](../README.md#categorisation-logic).
+> Full logic: [Composite Quality Score](../docs/categorization_logic.md#composite-quality-score) and
+> [Categorisation Logic](../docs/categorization_logic.md#categorisation-logic).
 
 ## Quality Categories 🪧
 
 The service classifies every text line into one of five categories. The first two (`Empty`, `Non-text`)
-are assigned by a fast CPU pre-filter before any model inference. The remaining three are assigned by
+are assigned by a fast CPU pre-filter before any model inference: such a line is never sent to FastText or
+the language model, and is answered with score 0.0 and language `N/A`. The remaining three are assigned by
 `text_util.categorize_line()` from the composite **quality score**, after immediate overrides.
 
-| Label         | Description                                                           | Primary Signal                                                                                    |
-|---------------|-----------------------------------------------------------------------|---------------------------------------------------------------------------------------------------|
-| `Clear` 🟢    | **High quality.** Ready for downstream NLP.                           | `quality_score ≥ CATEG_NOISY_SCORE_MAX` (0.80), or a low-perplexity override.                     |
-| `Noisy` 🟡    | **Usable but degraded.** Minor OCR artefacts, recoverable downstream. | `CATEG_TRASH_SCORE_MAX` (0.55) ≤ `quality_score` < `CATEG_NOISY_SCORE_MAX` (0.80).                |
-| `Trash` 🔴    | **Structurally corrupt.** Re-process with another OCR / HTR tool.     | `quality_score < CATEG_TRASH_SCORE_MAX` (0.55), or a hard override (all-caps/no-vowel, inverted). |
-| `Non-text` 🔵 | **No meaningful text.** Purely numeric / separator content.           | CPU pre-filter: dates, page numbers, archive/stamp codes, or digit ratio > 40 % on short lines.   |
-| `Empty` ⚪     | **Blank line.** Whitespace only.                                      | `word_count == 0` / whitespace only.                                                              |
+| Label         | Description                                                           | Primary Signal                                                                                                                                             |
+|---------------|-----------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `Clear` 🟢    | **High quality.** Ready for downstream NLP.                           | `quality_score ≥ CATEG_TRASH_SCORE_MAX` (0.55) with at least 85 % valid words and no damaged token, a low-perplexity override, or a web or e-mail address. |
+| `Noisy` 🟡    | **Usable but degraded.** Minor OCR artefacts, recoverable downstream. | `quality_score ≥ 0.55` but under 85 % valid words or a damaged token; or a rescue of a `Trash` verdict.                                                    |
+| `Trash` 🔴    | **Illegible.** Re-process with another OCR / HTR tool.                | `quality_score < CATEG_TRASH_SCORE_MAX` (0.55), or a hard override (hard sweep, inverted scan, all-caps without vowels).                                   |
+| `Non-text` 🔵 | **No meaningful text.** Purely numeric / separator content.           | CPU pre-filter: dates, page numbers, archive/stamp codes, all-caps codes, or digits above 40 % of a line.                                                  |
+| `Empty` ⚪     | **Blank line.** Whitespace only.                                      | `word_count == 0` / whitespace only.                                                                                                                       |
 
 > [!NOTE]
 > The thresholds and the full set of overrides (hard-sweep, inverted-scan, low-perplexity-clear,
-> mostly-readable cap, and the document/page post-passes) are documented once in the main
-> [README → Categorisation Logic](../README.md#categorisation-logic) and are not duplicated here.
+> mostly-readable cap, and the document/page post-passes) are documented once in
+> [docs/categorization_logic.md](../docs/categorization_logic.md) and are not duplicated here. The stored
+> score is clamped into the band of the category (Trash < 0.55 ≤ Noisy < 0.80 ≤ Clear); the 0.80 edge does not
+> decide between `Clear` and `Noisy`.
 
 > [!IMPORTANT]
-> `/process` classifies through **the same scoring function as the batch pipeline**
-> (`classify_TEXT.score_line()`), so the API and a pipeline run return the same category for the
-> same line. This was not always true: the endpoint used to assemble its own signals and had
+> `/process` and `/score_record` classify through **the same pre-filter and scoring function as the batch
+> pipeline** (`text_util.pre_filter_line()` and `classify_TEXT.score_line()`), so the API and a pipeline run return the
+> same category for the same line. This was not always true: the endpoint used to assemble its own signals and had
 > drifted — it skipped the language remap, the two-tier trust scaling and `SHORT_PPL_CAP`, and it
 > never passed `orig_lang_score`, leaving that argument at its `1.0` default. Three Trash routes
 > that key on low language confidence (`rule_hard_sweep`, `rule_extreme_ppl`, `rule_wqx_rot`) could
 > therefore never fire from the API, which returned `Noisy` for lines the pipeline calls `Trash`.
 >
 > Two consequences worth knowing when comparing API output against a batch CSV:
-> * the service has no separate pre-repair text, so `garbage_density` and `vowel_ratio` are computed
->   on the submitted line, whereas the pipeline computes them on the original pre-repair line;
-> * document- and page-level smoothing (`pp_*`) is a batch pass over a whole document and does not
->   apply to single-line API calls.
+> * the pre-filter's repair is applied as in the batch pipeline: the line is scored on the repaired text and
+>   `garbage_density` and `vowel_ratio` are taken from the submitted (pre-repair) line, and the answer's `text`
+>   is the repaired line;
+> * document- and page-level smoothing (`pp_*`) is a batch pass over a whole document and is **not** applied to
+>   any API call, whatever its size: each line is answered from its own signals, and a page's `quality_score`
+>   averages its `Clear`, `Noisy` and `Trash` lines (`Non-text` and `Empty` are left out).
 
 
 ## API Usage 📡
@@ -363,13 +368,13 @@ environment, installs all Python dependencies, fetches the `v3/` LayoutReader sc
 sparse checkout, and downloads the FastText binary:
 
 ```bash
-git clone [https://github.com/ufal/atrium-ocr-postprocess.git](https://github.com/ufal/atrium-ocr-postprocess.git)
+git clone https://github.com/ufal/atrium-ocr-postprocess.git
 cd atrium-ocr-postprocess
 chmod +x setup/setup_api_server.sh
 ./setup/setup_api_server.sh
 ```
 
-Key libraries: `fastapi`, `uvicorn`, `python-multipart`, `torch`, `transformers`, `fasttext`, `lxml`, `numpy`.
+Key libraries: `fastapi`, `uvicorn`, `python-multipart`, `torch`, `transformers`, `fasttext`, `lxml`, `numpy`, `pandas`, `tqdm`.
 Full list in `service/requirements.txt` for manual installation if needed.
 
 > [!NOTE]
@@ -377,11 +382,11 @@ Full list in `service/requirements.txt` for manual installation if needed.
 
 ### 3. Model Weights
 
-The setup script downloads the FastText binary automatically. If you prefer to download it manually:
+The setup script downloads the FastText binary automatically, at the Hub revision the Dockerfile pins and checked against its SHA-256. If you prefer to download it manually (this takes the current `main`, which may differ from the pinned file):
 
 ```bash
 mkdir -p models
-wget "[https://huggingface.co/facebook/fasttext-language-identification/resolve/main/model.bin](https://huggingface.co/facebook/fasttext-language-identification/resolve/main/model.bin)" \
+wget "https://huggingface.co/facebook/fasttext-language-identification/resolve/main/model.bin" \
      -O models/lid.176.bin
 ```
 
@@ -391,7 +396,7 @@ wget "[https://huggingface.co/facebook/fasttext-language-identification/resolve/
 ## Quick API Test Launch 🚀
 
 ```bash
-source venv/bin/activate
+source venv-ocr/bin/activate
 python service/text_api.py
 ```
 
@@ -412,7 +417,7 @@ Activate your virtual environment and start the API with hot-reloading (useful d
 
 ```bash
 cd atrium-ocr-postprocess
-source venv/bin/activate          # or: source venv-api/bin/activate
+source venv-ocr/bin/activate        # the name setup/setup_api_server.sh creates
 uvicorn service.text_api:app --reload
 ```
 
@@ -452,7 +457,7 @@ Open a **second terminal window** alongside your running server and follow these
 **1. Place the project inside `lindat-common`:**
 
 ```bash
-git clone [https://github.com/ufal/lindat-common.git](https://github.com/ufal/lindat-common.git)
+git clone https://github.com/ufal/lindat-common.git
 cd lindat-common
 cp -r /path/to/atrium-ocr-postprocess .
 ```
@@ -460,7 +465,7 @@ cp -r /path/to/atrium-ocr-postprocess .
 **2. Install NodeJS and dependencies:**
 
 ```bash
-curl -o- [https://raw.githubusercontent.com/creationix/nvm/v0.25.4/install.sh](https://raw.githubusercontent.com/creationix/nvm/v0.25.4/install.sh) | bash
+curl -o- https://raw.githubusercontent.com/creationix/nvm/v0.25.4/install.sh | bash
 nvm install stable
 nvm use stable
 export NODE_OPTIONS=--openssl-legacy-provider
@@ -565,7 +570,7 @@ checks this table against `tool_limits.py` and `.env.example`.
 | `pdf_object_cap`     | `ATRIUM_TEXT_INGEST_PDF_OBJECT_CAP`     | 20000   | objects | the text layer is judged on the first N objects (the text is read in full) — `sampled` note                 |
 | `lr_chunk_size`      | `LR_CHUNK_SIZE`                         | 350     | lines   | an ALTO page is ordered window by window — `split` note                                                     |
 | `lr_min_chunk_size`  | `LR_MIN_CHUNK_SIZE`                     | 50      | lines   | out of memory below it: the page keeps its document order — `skipped` note                                  |
-| `ppl_batch_lines`    | `PPL_BATCH_LINES`                       | 32      | lines   | lines per perplexity pass; a failed batch scores its lines 99999 — `skipped` note                           |
+| `ppl_batch_lines`    | `PPL_BATCH_LINES`                       | 32      | lines   | lines per perplexity pass; out of memory splits it; 99999 only if one line fails alone — `skipped` note     |
 | `ppl_max_tokens`     | — (derived from `GPT2_MODEL_NAME`)      | —       | tokens  | the perplexity model reads the first N tokens of a line — `trimmed` note (`null` until the model loads)     |
 
 Platform limits (not settings): libxml2's default limits (parsed without `huge_tree`); Starlette's multipart
@@ -626,7 +631,7 @@ image serves — equal to the release's `openapi.json.sha256` for an image built
 ## Shutdown behavior 🛑
 
 Issue [#55](https://github.com/ufal/atrium-project/issues/55). The published `api` image
-(`ghcr.io/ufal/atrium-ocr-postprocess:<version>-api`, new in that issue — before it this
+(`ghcr.io/ufal/atrium-ocr-postprocess-api:<version>`, new in that issue — before it this
 service was only reachable via a compose entrypoint override, so no API image existed to
 deploy) declares `HEALTHCHECK` (shallow `GET /health`, via the vendored
 `service/healthcheck.py`) and `STOPSIGNAL SIGTERM`. `service/text_api.py`'s own

@@ -64,7 +64,7 @@ def load_config(config_path):
             "output_stats": "samples_page_stats.csv",
             "standard_cols": "Clear,Noisy,Trash,Non-text,Empty",
         }
-    config.read(config_path)
+    config.read(config_path, encoding="utf-8")
 
     # (#7 Phase 0) STANDARD_COLS was documented in [AGGREGATE] but never read:
     # main() called .get("standard_cols", ...) on a dict that lacked the key,
@@ -321,7 +321,7 @@ def main():
     )
 
     _doc_cfg = configparser.ConfigParser()
-    _doc_cfg.read(args.config)
+    _doc_cfg.read(args.config, encoding="utf-8")
     document_json_dir = document_hook.resolve_document_json_dir(_doc_cfg.get("DOCUMENT", "JSON_DIR", fallback=""))
     doc_run_id = logger.run_id
     doc_run_uuid = logger.run_uuid

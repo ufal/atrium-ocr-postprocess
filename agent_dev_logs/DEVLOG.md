@@ -536,6 +536,44 @@ running; stage 8 written, validated and not yet submitted.
 
   Files delivered in chat.
 
+## 2026-10-16 — Production-readiness review: the API pre-filters, batch integrity, the category doc rebuilt (#5); v1.12.0-beta
+* **Output identity:** thresholds, weights, word lists and the bodies of `determine_category`, `compute_quality_score`
+  and `score_line` are untouched. Re-scoring `data_samples/DOC_LINE_CATEG` flips 0 lines; the `_gpt` sample flips the same
+  5 lines on the previous code (distilgpt2 values under the Qwen-calibrated constants).
+* **Service:** `_classify_lines` runs `pre_filter_line()` first, as `classify_TEXT.py` does: `Empty` and `Non-text` lines
+  are answered with the batch fast-track values and never reach FastText or the model; the rest are scored on the
+  repaired text with the submitted line as `original_text`. A page's mean leaves the placeholders out. One lock
+  serialises the perplexity passes, the tokenizer use and the LayoutReader windows; `_note_perplexity` counts every line
+  scored 99999; `GET /health?deep=true` fails without models; a JSON or text upload without `page` on a multi-page
+  record is skipped with a warning; the paradata names the perplexity model and `layoutlmv3`; `/score_record` reads its
+  caps from the configuration.
+* **Engine, output-identical:** `calculate_perplexity_batch` drops the unused `labels=` loss and, on out-of-memory,
+  splits the batch in halves and retries (99999 only for a line failing alone); checked with real torch on a tiny random
+  GPT-2 (bit-identical values; 8 → 4 → 2 split the same). `constant_invariant_errors()` checks the band, perplexity-cap
+  and weight relations at startup (service lifespan, `classify_TEXT.main`), not at import.
+* **Batch:** per-document CSVs are written to `<doc>.csv.part` and renamed over the old file; `run_pipeline.py` returns 1
+  when a stage aborted, `classify_TEXT.py` exits 1 on a lost GPU or when every document failed, `page_split.py` on a
+  missing input directory. Config files are read as UTF-8. The Qwen-scale warning fires only at distilgpt2 scale.
+* **Packaging:** `service/requirements.txt` lists pandas and tqdm; the Dockerfile's torch spec matches the requirements;
+  the security scan targets the API image; `setup/setup_api_server.sh` fetches FastText at the Dockerfile's pinned revision
+  and checks its SHA-256.
+* **#5:** `docs/categorization_logic.md` rebuilt from the code (order of evaluation, the real pre-filter order, language
+  tiers and which language number is read where, overrides with what blocks each, the four document passes, foreign-language
+  lines and their known limits, worked examples generated from the test table, the invariants; the per-rule history kept as
+  the Decision record). Two findings: `CATEG_NOISY_SCORE_MAX` (0.80) only clamps the stored score, since `Clear` and `Noisy`
+  are decided by the valid-word ratio and damaged tokens; and the Czech-first heuristics treat clean German and English
+  lines unevenly. `tests/test_categorization_walkthrough.py` (79) follows a line through every step and pins the known
+  limits; README Step 4 is restructured; the setup commands no longer carry Markdown links.
+* **Version `v1.12.0-beta`:** `CITATION.cff`, the `CONTRIBUTING.md` row, `setup/para_config.txt`, the spec's `info.version`.
+  The spec's other changes are three descriptions. The tag, the FileSender run and closing #1, #2 and #5 are the
+  maintainer's.
+* **Elsewhere:** atrium-digital-convert's `service/README.md` names v1.12.0-beta as the `PPL_BATCH_LINES` 32 release;
+  the hub's `docs_site/pipelines.md` names `classify_TEXT.py`.
+* **Checks:** 2260 passed, 11 skipped, 2 xfailed (the torch parity test, `-m slow`, passes); ruff check and format clean;
+  spec current; `check_version.py` agrees.
+
+  Files delivered in chat.
+
 ---
 _Timeline index refreshed 2026-09-09 against live `test`/`master` HEAD, the current release list, open-issue state
 via the GitHub API, and the refreshed `30.digest.md`/`37.digest.md`; 2026-09-20 entry appended from the stage-7

@@ -48,7 +48,10 @@ import recategorize_from_csv as R  # noqa: E402
 
 import classify_TEXT as LC  # noqa: E402
 
-# Base codes the collections actually expect/trust, mirroring setup/config.txt.
+# Base codes this test treats as known (setup/config.txt's `ces,deu,eng` + `fra,pol,ita,slk`) and the
+# one it treats as EXPECTED. The shipped EXPECTED_LANGS is `ces,deu,eng`; `ces` alone is used here, so
+# `deu` and `eng` lines go through the trusted-foreign tier too. The parity assertions hold for any
+# configuration; `tests/test_categorization_walkthrough.py` runs on the shipped one.
 EXPECTED_LANGS = ["ces"]
 KNOWN_BASES = frozenset({"ces", "deu", "eng", "fra", "pol", "ita", "slk"})
 

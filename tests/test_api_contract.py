@@ -277,8 +277,9 @@ def test_a_document_response_conforms_including_its_pages(mock_process):
 
 @patch("service.text_api.text_manager.process_document", create=True)
 def test_a_pdf_run_logs_pdfium_in_its_paradata(mock_process, tmp_path, monkeypatch):
-    """The API path logs the reader components the CLI logs (atrium-project#6, #72): a PDF read
-    by PDFium puts `pypdfium2` in the run's licence detail, as text_split.py always did."""
+    """The API path logs the components the CLI logs (atrium-project#6, #72): a PDF read by
+    PDFium puts `pypdfium2` in the run's licence detail, as text_split.py always did, and the
+    perplexity model that scored its lines puts its own beside it, as classify_TEXT.py does."""
     from atrium_paradata import ParadataLogger
 
     monkeypatch.chdir(tmp_path)
@@ -294,7 +295,9 @@ def test_a_pdf_run_logs_pdfium_in_its_paradata(mock_process, tmp_path, monkeypat
         "/process", files={"file": ("x.pdf", b"%PDF-1.4", "application/pdf")}, data={"task_type": "document"}
     )
     assert response.status_code == 200, response.text
-    assert logged == ["pypdfium2"]
+    # The reader component, and the perplexity model that scored the lines (the lines of
+    # _DOC_RESULT are not pre-filter answers): the licences a batch run of the same file records.
+    assert logged == ["pypdfium2", "qwen2.5_0.5b"]
 
 
 @pytest.mark.parametrize("part, key", [("document_json", "document_json"), ("document_record", "document_json_out")])

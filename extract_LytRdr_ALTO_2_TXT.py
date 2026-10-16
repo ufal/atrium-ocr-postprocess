@@ -430,7 +430,7 @@ def main(argv=None):
     _total_inputs = len(tasks)
 
     _doc_cfg = configparser.ConfigParser()
-    _doc_cfg.read(CONFIG_PATH)
+    _doc_cfg.read(CONFIG_PATH, encoding="utf-8")
     _document_json_dir = document_hook.resolve_document_json_dir(_doc_cfg.get("DOCUMENT", "JSON_DIR", fallback=""))
     _doc_paradata_ref = document_hook.paradata_ref_for(_logger)
 

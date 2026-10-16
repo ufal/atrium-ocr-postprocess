@@ -75,7 +75,7 @@ Before you begin, set up your environment.
     ```
 3. Download the **FastText** 🌐 model for language identification:
     ```bash
-    wget "[https://huggingface.co/facebook/fasttext-language-identification/resolve/main/model.bin](https://huggingface.co/facebook/fasttext-language-identification/resolve/main/model.bin)" -O lid.176.bin
+    wget "https://huggingface.co/facebook/fasttext-language-identification/resolve/main/model.bin" -O lid.176.bin
     ```
     The file is the Hub's `model.bin` — the NLLB fastText language-ID model, 1.18 GB, CC BY-NC 4.0 —
     saved under the name the pipeline's config expects (`FASTTEXT_MODEL = lid.176.bin`); it is not the
@@ -84,7 +84,7 @@ Before you begin, set up your environment.
     [Dockerfile](Dockerfile) 📎).
 4. Copy the `v3` folder from the 📐`layoutreader` 🔧 repository [^9] to the project directory for the LR-based text extraction method:
     ```bash
-    git clone [https://github.com/ppaanngggg/layoutreader.git](https://github.com/ppaanngggg/layoutreader.git)
+    git clone https://github.com/ppaanngggg/layoutreader.git
     cp -r layoutreader/v3/ ./
     rm -rf layoutreader/
     ```
@@ -597,134 +597,177 @@ and **perplexity** 📉 scores from [Qwen2.5-0.5B](https://huggingface.co/Qwen/Q
 More post-processing of **TXT** 📝 files can be found in the [GitHub repository](https://github.com/ufal/atrium-nlp-enrich)
 of the ATRIUM project, which covers NLP enrichment using Nametag for NER and UDPipe for CONLL-U files with lemmas & POS tags [^5](https://github.com/ufal/atrium-nlp-enrich).
 
-As the script processes, it assigns each line one of five categories 🪧:
+> [!TIP]
+> This section is the operational view. **How a line becomes a category, rule by rule**, with its exceptions,
+> the foreign-language behaviour and a table of worked examples, is in
+> **[docs/categorization_logic.md](docs/categorization_logic.md)**.
 
-| Category        | Action                                             | Description                                                                                                                                                                    |
-|-----------------|----------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| ✅ **Clear**     | Ready to be processed by further NLP               | Passes all structural checks; high composite **quality score** 📈.                                                                                                             |
-| ⚠️ **Noisy**    | Corrections of generally readable words are needed | Partially degraded: moderate **quality score** 📈 indicating isolated symbol issues, fused tokens, mid-word uppercase, or elevated **perplexity** 📉.                          |
-| 🗑️ **Trash**   | Should be re-processed by another **OCR** 🔍 tool  | Severely corrupted: composite **quality score** 📈 below the Trash threshold, or routed here by an override (unreadable all-caps line, inverted-scan page block).              |
-| 🔣 **Non-text** | May be checked for identifiers of finds/sites      | Filtered by the CPU 💻 pre-filter: line is too short, has too few unique symbols, contains fewer than 30% alphabetic characters, or consists mostly of digits and punctuation. |
-| 🫙 **Empty**    | Can be ignored                                     | Line contains only whitespace (paragraphs separator)                                                                                                                           |
+#### The five categories 🪧
+
+| Category        | Action                                             | Meaning                                                                                                                                       |
+|-----------------|----------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------|
+| ✅ **Clear**     | Ready to be processed by further NLP               | Legible: whatever mistakes it has, nobody needs the page image to read it.                                                                    |
+| ⚠️ **Noisy**    | Corrections of generally readable words are needed | Easily decipherable through a mistake: a swapped letter, a digit inside a word, a few lost characters.                                        |
+| 🗑️ **Trash**   | Should be re-processed by another **OCR** 🔍 tool  | **Illegible**: nobody can read it.                                                                                                            |
+| 🔣 **Non-text** | May be checked for identifiers of finds/sites      | Structured but not language: numbers, codes, stamps, dates, measurements (the CPU 💻 pre-filter's verdict; no model is run for it).           |
+| 🫙 **Empty**    | Can be ignored                                     | The line holds only whitespace (a paragraph separator).                                                                                       |
+
+The definition is the data providers': **`Trash` means illegible**, whatever the line's usefulness, so a correctly
+scanned web address is `Clear` (@david-spacil 2026-09-22; agreed by @DanaKriv 2026-10-01). `Non-text` cannot be told
+from `Trash` without the page image and is out of scope for hand annotation. The program approximates this definition;
+the [reference](docs/categorization_logic.md#overrides-and-exception-cases) lists where it does not.
+
+#### How a line is categorised
+
+1. **Pre-filter** 💻: blank → `Empty`; numbers, dates, codes, stamps and very short or symbol-only lines → `Non-text`;
+   two OCR repairs (`poh1ed` → `pohled`); the rest goes on.
+2. **Language** 🌐: FastText's label is kept, or replaced by the collection default when unknown; its confidence times
+   the language's tier is the *trust score* the scorer reads.
+3. **Signals and quality score** 📈: per-word and per-line measurements, and a weighted score in [0, 1] built from nine
+   of them (valid words, weirdness, garbage density, perplexity, vowels, language, gibberish, fused words, length).
+4. **Ordered gates**: the first that matches decides (address route, perplexity routes, inverted scan, all-caps scramble,
+   garbage density, short garbage, short lines, low perplexity, six structural gates).
+5. **Band routing**: below 0.55 → `Trash` (or a rescue); otherwise `Clear` or `Noisy` by the share of valid words and
+   damaged tokens.
+6. **Document passes** (batch pipeline only): an identical-text vote, surrounded-`Trash` smoothing, page-context rules
+   and an inverted-scan sweep. They change the label, never the score.
+
+> [!IMPORTANT]
+> **The stored `quality_score` is clamped into the band of its category** (`Trash` < 0.55 ≤ `Noisy` < 0.80 ≤ `Clear`).
+> 0.80 is where the `Clear` band starts; it does **not** decide between `Clear` and `Noisy` (that is the valid-word
+> ratio and damaged tokens), and the document passes can leave a line's label disagreeing with its score. The
+> category, not the score, is the decision.
+
+> [!IMPORTANT]
+> **Known accuracy limitation since `v1.5.0-beta` (issue [#30](https://github.com/ufal/atrium-alto-postprocess/issues/30)).**
+> `rule_short_garbage` no longer convicts short diacritic-free lines on shape alone. Measured over both collections
+> (113,101 documents / 71.8M lines) the change **promoted 367,208 lines and demoted none**, dropping `Trash` by 247,252
+> lines (−8.68 %), and human grading of 484 promoted lines scored **76.5 % right / 9.6 % borderline / 13.9 % wrong**, a
+> 5.5 : 1 improvement. The cost was accepted deliberately: roughly **26,000 genuine OCR-garbage lines now reach `Clear`**
+> (95 % CI [19,300; 34,600]), so **a `Clear` verdict on a 1–3 token line without Czech diacritics carries less
+> confidence than the label suggests**. Downstream consumers filtering on `categ == "Clear"` should be aware of it.
+> The narrowing that pays this down (`_has_shape_garbage_evidence()`, a phonotactic second witness) is implemented and
+> wired but **ships off** (`SHORT_GARBAGE_WITNESS_ENABLE = false`) and is held for the pilot: it passes its adoption
+> gate on the 2,067-line human gold set ([`tools/gold/GOLD.md`](tools/gold/GOLD.md)), but the floor that would pair with
+> it was measured over both collections and rejected (@david-spacil, 2026-10-05), and the pilot's parameter work ended
+> on 2026-10-12. See [`docs/issue30/README.md`](docs/issue30/README.md) and the
+> [decision record](docs/categorization_logic.md#decision-record).
+
+#### Shipped decisions for the pilot
+
+The category semantics are **frozen for the S2 pilot** (decision of 2026-09-30 on
+[#2](https://github.com/ufal/atrium-ocr-postprocess/issues/2)); a change afterwards is measured on a corpus diff with
+`tools/corpus_change.py`. What ships:
+
+| Setting                                                   | Shipped                                | Meaning                                                                                                                            |
+|-----------------------------------------------------------|----------------------------------------|------------------------------------------------------------------------------------------------------------------------------------|
+| `DOMAIN_NOTATION_CATEG` (`[TEXT_UTILS]`)                  | `Clear`                                | every recognised web or e-mail address gets this category (empty = off); a mis-scanned address gets it too                         |
+| `[allowed]` in `setup/word_lists.txt`                     | reviewed entries                       | a listed word scores 0 weirdness, is out of the valid-word ratio and is **never evidence of damage** (Q5a/Q5b)                     |
+| `SHORT_GARBAGE_WITNESS_ENABLE`                            | `false`                                | the shape witness that would narrow the short-garbage route is wired and held                                                      |
+| `SHORT_GARBAGE_WITNESS_FLOOR`                             | `false`                                | its companion floor, rejected on 2026-10-05                                                                                        |
+| `LANG_REMAP_ALWAYS`                                       | `true`                                 | the stored score of a remapped language is the cap (0.75 / 0.50), whatever FastText said                                           |
+| `LOWPPL_CLEAR_MAX`                                        | `35.0`                                 | perplexity under which three or more words are `Clear` (lowered from 50 on 2026-10-11, the one change that broke no labelled line) |
+| `SHORT_NOISY_QS_PENALTY`                                  | `0.20`                                 | score penalty of a very short string with OCR oddities (0 switches it off)                                                         |
+| `QUALITY_VOCABULARY_ENABLE`                               | `false`                                | a real vocabulary in place of the shape-only word test; measured and rejected (212 fixes against 540 breaks)                       |
+| `PAGE_PPL_BLEND_ENABLE`                                   | `false`                                | page-relative perplexity for one- and two-word lines; needs calibrating on a real run first                                        |
+| `MODEL_NAME`, `PERPLEXITY_THRESHOLD_MAX`, `SHORT_PPL_CAP` | `Qwen/Qwen2.5-0.5B`, `1000.0`, `850.0` | perplexity model and its scale (see below)                                                                                         |
+
+The service and the batch pipeline **refuse to start** when the score bands are inverted
+(`CATEG_TRASH_SCORE_MAX` ≥ `CATEG_NOISY_SCORE_MAX`), `SHORT_PPL_CAP` ≥ `PERPLEXITY_THRESHOLD_MAX`, or the quality-score
+weights do not sum to a positive number.
 
 > [!NOTE]
-> **The table above describes what the program does with a line. It is not the definition an
-> annotator works to, and the two were drifting apart.** For issue #30 the definition was settled by
-> @david-spacil on 2026-09-22, pending @DanaKriv: **`Trash` means illegible.** Anything legible is
-> `Clear`; anything easily decipherable through a mistake is `Noisy` — **regardless of how useful
-> the line is**. So a correctly scanned web address is `Clear`, not `Trash`. `Non-text` cannot be
-> distinguished from `Trash` without the page image and is out of scope for hand annotation.
-> The `Trash` row above is already consistent with this: re-process rather than delete.
-> See [`docs/issue30/issue30_review_request.md`](docs/issue30/issue30_review_request.md) § 6.
+> **Hand-editable word lists.** The word lists the categoriser consults (units, reference labels, section headings,
+> short Czech function words, the rotation whitelists) live in [`setup/word_lists.txt`](setup/word_lists.txt)
+> (`WORD_LISTS_PATH`), one `[section]` each, with the matching `setup/config.txt` keys kept empty as overrides. Editing
+> a list changes categories: treat it as a categorisation change.
+
+#### Configuration ⚙️
 
 > [!NOTE]
-> **Hand-editable word lists (issue #30).** The word lists the categoriser consults — units, reference
-> labels, section headings, short Czech function words, the rotation whitelists — live in
-> [`setup/word_lists.txt`](setup/word_lists.txt) (`WORD_LISTS_PATH`), one `[section]` each, with the
-> matching `setup/config.txt` keys kept empty as overrides. Its `[allowed]` section is for real words
-> the archive uses that the program keeps mistaking for damage; since 2026-10-01 it ships the entries
-> the data providers reviewed (issue #30 Q5a), with the rest commented out. A listed word stops counting
-> against the quality score and is never evidence of damage to the shape witness (Q5b) — see
-> [`docs/categorization_logic.md`](docs/categorization_logic.md#composite-quality-score).
-> Separately, `DOMAIN_NOTATION_CATEG` in `[TEXT_UTILS]` names the category every recognised web or
-> e-mail address gets; it ships **`Clear`** (issue #30 Q4; empty = off).
-
-> [!NOTE]
-> This script generates two primary output directories:
-> `DOC_LINE_LANG_CLASS/` and `DOC_LINE_STATS/`, while the
+> This script generates two primary output directories: `DOC_LINE_LANG_CLASS/` and `DOC_LINE_STATS/`, while the
 > raw **text** 📝 files (primary input) are stored in `../PAGE_TXT/` generated from `../PAGE_ALTO/`.
 
-All input/output paths and tunable parameters are configured ⚙️ in [config.txt](setup/config.txt) 📎.
-Parameters are organized into **three sections**: `[CLASSIFY]`, `[AGGREGATE]`, and `[TEXT_UTILS]`.
+All input/output paths and tunable parameters are configured ⚙️ in [config.txt](setup/config.txt) 📎, in three
+sections: `[CLASSIFY]`, `[AGGREGATE]` and `[TEXT_UTILS]`. The file is INI: **comments go on their own line**, and any
+key can be overridden by an environment variable `ATRIUM_<SECTION>_<KEY>` (for example
+`ATRIUM_TEXT_UTILS_SHORT_PPL_CAP=900`), read when the process starts.
 
 ```ini
 [CLASSIFY]
-BATCH_SIZE = 128        # Batch size for processing lines (the service: PPL_BATCH_LINES, 32)
-WORKERS_MAX = 32        # Max CPU workers for parallel tasks
-EXPECTED_LANGS = ces,deu,eng    # Expected languages (ISO codes); first is default
-TRUSTED_FOREIGN_LANGS = deu,eng,fra,pol,ita     # Allowed foreign languages (ISO codes)
-MODEL_NAME = Qwen/Qwen2.5-0.5B  # Language model for perplexity scoring; English-only collections: distilgpt2
+# Lines per perplexity pass of the batch pipeline (the service: PPL_BATCH_LINES, 32).
+BATCH_SIZE = 128
+# CPU workers for FastText and the structural signals.
+WORKERS_MAX = 32
+# Expected languages (ISO 639-3); the first is the default for an unknown language.
+EXPECTED_LANGS = ces,deu,eng
+# Foreign languages kept as they are, at a reduced trust.
+TRUSTED_FOREIGN_LANGS = deu,eng,fra,pol,ita,slk
+# Language model for perplexity; for English-only collections use distilgpt2 and re-tune the table below.
+MODEL_NAME = Qwen/Qwen2.5-0.5B
 
 [TEXT_UTILS]
-
-QS_WEIGHT_VALID_WORD  = 0.35    # Weight for valid word ratio in QS
-QS_WEIGHT_WEIRD       = 0.18    # Weight for inverted word weirdness in QS
-QS_WEIGHT_PERPLEXITY  = 0.08    # Weight for inverted normalized perplexity in QS
-QS_WEIGHT_LENGTH      = 0.02    # Weight for length reward in QS
-QS_WEIGHT_GARBAGE     = 0.18    # Weight for inverted garbage density in QS
-QS_WEIGHT_VOWEL       = 0.07    # Weight for vowel quality in QS
-QS_WEIGHT_LANG        = 0.05    # Weight for language confidence in QS
-QS_WEIGHT_GIBBERISH   = 0.04    # Weight for inverted gibberish ratio in QS
-QS_WEIGHT_FUSED       = 0.03    # Weight for inverted fused word ratio in QS
-QS_LENGTH_MAX         = 100.0   # Max length for normalization
-
-CATEG_TRASH_SCORE_MAX       = 0.55      # Max QS for Trash category
-CATEG_NOISY_SCORE_MAX       = 0.80      # Max QS for Noisy category (#3 2026-07-02: lowered 0.85 -> 0.80)
-REPEATED_DOUBLE_MIN         = 2         # Minimum occurrence count for doubled-char penalty
-SHORT_NOISY_QS_PENALTY      = 0.20      # Opt-in QS penalty for short strings exhibiting OCR oddities
-
-# --- New since last revision: Phase-2 categoriser overrides ---
-LOWPPL_CLEAR_MAX            = 35.0      # ppl ceiling for Override 3 (#3 2026-10-11: lowered 50 -> 35)
-HARD_SWEEP_LANG_MAX         = 0.45      # orig_lang_score ceiling for the hard-sweep route
-HARD_SWEEP_PPL_MIN          = 1000.0    # ppl floor for the hard-sweep route
-GHOST_DOMINATED_MIN_RATIO   = 0.5       # min ghost-token share to flag ghost_dominated
-WORD_W_PENALTY              = 0.20      # per-word weirdness penalty for tokens containing 'w'
-ROT_HIGH_LANG_CONF          = 0.90      # lang_score ceiling for the page-level rotation arm
-
+# Quality-score weights (the score is divided by their sum).
+QS_WEIGHT_VALID_WORD = 0.35
+QS_WEIGHT_WEIRD = 0.18
+QS_WEIGHT_GARBAGE = 0.18
+QS_WEIGHT_PERPLEXITY = 0.08
+QS_WEIGHT_VOWEL = 0.07
+QS_WEIGHT_LANG = 0.05
+QS_WEIGHT_GIBBERISH = 0.04
+QS_WEIGHT_FUSED = 0.03
+QS_WEIGHT_LENGTH = 0.02
+QS_LENGTH_MAX = 100.0
+# Band edges of the stored score: Trash < 0.55 <= Noisy < 0.80 <= Clear.
+CATEG_TRASH_SCORE_MAX = 0.55
+CATEG_NOISY_SCORE_MAX = 0.80
+# Gate 8: perplexity under which three or more words are Clear (2026-10-11: 50 -> 35).
+LOWPPL_CLEAR_MAX = 35.0
+# Gate 1: FastText confidence under which, with a high perplexity, a line is Trash.
+HARD_SWEEP_LANG_MAX = 0.45
+HARD_SWEEP_PPL_MIN = 1000.0
+# Weirdness added to a token containing w, q or x (rare in Czech).
+WORD_W_PENALTY = 0.20
+# Confidence ceiling for the page-level rotation arm.
+ROT_HIGH_LANG_CONF = 0.90
 ```
 
-Parameters that scale with the **perplexity** 📉 model:
+Parameters that scale with the **perplexity** 📉 model. They must be re-tuned whenever you switch between multilingual
+`Qwen2.5-0.5B`🤖 and English-adapted `distilgpt2`🤖, because the two produce **perplexity** 📉 on very different scales
+(`Qwen2.5-0.5B` roughly 3× lower on the same Czech 🇨🇿 text); the guard in `classify_TEXT.py` warns when the ceiling is at
+`distilgpt2` scale with a Qwen model:
 
-These parameters must be re-tuned whenever you switch between multilingual `Qwen2.5-0.5B`🤖 and English-adapted `distilgpt2`🤖,
-because the two models produce **perplexity** 📉 on very different numerical scales — `Qwen2.5-0.5B`🤖 assign scores roughly 3× lower
-than `distilgpt2`🤖 on the same Czech 🇨🇿 text:
+| Parameter                  | Qwen2.5-0.5B | distilgpt2 | What it controls                                                                                                                                                                                                                                                                                                                          |
+|----------------------------|--------------|------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `PERPLEXITY_THRESHOLD_MAX` | 1000.0       | 3000.0     | The ceiling used to normalise raw **perplexity** 📉 into [0, 1] for the **quality score** 📈. A value at or above this ceiling contributes 0 to the score (worst); a value of 0 contributes 1 (best).                                                                                                                                     |
+| `SHORT_PPL_CAP`            | 850.0        | 2500.0     | Maximum **perplexity** 📉 applied to 1–2 word lines before scoring. Short fragments get extreme **perplexity** 📉 from any LM (no context to condition on); the cap stops legitimate short labels and codes being penalised. It sits below every perplexity route's floor, so **no perplexity rule can fire on a one- or two-word line**. |
+| `PPL_INVERTED_MIN`         | 200.0        | 500.0      | **Perplexity** 📉 floor for the page-level inverted-scan arms B and C: the LM must also be uncertain about the line.                                                                                                                                                                                                                      |
 
-| Parameter                  | Qwen2.5-0.5B | distilgpt2 | What it controls                                                                                                                                                                                                                                                                      |
-|----------------------------|--------------|------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `PERPLEXITY_THRESHOLD_MAX` | 1000.0       | 3000.0     | The ceiling used to normalise raw **perplexity** 📉 into [0, 1] for the **quality score** 📈. A value at or above this ceiling contributes 0 to the score (worst); a value of 0 contributes 1 (best).                                                                                 |
-| `SHORT_PPL_CAP`            | 850.0        | 2500.0     | Maximum **perplexity** 📉 applied to 1–2 word lines before quality scoring. Short text fragments receive extreme **perplexity** 📉 scores from any LM because there is no context to condition on; this cap prevents legitimate short labels and codes from being unfairly penalised. |
-| `PPL_INVERTED_MIN`         | 200.0        | 500.0      | **Perplexity** 📉 floor for the inverted-scan detection arm. A line is considered a candidate for the inverted-scan penalty only if the LM is also uncertain about it (**perplexity** 📉 above this value).                                                                           |
-| `CLEAN_PROSE_PPL_MAX`      | 400.0        | 1000.0     | Maximum **perplexity** 📉 a line may have to qualify for the near-boundary `Clear` promotion (Override 4). Lines with **perplexity** 📉 above this value are not promoted even if all other conditions are met.                                                                       |
+Parameters that are model-independent 🤖 (ratios and score fractions, stable across either model):
 
-Parameters that are model-independent 🤖 and stable across different choices of **perplexity** 📉 model 🤖:
-
-These parameters are expressed as ratios or quality-score fractions, not as **perplexity** 📉 values, so their meaning
-does not change between models and their defaults are stable across either choice:
-
-| Parameter                   | Default | What it controls                                                                                                                                                                                                                                                            |
-|-----------------------------|---------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `ROT_RATIO_INVERTED_MIN`    | 0.55    | Minimum fraction of structurally rotatable characters (`pbqdnuwmoxszeyv`) among alphabetic characters that must be present before a rotation penalty is even considered. A value of 0.55 means more than half of all letters in the line must belong to this ambiguous set. |
-| `WEIRD_RATIO_INVERTED_MIN`  | 0.35    | Minimum mean per-word weirdness score required to *confirm* an inverted scan when `rot_ratio` is already above the threshold. This second condition prevents Czech 🇨🇿 sentences that happen to contain many `p`, `d`, `b`, `q` letters from being falsely penalised.      |
-| `CLEAN_PROSE_MIN_SCORE`     | 0.65    | Lower bound of the quality-score range within which the near-boundary promotion (Override 4) can fire. A line must score at least this well before it is a candidate for promotion from `Noisy` to `Clear`.                                                                 |
-| `CLEAN_PROSE_WEIRD_MAX`     | 0.08    | Maximum mean per-word weirdness a line may have to qualify for the near-boundary promotion. Even a single notably corrupted token disqualifies the line from being promoted.                                                                                                |
-| `CLEAN_PROSE_WC_MIN`        | 4       | Minimum word count a line must have to qualify for near-boundary promotion. Very short lines (1–3 words) have unreliable **perplexity** 📉 scores and are therefore never promoted regardless of their **quality score** 📈.                                                |
-| `MOSTLY_READABLE_VALID_MIN` | 0.85    | Minimum ratio of structurally valid words required. Semi-readable lines dipping below this ratio are capped at `Noisy` and prevented from achieving `Clear`.                                                                                                                |
+| Parameter                   | Default | What it controls                                                                                                                                                                                                                              |
+|-----------------------------|---------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `ROT_RATIO_INVERTED_MIN`    | 0.55    | Minimum share of structurally rotatable characters (`pbqdnuwmoxszeyv`) among a line's letters for the page sweep's rotation arm (arm C).                                                                                                      |
+| `MOSTLY_READABLE_VALID_MIN` | 0.85    | Minimum share of structurally valid words for `Clear`. Below it a line is `Noisy`, unless it is a confident, low-perplexity, upright-Czech line (`lm_confident_czech`).                                                                       |
 
 > [!NOTE]
-> The `CLEAN_PROSE_*` rows above (`CLEAN_PROSE_PPL_MAX`, `CLEAN_PROSE_MIN_SCORE`, `CLEAN_PROSE_WEIRD_MAX`,
-> `CLEAN_PROSE_WC_MIN`) parameterise the near-boundary **"Override 4"** clean-prose promotion, which has been
-> **removed** from `determine_category()` (see the callout in
-> [Categorisation Logic](docs/categorization_logic.md#categorisation-logic)). These
-> keys — together with the never-implemented `CLEAR_BAND_WC_MIN` guard — have now been **removed from
-> `config.txt`** as well (#7 Phase 0 of the config-coverage audit); they are **not read** by any current
-> scoring or categorisation path. The rows are kept here only as historical documentation of the removed override.
+> The near-boundary "clean prose" promotion (Override 4) and its `CLEAN_PROSE_*` keys were **removed**; no path reads
+> them. `WEIRD_RATIO_INVERTED_MIN` is still loaded (and swept) but no longer read by any rule.
 
-Language- and collection-specific data 🇨🇿 moved from hardcoded Python literals into the config (#7 Tier 1). Defaults
-are bit-identical to the previous in-code values, so the shipped config produces exactly the same categorisation:
+Language- and collection-specific data 🇨🇿 lives in the config rather than in Python (#7 Tier 1):
 
-| Parameter                   | Section        | Default                                                               | What it controls                                                                                                                                                                                                                   |
-|-----------------------------|----------------|-----------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `DEU_DIACS`                 | `[TEXT_UTILS]` | `äöüßÄÖÜ`                                                             | German diacritic glyphs 🇩🇪; together with `CZ_DIACS` rebuilds the per-language diacritic map used by `infer_lang_from_diacritics()`.                                                                                             |
-| `DIACRITIC_INFER_THRESHOLD` | `[TEXT_UTILS]` | 0.07                                                                  | Minimum diacritic share among alphabetic characters for diacritic-based language inference.                                                                                                                                        |
-| `WQX_CHARS`                 | `[TEXT_UTILS]` | `wqxWQX`                                                              | Letters rare in Czech 🇨🇿 — wqx-heavy tokens signal OCR noise in `score_word`, `score_words_in_line` and `determine_category`.                                                                                                    |
-| `ROT_WHITELIST`             | `[TEXT_UTILS]` | `po,pod,do,od,on,ony,by,bez,ne,nebo,ven,den,zde,se,ve,mez,pouze,bude` | Czech 🇨🇿 function words recognisable upright; their mirror/rotation ghost images (`ROT_GHOSTLIST`) are **derived at import time** — changing this key requires re-import (`override_constants()` does not rebuild it).           |
-| `GHOST_WORD_COLLISIONS`     | `[TEXT_UTILS]` | `no,bo`                                                               | Ghost images that collide with real words and must never count as ghost hits.                                                                                                                                                      |
-| `TRAILING_FILL_CHARS`       | `[TEXT_UTILS]` | `\x20._:-<\u2013\u2014`                                               | Trailing filler characters stripped before headline/short-line checks. Unicode-escape decoded — the leading space is written as `\x20` because configparser strips leading whitespace from values.                                 |
-| `NONTEXT_MARKERS`           | `[TEXT_UTILS]` | `IVerc`                                                               | Collection-specific literal markers (ARUP/B stamp) forcing the `Non-text` route in `pre_filter_line()`.                                                                                                                            |
-| `FASTTEXT_MODEL`            | `[CLASSIFY]`   | `lid.176.bin`                                                         | Path to the **FastText** 🌐 language-ID weights loaded by each CPU worker.                                                                                                                                                         |
-| `TRUST_TIER_TRUSTED`        | `[CLASSIFY]`   | 0.85                                                                  | Trust multiplier on the **FastText** 🌐 confidence for a *known but unexpected* language. The product (`trust_lang_score`) is what feeds **both** the **quality score** 📈 and the structural gates — not the stored `lang_score`. |
-| `TRUST_TIER_UNKNOWN`        | `[CLASSIFY]`   | 0.50                                                                  | Trust multiplier for an *unknown* language. Because it caps `trust_lang_score` at 0.50 — below `LANG_SCORE_REMAP` (0.75) — gates of the form `lang_score <= LANG_SCORE_REMAP` are always true for unknown-language lines.          |
-| `REMAP_KEEP_SCORE_LANGS`    | `[CLASSIFY]`   | `slk`                                                                 | Languages that keep their original **FastText** 🌐 confidence when remapped to the default language (Slovak ≈ Czech 🇨🇿, so the confidence stays meaningful after the label swap).                                                |
+| Parameter                                | Section        | Default                                                               | What it controls                                                                                                                                                                                                                    |
+|------------------------------------------|----------------|-----------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `WQX_CHARS`                              | `[TEXT_UTILS]` | `wqxWQX`                                                              | Letters rare in Czech 🇨🇿: a token holding one is weighted as OCR noise (`score_word`), and they feed the `wqx`/rotation gate.                                                                                                     |
+| `ROT_WHITELIST`                          | `[TEXT_UTILS]` | `po,pod,do,od,on,ony,by,bez,ne,nebo,ven,den,zde,se,ve,mez,pouze,bude` | Czech 🇨🇿 function words recognisable upright; a line containing one counts as *upright Czech*. Their mirror/rotation ghost images (`ROT_GHOSTLIST`) are **derived at import time**: changing this key requires a re-import.       |
+| `GHOST_WORD_COLLISIONS`                  | `[TEXT_UTILS]` | `no,bo`                                                               | Ghost images that collide with real words and must never count as ghost hits.                                                                                                                                                       |
+| `TRAILING_FILL_CHARS`                    | `[TEXT_UTILS]` | `\x20._:-<–—`                                                         | Trailing filler characters stripped before headline/short-line checks. Unicode-escape decoded; the leading space is written `\x20` because configparser strips leading whitespace from values.                                      |
+| `NONTEXT_MARKERS`                        | `[TEXT_UTILS]` | `IVerc`                                                               | Collection-specific literal markers (the ARUP/B stamp) forcing `Non-text` in `pre_filter_line()`.                                                                                                                                   |
+| `DEU_DIACS`, `DIACRITIC_INFER_THRESHOLD` | `[TEXT_UTILS]` | `äöüßÄÖÜ`, `0.07`                                                     | Reserved: read only by `infer_lang_from_diacritics()`, which no scoring path calls.                                                                                                                                                 |
+| `FASTTEXT_MODEL`                         | `[CLASSIFY]`   | `lid.176.bin`                                                         | Path to the **FastText** 🌐 language-ID weights loaded by each CPU worker.                                                                                                                                                          |
+| `TRUST_TIER_TRUSTED`                     | `[CLASSIFY]`   | 0.85                                                                  | Trust multiplier on the FastText confidence for a *known but unexpected* language. The product (`trust_lang_score`) feeds **both** the quality score and the structural gates, never the stored `lang_score`.                       |
+| `TRUST_TIER_UNKNOWN`                     | `[CLASSIFY]`   | 0.50                                                                  | Trust multiplier for an *unknown* language. It caps the trust at 0.50, below `LANG_SCORE_REMAP` (0.75), so a gate written `lang_score <= LANG_SCORE_REMAP` is always true for unknown-language lines.                               |
+| `REMAP_KEEP_SCORE_LANGS`                 | `[CLASSIFY]`   | `slk`                                                                 | Languages **outside** the expected and trusted lists that keep their confidence when relabelled to the default. `slk` is also in `TRUSTED_FOREIGN_LANGS`, so it is kept as Slovak and this key has no effect in the shipped config. |
 
 ---
 
@@ -733,15 +776,16 @@ are bit-identical to the previous in-code values, so the shipped config produces
 This script reads the extracted **text** 📝 files, batches lines together 📦, and runs the **FastText** 🌐 and
 **Qwen2.5-0.5B** 🤖 models. It uses a **CPU** 💻/**GPU** 🚀 split architecture:
 
-* A single dedicated **GPU** 🚀 worker holds the only **Qwen2.5-0.5B** 🤖 instance and processes **perplexity** 📉 batches to
-prevent VRAM OOM errors.
-* Multiple **CPU** 💻 workers (up to `WORKERS_MAX`, default 32) read files, run **FastText** 🌐 and structural detectors, and
-submit text batches to the **GPU** 🚀 worker via a shared queue. **CPU** 💻 workers poll the result dictionary while the GPU
-processes, running **language identification** 🌐 concurrently.
+* A single dedicated **GPU** 🚀 worker holds the only **Qwen2.5-0.5B** 🤖 instance and processes **perplexity** 📉
+  batches to prevent VRAM OOM errors. A batch that does run out of memory is **split in halves and retried**; only a
+  line that fails even on its own is scored 99999.
+* Multiple **CPU** 💻 workers (up to `WORKERS_MAX`, default 32) read files, run the pre-filter, **FastText** 🌐 and the
+  structural signals, and submit text batches to the **GPU** 🚀 worker via a shared queue. **CPU** 💻 workers poll the
+  result dictionary while the GPU processes, running **language identification** 🌐 concurrently.
 
 > [!WARNING]
-> The **first** item of `EXPECTED_LANGS` list of languages 🌐 should be the most expected language in the processed
-> collection to work as a default replacement of ambiguous language recognition predictions.
+> The **first** item of the `EXPECTED_LANGS` list should be the most expected language in the processed collection: it
+> is the default replacement of unknown language predictions.
 
 ```bash
 python3 classify_TEXT.py [--input-csv <stats.csv>]
@@ -751,110 +795,94 @@ python3 classify_TEXT.py [--input-csv <stats.csv>]
 * **Input 1 📥:** `../PAGE_TXT/` from Step 3
 * **Input 2 📥:** `output.csv` from Step 2 (`--input-csv`, else `[CLASSIFY].INPUT_CSV`)
 * **Output 📤:** `DOC_LINE_LANG_CLASS/` containing per-document **CSVs** 📊 (e.g., [DOC_LINE_CATEG](data_samples/DOC_LINE_CATEG) 📁)
+* **Exit status:** non-zero when the stage did not complete: every document failed, or the GPU worker was lost, or the
+  scoring constants are invalid. Some documents failing while the rest are classified exits 0 (see the paradata's
+  `skipped_files_detail`).
 
 > [!TIP]
-> This script is resume-capable. If interrupted, run it again and documents whose output CSV is
-> at least as new as all of their page texts are skipped; a document with a page text newer than
-> its output (re-ingested, re-extracted) is classified again. Output CSVs of documents that are not
-> in the page CSV are listed in a warning, never deleted — `aggregate_STAT.py` aggregates every CSV
-> in the directory. The Step 3 extractors resume the same way, page by page, and Steps 1 and 3 rewrite a
-> page file only when its content changed, so a full re-run over unchanged inputs skips everything again.
+> This script is resume-capable. If interrupted, run it again and documents whose output CSV is at least as new as all of
+> their page texts are skipped; a document with a page text newer than its output (re-ingested, re-extracted) is
+> classified again. A document's rows are built in `<doc>.csv.part` and renamed once the document is complete, so a
+> `<doc>.csv` that exists is a finished one and a run that died leaves nothing a resume could mistake for it. Output
+> CSVs of documents that are not in the page CSV are listed in a warning, never deleted: `aggregate_STAT.py` aggregates
+> every CSV in the directory. The Step 3 extractors resume the same way, page by page, and Steps 1 and 3 rewrite a page
+> file only when its content changed, so a full re-run over unchanged inputs skips everything again.
 
-`<doc_name>.csv` 📊: Detailed classification results for every single line within a document, **columns**:
+`<doc_name>.csv` 📊: detailed classification results for every single line within a document, **columns**:
 
 * `file` — document identifier 🆔
 * `page_num` — page number 📄
 * `line_num` — line number, starts from 1 for each page 🔢
-* `text` — cleaned text of the line 📝
+* `text` — cleaned text of the line (after the pre-filter's OCR repairs) 📝
 * `original_text` — original pre-repair text of the line 📝
 * `split_ws` — hyphenated word prefix at the end of the line (split word start)
 * `split_we` — hyphenated word suffix at the start of the line (split word end)
-* `word_count` — **count** of whitespace-delimited tokens in the line (**count** of **words**)
-* `char_count` — **count** of total character in the cleaned line
+* `word_count` — **count** of whitespace-delimited tokens in the line
+* `char_count` — **count** of characters in the cleaned line
 * `garbage_density` — ratio of non-alphanumeric characters to total line length (calculated on `original_text`)
-* `upper` — **count** of **words** with unexpected mid-word uppercase letters
-* `repeated` — **count** of **words** where a non-standard character makes up ≥ 30% of the word, or containing consecutive doubled garble characters
-* `ldl_fuses` — **count** of **words** with a letter–digit–letter sandwich (e.g., `vyt1ačená`), excluding valid measurements.
-* `fused_words` — **count** of tokens that appear to be fused **words** (abnormal consonant/vowel runs or extreme length)
-* `gibberish` — **count** of **words** flagged as gibberish (high vowel ratio)
-* `weird_wx` — **count** of words with an abnormal density of 'w' or 'x' glyphs
-* `word_weird` — mean per-word weirdness score in [0, 1]; combines strange-symbol (0.40), repeated-char (0.35), LDL-fusion (0.15), mid-uppercase (0.10), and a `WORD_W_PENALTY`-weighted (default 0.20) signal for tokens containing the letter `w` — rare in Czech and a strong inverted/mirror-OCR fingerprint — plus a separate caps-prefix penalty (0.20). The combined score is clamped to [0, 1]. Isolated single letters score 0.85 (OCR noise) or 0.25 (digit/measurement).
-* `vowel_ratio` — ratio of vowel characters to total alphabetic and symbol characters in the `original_text`
-* `rot_ratio` — the ratio of structurally ambiguous/rotatable characters (`pbqdnuwmoxszeyv`) to the total number of alphabetic characters in the line.
+* `upper` — **count** of words with unexpected mid-word uppercase letters
+* `repeated` — **count** of words with a triple character run, a doubled non-`o`/`u` character occurring twice, or one character making up ≥ 30 % of the word
+* `ldl_fuses` — **count** of words with a letter–digit–letter sandwich (e.g., `vyt1ačená`), excluding valid measurements
+* `fused_words` — **count** of tokens that appear to be fused words (abnormal consonant/vowel runs or extreme length)
+* `gibberish` — **count** of words flagged as gibberish (high vowel ratio)
+* `weird_wx` — **count** of words with an abnormal density of `w`/`x` glyphs
+* `word_weird` — mean per-word weirdness in [0, 1]: per word a strange symbol (0.40), a repeated character (0.35), a
+  letter–digit–letter sandwich (0.15), a mid-word capital (0.25), a capital prefix (0.20), any of `w`/`q`/`x`
+  (`WORD_W_PENALTY`, 0.20) and a vowelless word of 3+ letters (0.50), clamped to 1; isolated single letters score 0.85
+  (noise) or 0.25 (a digit); then the line-level rotation (+0.45 per word) and fragmentation (+0.35 per fragment) penalties
+  (see [the reference](docs/categorization_logic.md#structural-detectors))
+* `vowel_ratio` — ratio of vowels to alphabetic and symbol characters in the `original_text`
+* `rot_ratio` — ratio of structurally ambiguous/rotatable characters (`pbqdnuwmoxszeyv`) to the alphabetic characters of the line
+* `valid_word_ratio` — share of words that pass the structural word test (the readability measure of gate 10)
+* `structured` — **boolean**: a measurement, reference or similar structured line (exempt from several gates)
+* `damaged` — **boolean**: the line holds a character-level damaged token (a digit or symbol inside a word)
 
-##### `<doc_name>.csv`'s key resulting output **columns** that depict the final classification and quality assessment:
+The key resulting output **columns** that depict the final classification and quality assessment:
 
-* `quality_score` — composite **quality score** 📈 in [0, 1] based on **9** combined signals; higher = cleaner
+* `quality_score` — composite **quality score** 📈 in [0, 1] from **9** combined signals, higher = cleaner; clamped into the band of `categ`
 * `categ` — assigned category: **Clear** ✅, **Noisy** ⚠️, **Trash** 🗑️, **Non-text** 🔣, or **Empty** 🫙
 
-##### `<doc_name>.csv`'s **columns** useful for archive managers information apart from the **quality score** 📈 and category:
+**Columns** useful for archive managers apart from the **quality score** 📈 and category:
 
 * `lang` — predicted ISO **language code** from the **FastText** 🌐 model (remapped if unknown)
-* `lang_score` — **FastText** 🌐 confidence score for the predicted language (capped if remapped, #3)
-* `original_lang` — predicted language **before** remapping logic
+* `lang_score` — the *stored* confidence: FastText's, or the cap (0.75 / 0.50) for a remapped language (`LANG_REMAP_ALWAYS`)
+* `original_lang` — predicted language **before** remapping
 * `orig_lang_score` — original **FastText** confidence **before** remapping
-* `perplex` — Qwen2.5-0.5B 🤖 **perplexity** 📉 score of the line 📉
-* `caps_header` — **boolean** flag indicating whether all alphabetic words in the line are uppercase (typical of section headers)
+* `perplex` — the perplexity used for scoring: Qwen2.5-0.5B 🤖 **perplexity** 📉 of the line, **capped at `SHORT_PPL_CAP` for one- and two-word lines**
+* `perplex_raw` — the model's own perplexity, uncapped (blank-equivalent to `perplex` except for those short lines)
+* `perplex_blend` — the page-relative perplexity, written only when the blend moved a value (`PAGE_PPL_BLEND_ENABLE`, off by default)
+* `caps_header` — **boolean**: all alphabetic words of the line are uppercase (typical of section headers)
 
-**Diagnostic flags (#3):**
-Ten boolean audit columns follow `caps_header`. Six name the categoriser rule that decided the line —
-`allcaps_novowel`, `lowppl_clear`, `cleanprose_clear`, `trash_threshold`, `noisy_threshold`, `clear_threshold`
-(exactly one `True`, or none for `Empty`). Two further internal reason codes — `trash_hard_sweep` (route 1a)
-and `trash_inverted` (route 1b) — also exist but are folded into the `trash_threshold` column rather than
-getting their own column, so the per-line reason granularity is coarser in the CSV than inside the categoriser.
-Four name the document-level post-pass that later changed it — `pp_dedup` (header/footer mode-harmonisation),
-`pp_surrounded_trash` (rolling-window smoothing), `pp_inverted_run` (page-level inverted-scan sweep), and
-`pp_page_context` (page-context Trash/Noisy adjustment, see below).
-A categoriser flag and a `pp_` flag may both be `True` on one line: that is the intended trail from the
-original decision to the override.
+**Diagnostic flags.** Five boolean audit columns name the rule that decided the line (exactly one `True`, none for
+`Empty` and `Non-text`): `allcaps_novowel`, `lowppl_clear`, `trash_threshold`, `noisy_threshold`, `clear_threshold`
+(`cleanprose_clear` is always `False` since Override 4 was removed). The hard-sweep and inverted-scan routes are folded
+into `trash_threshold`, so the CSV is coarser than the categoriser. Four more name the document-level pass that later
+changed the line: `pp_dedup`, `pp_surrounded_trash`, `pp_inverted_run`, `pp_page_context`. A decision flag and a `pp_`
+flag can both be `True`: that is the trail from the original decision to the override.
 
 ---
 
 ##### Categorisation logic reference 📚
 
-The full decision logic — CPU pre-filter, language handling, structural detectors, the composite
-quality score, the categorisation gates/rescues, and the four document-level post-processing
-passes — lives in **[docs/categorization_logic.md](docs/categorization_logic.md)**.
+The full decision logic lives in **[docs/categorization_logic.md](docs/categorization_logic.md)**:
 
-> [!IMPORTANT]
-> **Known accuracy limitation since `v1.5.0-beta` (issue [#30](https://github.com/ufal/atrium-alto-postprocess/issues/30)).**
-> `rule_short_garbage` no longer convicts short diacritic-free lines on shape alone. Measured over
-> both collections (113,101 documents / 71.8M lines) the change **promoted 367,208 lines and demoted
-> none**, dropping `Trash` by 247,252 lines (−8.68%), and human grading of 484 promoted lines scored
-> **76.5% right / 9.6% borderline / 13.9% wrong** — a 5.5 : 1 improvement.
->
-> The cost is real and was accepted deliberately: roughly **26,000 genuine OCR-garbage lines now reach
-> `Clear`** (95% CI [19,300; 34,600]). `Clear` is the top category, not a reviewable middle state, so
-> **a `Clear` verdict on a 1–3 token line without Czech diacritics carries less confidence than the
-> label suggests.** Downstream consumers filtering on `categ == "Clear"` should be aware of it.
->
-> The narrowing that pays this down (`_has_shape_garbage_evidence()`, a phonotactic second witness) is
-> implemented and wired, but ships **disabled** (`SHORT_GARBAGE_WITNESS_ENABLE = false`). It has been
-> measured against the 2,067-line human gold set in
-> [`tools/gold/sidecars/issue30_gold_2067.csv`](tools/gold/sidecars/issue30_gold_2067.csv) (see
-> [`tools/gold/GOLD.md`](tools/gold/GOLD.md)): with the document-level smoothing it passes the adoption
-> gate — errors 513 → 503, readable lines lost 38 → 38, McNemar p = 0.013, and 503 → 502 / 38 → 37 with
-> the German/French vowel-run split — but it fails that gate per line, so the smoothing is a
-> precondition. It stays off until the data providers' annotation of the population it would newly
-> discard, and their agreement on what `Trash` means, are in. See
-> [`docs/issue30/README.md`](docs/issue30/README.md).
-
-| Section                                                                             | What it covers                                                                                 |
-|-------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------|
-| [CPU 💻 Pre-filter](docs/categorization_logic.md#cpu--pre-filter)                   | `pre_filter_line()`: `Empty`/`Non-text` routing and the two OCR repairs, before any model runs |
-| [Language 🌐 Handling](docs/categorization_logic.md#language--handling)             | FastText trust tiers, `remap_lang()`, and the `LANG_REMAP_ALWAYS` switch                       |
-| [Structural Detectors](docs/categorization_logic.md#structural-detectors)           | the per-line signal detectors (rotation, gibberish, fused/vowel-less words, damage)            |
-| [Composite Quality Score](docs/categorization_logic.md#composite-quality-score)     | the weighted `compute_quality_score()` formula and its dynamic adjustments                     |
-| [Categorisation Logic](docs/categorization_logic.md#categorisation-logic)           | `determine_category()`: the ordered gates, `check_rescues()`, and threshold routing            |
-| [Post-Processing Smoothing](docs/categorization_logic.md#post-processing-smoothing) | `apply_document_postprocessing()`: dedup, rolling window, page context, inverted-scan sweep    |
+| Section                                                                                     | What it covers                                                                                             |
+|---------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------|
+| [CPU 💻 Pre-filter](docs/categorization_logic.md#cpu--pre-filter)                           | `pre_filter_line()`: `Empty`/`Non-text` routing and the two OCR repairs, before any model runs             |
+| [Language 🌐 Handling](docs/categorization_logic.md#language--handling)                     | FastText trust tiers, `remap_lang()`, `LANG_REMAP_ALWAYS`, and which language number is read where         |
+| [Structural Detectors](docs/categorization_logic.md#structural-detectors)                   | the per-line signal detectors and per-word weirdness                                                       |
+| [Composite Quality Score](docs/categorization_logic.md#composite-quality-score)             | the weighted `compute_quality_score()` formula and its adjustments                                         |
+| [Categorisation Logic](docs/categorization_logic.md#categorisation-logic)                   | `determine_category()`: the ordered gates, strong garbage evidence, rescues, band routing and the clamp    |
+| [Overrides and exception cases](docs/categorization_logic.md#overrides-and-exception-cases) | every route that decides without or against the score band, what blocks it, and where to see it in the CSV |
+| [Foreign-language lines](docs/categorization_logic.md#foreign-language-lines)               | the tiers, the Czech-first heuristics that act on every language, and the known limits                     |
+| [Post-Processing Smoothing](docs/categorization_logic.md#post-processing-smoothing)         | `apply_document_postprocessing()`: the four document passes                                                |
+| [Worked examples](docs/categorization_logic.md#worked-examples)                             | one input after another through every step; each is a test case                                            |
 
 To replay a config change over already-scored CSVs without a GPU, use
-[`tools/recategorize_from_csv.py`](tools/recategorize_from_csv.py) — it reads the same constants and
-calls the very same scoring function as the pipeline (`classify_TEXT.score_line()`), so a re-scored
-corpus differs from the shipped batch only by the change under test. The FastAPI `/process` endpoint
-uses that same function too; see
-[Line Categorisation Logic](docs/categorization_logic.md), which opens with the three callers and
-what each of them supplies.
+[`tools/recategorize_from_csv.py`](tools/recategorize_from_csv.py): it reads the same constants and calls the very same
+scoring function as the pipeline (`classify_TEXT.score_line()`), so a re-scored corpus differs from the shipped batch only
+by the change under test. The FastAPI `/process` and `/score_record` endpoints use that same function, behind the same
+pre-filter; see [who runs it](docs/categorization_logic.md#who-runs-it).
 
 ---
 
@@ -937,7 +965,7 @@ of **Trash** 🗑️ lines may also indicate handwritten content, which can be e
 ## API Service Integration
 
 In addition to the batch pipeline, this repository ships with a FastAPI wrapper (`service/text_api.py`) that exposes
-the core `text_util_langID` quality classification engine over HTTP. The `/process` endpoint accepts ALTO XML,
+the core `text_util` quality classification engine over HTTP. The `/process` endpoint accepts ALTO XML,
 plain-text, and generic JSON uploads (`task_type` `alto` / `text` / `json`, or `auto`-detected from the file
 extension), returning the same per-line classification fields as the batch pipeline for all three formats.
 (#31) It also accepts **every text-lines format** (PDF, DOCX, ODT, XLSX, PPTX, EPUB, RTF, HTML/hOCR, PAGE XML,
@@ -951,11 +979,16 @@ Document results carry `page`/`page_label` per line and a `pages` summary, and a
 `text_formats.py` code and the same `[TEXT_INGEST]` settings as the batch method; a `.txt` upload
 is decoded the same way (any common encoding, cp1250 first).
 
-The batch pipeline and the API service share the same `text_util_langID` categorization engine and `config.txt`
+The batch pipeline and the API service share the same `text_util` categorization engine and `config.txt`
 settings — including the default **Qwen2.5-0.5B** 🤖 perplexity model — to ensure zero drift between local processing
-and web uploads.
+and web uploads. Both run the CPU pre-filter first, so a numeric, code-like or blank line is answered `Non-text` or
+`Empty` without a model call, as in the batch CSV. The document passes of [Step 4.1](#41-classify-lines-gpu-bound-)
+(identical-text vote, surrounded Trash, page context, inverted-scan sweep) are applied by the batch pipeline only; the
+service answers each line from its own signals. `POST /score_record` scores the lines of a digital-convert record in
+place; its page figure averages the `Clear`, `Noisy` and `Trash` lines and leaves out the `Non-text` and `Empty`
+ones.
 
-For deployment instructions, endpoint specifications (`/process`, `/info`), and frontend integration details,
+For deployment instructions, endpoint specifications (`/process`, `/score_record`, `/info`), and frontend integration details,
 please see the dedicated **[Service Documentation](service/README.md)**.
 
 ## Paradata logging

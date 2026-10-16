@@ -97,9 +97,12 @@ def test_four_vowels_convict_in_every_language(text, lang):
 def test_an_unknown_language_gets_the_strict_threshold(text):
     """Not knowing the language must not silently exempt a line.
 
-    `None` is what every caller that has no language passes -- the offline
-    re-scorer, the service, and every test written before D44 -- so the default
-    has to be the behaviour the clause had before the split, not the exemption.
+    `None` is what every direct caller without a label passes
+    (`shape_garbage_clauses(text)`, `categorize_line()` without `lang=`, and every
+    test written before D44), so the default has to be the behaviour the clause had
+    before the split, not the exemption. The batch pipeline, the offline re-scorer
+    and the service all reach it through `score_line`, which passes FastText's raw
+    label (`lang=original_lang`).
     """
     assert shape_garbage_clauses(text, None) == shape_garbage_clauses(text, "ces_Latn")
     assert shape_garbage_clauses(text) == shape_garbage_clauses(text, None)

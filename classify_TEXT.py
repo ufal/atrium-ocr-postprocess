@@ -45,7 +45,7 @@ import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from itertools import groupby
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 import numpy as np
 import pandas as pd
@@ -90,6 +90,7 @@ from text_util import (
     compute_valid_ratio,
     compute_vowel_ratio,
     compute_word_weird_ratio,
+    constant_invariant_errors,
     count_damaged_tokens,
     detect_fused_words,
     detect_gibberish_words,
@@ -503,7 +504,7 @@ _config = configparser.ConfigParser()
 _DEFAULT_CONFIG_PATH = Path(__file__).resolve().parent / "setup" / "config.txt"
 _config_path = Path(os.getenv("LANGID_CONFIG", str(_DEFAULT_CONFIG_PATH)))
 if _config_path.exists():
-    _config.read(_config_path)
+    _config.read(_config_path, encoding="utf-8")
 
 
 def _cfg_get(key: str, default: str) -> str:
@@ -520,6 +521,9 @@ FASTTEXT_MODEL = _cfg_get("FASTTEXT_MODEL", "lid.176.bin")
 TRUST_TIER_TRUSTED = float(_cfg_get("TRUST_TIER_TRUSTED", "0.85"))
 TRUST_TIER_UNKNOWN = float(_cfg_get("TRUST_TIER_UNKNOWN", "0.50"))
 
+#: PERPLEXITY_THRESHOLD_MAX at or above this is distilgpt2's scale (README: 3000), not Qwen's (1000).
+_QWEN_SCALE_WARN_ABOVE = 2000.0
+
 worker_models = {}
 
 
@@ -530,9 +534,23 @@ def init_cpu_worker():
     worker_models["ft"] = fasttext.load_model(FASTTEXT_MODEL)
 
 
+def doc_part_path(output_dir, file_id: str) -> Path:
+    """Where a document's rows are built before it is complete: `<doc>.csv.part`.
+
+    A document's rows are appended batch by batch, then re-read for the document-level passes and
+    rewritten. Written straight to `<doc>.csv`, a job that died in the middle (GPU worker lost,
+    walltime, an exception) left a truncated, never-post-processed CSV that the next run's resume
+    check read as finished and `aggregate_STAT.py` aggregated into page stats. Built under another
+    name and renamed once whole, a `<doc>.csv` present is a `<doc>.csv` complete -- the convention
+    `tools/corpus_change.py` already keeps. No `*.csv` glob (resume, `aggregate_STAT.py`,
+    `outputs_outside_the_index`) matches a `.part`.
+    """
+    return Path(output_dir) / f"{file_id}.csv.part"
+
+
 def write_rows_to_doc(output_dir: Path, file_id: str, rows: list):
-    """Safely appends classified rows to a specific document's CSV file."""
-    out_path = output_dir / f"{file_id}.csv"
+    """Safely appends classified rows to a specific document's (in-progress) CSV file."""
+    out_path = doc_part_path(output_dir, file_id)
     file_exists = out_path.exists()
 
     with open(out_path, "a", encoding="utf-8", newline="") as f:
@@ -1043,9 +1061,12 @@ def process_document(task):
     doc_paradata_ref = _rest[3] if len(_rest) > 3 else ""
     doc_run_uuid = _rest[4] if len(_rest) > 4 else None
 
+    out_path = Path(output_dir) / f"{file_id}.csv"
+    part_path = doc_part_path(output_dir, file_id)
+
     try:
-        out_path = Path(output_dir) / f"{file_id}.csv"
         reclassified = False
+        part_path.unlink(missing_ok=True)  # what a run that died mid-document left: never trusted
         if out_path.exists():
             # (#31 Phase 5) Resume only while the output is at least as new as every page
             # text; a re-ingested (changed) document used to keep its old categories.
@@ -1057,7 +1078,8 @@ def process_document(task):
                     "lines": 0,
                     "reason": "output already exists (resume)",
                 }
-            out_path.unlink()  # rows are appended below: start from an empty file
+            # The old CSV stays until the new one replaces it whole: a re-classification that fails
+            # keeps the last complete output (which resume still sees as stale) instead of none.
             reclassified = True
 
         batch_lines = []
@@ -1143,8 +1165,12 @@ def process_document(task):
                 gpu_time_out=gpu_timeout,
             )
 
-        if out_path.exists():
-            df = read_doc_line_csv(out_path, file_id)
+        if not part_path.exists() and reclassified:
+            # Nothing came out of the changed pages (no text left): the old output is stale, not kept.
+            out_path.unlink(missing_ok=True)
+
+        if part_path.exists():
+            df = read_doc_line_csv(part_path, file_id)
 
             if not df.empty:
                 df = apply_page_perplexity_blend(
@@ -1158,7 +1184,8 @@ def process_document(task):
 
             # (#3.7) UTF-8 keeps Czech diacritics intact on the finalised file.
             df = df[CSV_HEADER]  # guard: write columns in canonical order
-            df.to_csv(out_path, index=False, encoding="utf-8")
+            df.to_csv(part_path, index=False, encoding="utf-8")
+            os.replace(part_path, out_path)  # complete: only now does `<doc>.csv` exist
 
             # (atrium-llm-enrich#13) lines[] is field-owned here: categ/quality_score/
             # lang/text only — a co-contributor's fields on the same row (nlp-enrich's
@@ -1175,7 +1202,25 @@ def process_document(task):
         return {"status": "success", "file_id": file_id, "lines": processed_count, "reclassified": reclassified}
 
     except Exception as e:
+        part_path.unlink(missing_ok=True)  # an incomplete document leaves nothing a resume could trust
         return {"status": "error", "file_id": file_id, "reason": str(e)}
+
+
+def incomplete_reason(total_documents: int, failed_documents: int, gpu_was_lost: bool) -> Optional[str]:
+    """Why this stage must exit non-zero, or None when it completed.
+
+    A stage that classified nothing, or lost its GPU worker, did not complete: run_pipeline, a SLURM
+    job or CI must not read exit 0 over missing or partial outputs. Some documents failing while the
+    rest were classified is not a failed stage (aggregation of the finished ones is still wanted; each
+    failure is in the paradata's skipped_files_detail and is warned about).
+    """
+    if gpu_was_lost or (total_documents and failed_documents == total_documents):
+        return (
+            f"[Main] Classification did not complete: {failed_documents} of {total_documents} document(s) failed"
+            + ("; the GPU worker was lost" if gpu_was_lost else "")
+            + ". Re-run to resume; finished documents are kept."
+        )
+    return None
 
 
 def outputs_outside_the_index(output_dir, doc_ids) -> List[str]:
@@ -1240,9 +1285,17 @@ def _parse_args(argv=None) -> argparse.Namespace:
 def main(argv=None):
     """Initializes queue managers, sets up models, and maps CPU document tasks."""
     args = _parse_args(argv)
+    # Refuse to categorise with constants whose boundaries are inverted (the invariants are the
+    # engine's; the service refuses to start on them too). Before any model is downloaded or a
+    # GPU worker started, so a bad config costs seconds, not a queued cluster job.
+    _bad_constants = constant_invariant_errors()
+    if _bad_constants:
+        raise SystemExit(
+            "[Main] Invalid categorisation constants, nothing was classified: " + "; ".join(_bad_constants)
+        )
     config_path = os.getenv("LANGID_CONFIG", "setup/config.txt")
     config = configparser.ConfigParser()
-    config.read(config_path)
+    config.read(config_path, encoding="utf-8")
 
     # (#31 Phase 5) --input-csv: run_pipeline's --input-csv (and text-lines' own stats
     # CSV) now reaches this stage too; it used to read the config only.
@@ -1257,11 +1310,14 @@ def main(argv=None):
 
     MODEL_NAME = config.get("CLASSIFY", "MODEL_NAME", fallback="Qwen/Qwen2.5-0.5B")
 
-    # [NEW] Guard against scale mismatch
-    if "qwen" in MODEL_NAME.lower() and PERPLEXITY_THRESHOLD_MAX > 500.0:
+    # Guard against a scale mismatch: Qwen2.5-0.5B scores roughly a third of distilgpt2's
+    # perplexity on the same Czech text, so the distilgpt2-scale value (3000, README) is far too
+    # lenient for it. The shipped Qwen value is 1000, which this guard must stay quiet about --
+    # it used to fire (threshold 500) on every run of the shipped configuration.
+    if "qwen" in MODEL_NAME.lower() and PERPLEXITY_THRESHOLD_MAX >= _QWEN_SCALE_WARN_ABOVE:
         print(f"\n[WARNING] Configuration Mismatch: You are using '{MODEL_NAME}'.")
-        print(f"          PERPLEXITY_THRESHOLD_MAX is set to {PERPLEXITY_THRESHOLD_MAX}.")
-        print("          Qwen generally produces much lower perplexities than DistilGPT2.")
+        print(f"          PERPLEXITY_THRESHOLD_MAX is set to {PERPLEXITY_THRESHOLD_MAX}, a distilgpt2-scale value.")
+        print("          Qwen generally produces much lower perplexities than DistilGPT2 (shipped for Qwen: 1000).")
         print("          Consider lowering the threshold to avoid false 'Clear' categorizations.\n")
 
     EXPECTED_LANGS_STR = config.get("CLASSIFY", "EXPECTED_LANGS", fallback=DEFAULT_EXPECTED_LANGS)
@@ -1322,7 +1378,7 @@ def main(argv=None):
     # (atrium-llm-enrich#13) resolved once here — cheap primitives, safe to hand to
     # every worker process; the ParadataLogger object itself is not passed down.
     _doc_cfg = configparser.ConfigParser()
-    _doc_cfg.read(config_path)
+    _doc_cfg.read(config_path, encoding="utf-8")
     _document_json_dir = document_hook.resolve_document_json_dir(_doc_cfg.get("DOCUMENT", "JSON_DIR", fallback=""))
     _doc_run_id = logger.run_id
     _doc_run_uuid = logger.run_uuid
@@ -1373,6 +1429,7 @@ def main(argv=None):
 
     total_processed = 0
     total_tasks = len(grouped_tasks)
+    failed_documents = 0
 
     try:
         with ProcessPoolExecutor(max_workers=max_cores, initializer=init_cpu_worker) as executor:
@@ -1400,20 +1457,32 @@ def main(argv=None):
                         logger.log_skip(result["file_id"], result.get("reason", "output already exists (resume)"))
                         tqdm.write(f"Skipped (already exists): {result['file_id']}")
                     else:
+                        failed_documents += 1
                         logger.log_skip(result["file_id"], result["reason"])
                         tqdm.write(f"Skipped {result['file_id']}: {result['reason']}")
 
                 except Exception as e:
+                    failed_documents += 1
                     logger.log_skip(file_id, f"Worker crashed unexpectedly: {e}")
                     tqdm.write(f"Error processing {file_id}: {e}")
 
     finally:
+        gpu_was_lost = gpu_dead.is_set()
         task_queue.put("STOP")
         gpu_process.join(timeout=30)
         if gpu_process.is_alive():
             gpu_process.terminate()
 
         logger.finalize(input_total=total_tasks)
+
+    _incomplete = incomplete_reason(total_tasks, failed_documents, gpu_was_lost)
+    if _incomplete:
+        raise SystemExit(_incomplete)
+    if failed_documents:
+        print(
+            f"[Main] WARNING: {failed_documents} of {total_tasks} document(s) were not classified "
+            f"(see the paradata's skipped_files_detail); the rest are done."
+        )
 
     print(f"All done! Processed {total_processed} total lines.")
 

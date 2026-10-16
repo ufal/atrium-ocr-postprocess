@@ -267,3 +267,77 @@ def test_the_scoring_fields_are_the_shared_modules():
 
     assert set(document_hook.SCORE_LINE_FIELDS) == SCORING_FIELDS["lines"]
     assert set(document_hook.SCORE_PAGE_FIELDS) == SCORING_FIELDS["pages"]
+
+
+# ── 2026-10-16: the CPU pre-filter's answers, the limits as /info reports them, the licence ─────
+
+
+def _prefiltered(text: str, category: str = "Non-text") -> dict:
+    """What the classifier returns for a line the CPU pre-filter settled (service.text_inference)."""
+    from service.text_inference import _fast_track_entry
+
+    return _fast_track_entry(text, category) | {"line_num": 1}
+
+
+def test_a_line_the_prefilter_settled_gets_no_language_and_no_weight_in_the_page_score(classifier):
+    doc = DocumentRecord("C-202000543A-DT-27", "digital-convert")
+    doc.set_source(SHA256, filename="report.pdf", media_type="application/pdf", origin="digital-born-pdf")
+    doc.merge_block("pages", [{"page": "1", "page_index": 1}], key_fields=["page"])
+    doc.merge_block(
+        "lines",
+        [{"page": "1", "line": 0, "text": "ok: Hradiště"}, {"page": "1", "line": 1, "text": "1998"}],
+        key_fields=["page", "line"],
+    )
+    record = doc.to_dict()
+    classifier.side_effect = lambda texts, notes=None: [
+        _answer(t, "Clear", 0.9) if "ok" in t else _prefiltered(t) for t in texts
+    ]
+
+    response = _post(record)
+    assert response.status_code == 200, response.text
+    out = response.json()["document_json"]
+    lines = {r["line"]: r for r in out["lines"]}
+    assert lines[1]["categ"] == "Non-text" and lines[1]["quality_score"] == 0.0
+    assert "lang" not in lines[1], "'N/A' is not a language: the batch path leaves it out of the record"
+    assert lines[0]["lang"] == "ces"
+    page = out["pages"][0]
+    assert page["quality_score"] == 0.9, "the 0.0 placeholder of a pre-filter answer is not evidence of low quality"
+    assert page["quality_band"] == "Clear"
+
+
+def test_the_page_limit_is_the_one_info_reports_the_config_file_included(classifier, tmp_path, monkeypatch):
+    """`MAX_PAGES` set in `[TEXT_INGEST]` of the config file refused a record in /info's table but not
+    at /score_record, which read the default (or the environment) alone."""
+    config = tmp_path / "config.txt"
+    config.write_text("[TEXT_INGEST]\nMAX_PAGES = 1\n", encoding="utf-8")
+    monkeypatch.setenv("LANGID_CONFIG", str(config))
+    import service.text_inference as ti
+
+    ti.ingest_settings.cache_clear()
+    try:
+        assert client.get("/info").json()["limits"]["max_pages"] == 1
+        response = _post(_digital_record())  # three pages with text
+        assert response.status_code == 413, response.text
+        assert response.json()["reason"] == "limit_exceeded"
+        classifier.assert_not_called()
+    finally:
+        ti.ingest_settings.cache_clear()
+
+
+def test_a_scoring_run_records_the_perplexity_model_in_its_paradata(classifier, monkeypatch):
+    from atrium_paradata import ParadataLogger
+
+    logged = []
+    monkeypatch.setattr(ParadataLogger, "log_component", lambda self, name, license=None: logged.append(name))
+    assert _post(_digital_record()).status_code == 200
+    assert logged == ["qwen2.5_0.5b"]
+
+
+def test_a_run_where_the_prefilter_answered_every_line_used_no_model(classifier, monkeypatch):
+    from atrium_paradata import ParadataLogger
+
+    logged = []
+    monkeypatch.setattr(ParadataLogger, "log_component", lambda self, name, license=None: logged.append(name))
+    classifier.side_effect = lambda texts, notes=None: [_prefiltered(t) for t in texts]
+    assert _post(_digital_record()).status_code == 200
+    assert logged == []

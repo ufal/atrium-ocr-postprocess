@@ -9,7 +9,16 @@ VENV_DIR="venv-ocr"
 SERV_REQUIREMENTS="service/requirements.txt"
 MODEL_DIR="models"
 FASTTEXT_BIN="lid.176.bin"
-FASTTEXT_URL="https://huggingface.co/facebook/fasttext-language-identification/resolve/main/model.bin"
+# The FastText weights are fetched at the Hub revision the Dockerfile pins and checked against its
+# SHA-256, so a local install and the images run the same file. The values are read from the
+# Dockerfile's FASTTEXT_REVISION / FASTTEXT_SHA256 build args: one place to bump them.
+FASTTEXT_REVISION=$(sed -n 's/^ARG FASTTEXT_REVISION=//p' Dockerfile)
+FASTTEXT_SHA256=$(sed -n 's/^ARG FASTTEXT_SHA256=//p' Dockerfile)
+if [ -z "$FASTTEXT_REVISION" ] || [ -z "$FASTTEXT_SHA256" ]; then
+    echo "❌ Could not read FASTTEXT_REVISION / FASTTEXT_SHA256 from the Dockerfile."
+    exit 1
+fi
+FASTTEXT_URL="https://huggingface.co/facebook/fasttext-language-identification/resolve/${FASTTEXT_REVISION}/model.bin"
 LAYOUTREADER_REPO="https://github.com/FreeOCR-AI/layoutreader.git"
 
 echo "🚀 Starting ATRIUM Text Processor API Service Setup..."
@@ -80,10 +89,11 @@ if [ ! -f "$MODEL_DIR/$FASTTEXT_BIN" ]; then
 
     # This used to run the identical wget twice — once unconditionally, then
     # again as the success test — fetching ~2 GB two times per invocation.
-    if wget "$FASTTEXT_URL" -O "$MODEL_DIR/$FASTTEXT_BIN" && [ -s "$MODEL_DIR/$FASTTEXT_BIN" ]; then
-        echo "✅ Successfully downloaded $FASTTEXT_BIN."
+    if wget "$FASTTEXT_URL" -O "$MODEL_DIR/$FASTTEXT_BIN" && [ -s "$MODEL_DIR/$FASTTEXT_BIN" ] \
+        && echo "${FASTTEXT_SHA256}  $MODEL_DIR/$FASTTEXT_BIN" | sha256sum -c - > /dev/null; then
+        echo "✅ Successfully downloaded $FASTTEXT_BIN (SHA-256 verified)."
     else
-        echo "❌ Failed to download $FASTTEXT_BIN."
+        echo "❌ Failed to download $FASTTEXT_BIN, or its SHA-256 differs from the Dockerfile's pin."
         rm -f "$MODEL_DIR/$FASTTEXT_BIN"
         exit 1
     fi
@@ -92,7 +102,7 @@ else
 fi
 
 # Note on other models
-echo "ℹ️ Note: LayoutLMv3 and DistilGPT2 will be automatically downloaded and cached by Hugging Face on the first run."
+echo "ℹ️ Note: LayoutLMv3 and the perplexity model (Qwen2.5-0.5B by default) will be automatically downloaded and cached by Hugging Face on the first run."
 
 echo "🎉 Setup complete! To start the server, run:"
 echo "   source $VENV_DIR/bin/activate"

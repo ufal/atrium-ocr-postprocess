@@ -133,7 +133,9 @@ TRASH_GARBAGE = [
         "uncertain lang + high ppl, currently Noisy 0.50",
     ),
     # (#3 Problem 3) confident-labelled garbage the lang-gated hard sweep misses
-    # (slk @ 0.6658 >= HARD_SWEEP_LANG_MAX); the extreme-ppl route catches it.
+    # (slk @ 0.6658 >= HARD_SWEEP_LANG_MAX); the extreme-ppl route catches it. The corpus label
+    # was `slk`; the fixtures are scored as `ces_Latn` (trust tier x1.0, production's x0.85) --
+    # see test_fixture_languages_reach_the_guards_through_the_trust_tier.
     (
         "Alyrý cvod nede % Agrgr oAOrt",
         15168.00,

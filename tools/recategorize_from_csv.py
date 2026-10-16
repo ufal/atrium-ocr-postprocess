@@ -372,17 +372,7 @@ def rescore_csv(
 
 # Production compute_quality_score sums these NINE weights (the legacy symbol
 # weight was dropped in #3); validation/normalisation use the same set.
-QS_WEIGHT_NAMES = (
-    "QS_WEIGHT_VALID_WORD",
-    "QS_WEIGHT_WEIRD",
-    "QS_WEIGHT_PERPLEXITY",
-    "QS_WEIGHT_LENGTH",
-    "QS_WEIGHT_GARBAGE",
-    "QS_WEIGHT_VOWEL",
-    "QS_WEIGHT_LANG",
-    "QS_WEIGHT_GIBBERISH",
-    "QS_WEIGHT_FUSED",
-)
+QS_WEIGHT_NAMES = _tu.QS_WEIGHT_NAMES  # one list, owned by the engine
 
 # Everything below is read at call time inside compute_quality_score /
 # categorize_line / determine_category / score_words_in_line /
@@ -541,17 +531,15 @@ def coerce_constants(constants: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def validate_constants(constants: Mapping[str, Any]) -> None:
-    """Fail fast for logically invalid configurations."""
+    """Fail fast for logically invalid configurations.
 
-    def _g(name):
-        return float(constants[name]) if name in constants else float(_live_default(name))
-
-    if _g("CATEG_TRASH_SCORE_MAX") >= _g("CATEG_NOISY_SCORE_MAX"):
-        raise ValueError("Invalid constants: CATEG_TRASH_SCORE_MAX must be < CATEG_NOISY_SCORE_MAX")
-    if _g("SHORT_PPL_CAP") >= _g("PERPLEXITY_THRESHOLD_MAX"):
-        raise ValueError("Invalid constants: SHORT_PPL_CAP must be < PERPLEXITY_THRESHOLD_MAX")
-    if sum(_g(name) for name in QS_WEIGHT_NAMES) <= 0:
-        raise ValueError("Invalid constants: sum(QS_WEIGHT_*) must be positive")
+    The relations themselves are the engine's (`text_util.constant_invariant_errors`), the same
+    check the service and `classify_TEXT.main` apply at start: a candidate configuration is held
+    to exactly what production refuses to run with.
+    """
+    errors = _tu.constant_invariant_errors(constants)
+    if errors:
+        raise ValueError("Invalid constants: " + "; ".join(errors))
 
 
 def short_cap_arms_hard_sweep(constants: Mapping[str, Any] | None = None) -> bool:

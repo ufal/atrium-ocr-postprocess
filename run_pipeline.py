@@ -623,6 +623,7 @@ def main() -> int:
         return 0
 
     collected: List[str] = []
+    aborted: Optional[str] = None
     skipped_names = [st["name"] for st in plan if st["skip"]]
     run_started = time.strftime("%y%m%d-%H%M%S")
     try:
@@ -632,6 +633,7 @@ def main() -> int:
                 continue
             collected.extend(_run_stage(st["name"], st["cmd"], paradata_dir))
     except RuntimeError as exc:
+        aborted = str(exc)
         print(f"\nx Pipeline aborted: {exc}", file=sys.stderr)
         if collected:
             print("  Merging paradata from completed stages before exiting...")
@@ -657,7 +659,11 @@ def main() -> int:
     )
 
     data = json.loads(Path(merged).read_text(encoding="utf-8"))
-    print(f"\n{'=' * 78}\n> PIPELINE COMPLETE - merged {data['stage_count']} logged stage(s)")
+    # An aborted run still merges the paradata of the stages that did finish (it is evidence of what
+    # was produced), but it is not a complete run: it said so on stderr and then exited 0, so a SLURM
+    # job, a Kubernetes Job or CI that classify crashed in read "success" over stale or partial outputs.
+    verdict = "PIPELINE ABORTED" if aborted else "PIPELINE COMPLETE"
+    print(f"\n{'=' * 78}\n> {verdict} - merged {data['stage_count']} logged stage(s)")
     print(f"  Effective output license : {data['license']}  ({data['license_url']})")
     fmts = ", ".join(f"{k}x{v}" for k, v in data["intermediate_formats"].items()) or "-"
     print(f"  Intermediate formats     : {fmts}")
@@ -666,6 +672,9 @@ def main() -> int:
         print(f"  Skipped stages           : {', '.join(skipped_names)}")
         print("  NOTE: license/formats above reflect EXECUTED stages only.")
     print(f"  Run summary              : {merged}\n{'=' * 78}")
+    if aborted:
+        print(f"  Not complete: {aborted}", file=sys.stderr)
+        return 1
     return 0
 
 

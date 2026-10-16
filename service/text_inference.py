@@ -12,6 +12,7 @@ import json
 import logging
 import os
 import sys
+import threading
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Set
@@ -70,10 +71,14 @@ from text_formats import (  # noqa: E402
     shape_lines,
 )
 from text_util import (  # noqa: E402
+    DEFAULT_EXPECTED_LANGS,
+    DEFAULT_TRUSTED_FOREIGN_LANGS,
+    PPL_FAILED,
     _lang_base,
     calculate_perplexity_batch,
     detect_strange_symbols,
     parse_line_splits,
+    pre_filter_line,
 )
 
 # ---------------------------------------------------------------------------
@@ -97,8 +102,10 @@ LR_MIN_CHUNK_SIZE = tool_limits.LR_MIN_CHUNK_SIZE.get()
 # fits a GPU it shares (tool_limits.py). This name is its value at import.
 DOCUMENT_BATCH_LINES = tool_limits.PPL_BATCH_LINES.get()
 
-#: What calculate_perplexity_batch returns for every line of a batch it could not score.
-_PPL_FAILED = 99999.0
+#: The `lang` of a line the CPU pre-filter settled (`Empty` / `Non-text`): no language was
+#: identified for it. The batch pipeline writes the same marker in its CSV (classify_TEXT._fast_track_row)
+#: and reads it back as missing, so a record never carries it as a language.
+NO_LANG = "N/A"
 
 
 def reader_components(kind: str, flags: Optional[Iterable[str]]) -> Set[str]:
@@ -125,6 +132,16 @@ class TextModelManager:
         self.ppl_model: Optional[Any] = None
         self.ppl_tokenizer: Optional[Any] = None
         self._models_loaded = False
+        # One GPU forward pass at a time in this process. Every request runs in its own thread
+        # (asyncio.to_thread), and the memory a perplexity batch or a LayoutReader window needs
+        # is sized for ONE of them (PPL_BATCH_LINES: 9.5 GB at 32 lines on a card shared with
+        # page-classification): two at once double the peak and run the card out of memory.
+        # Requests queue on it batch by batch; the CPU work (FastText, signals) stays parallel.
+        # The same lock covers the perplexity tokenizer, whose fast backend is not safe to
+        # call from two threads with different padding settings (_note_perplexity).
+        self._gpu_lock = threading.Lock()
+        # Which perplexity model scores the lines (GPT2_MODEL_NAME; Qwen2.5-0.5B by default).
+        self.ppl_model_name = os.getenv("GPT2_MODEL_NAME", "Qwen/Qwen2.5-0.5B")
 
     def load_models(self) -> None:
         """Load all models synchronously; raise RuntimeError on failure."""
@@ -159,6 +176,7 @@ class TextModelManager:
             #    Loaded in full precision and moved explicitly to a single device (no 4-bit
             #    bitsandbytes / device_map="auto", which placed layers non-deterministically).
             gpt2_path = os.getenv("GPT2_MODEL_NAME", "Qwen/Qwen2.5-0.5B")
+            self.ppl_model_name = gpt2_path
             self.ppl_tokenizer = AutoTokenizer.from_pretrained(gpt2_path)
             self.ppl_tokenizer.pad_token = self.ppl_tokenizer.eos_token
 
@@ -177,6 +195,10 @@ class TextModelManager:
             self._models_loaded = False
             raise RuntimeError(f"Failed to load core text-processing models: {exc}") from exc
 
+    def ppl_component(self) -> str:
+        """The `setup/para_config.txt` component of the perplexity model, as classify_TEXT.py names it."""
+        return "distilgpt2" if "distilgpt2" in self.ppl_model_name.lower() else "qwen2.5_0.5b"
+
     def ppl_max_tokens(self) -> Optional[int]:
         """Tokens of one line the perplexity model reads — exactly the window
         text_util.calculate_perplexity_batch truncates at."""
@@ -190,35 +212,51 @@ class TextModelManager:
 
         Shared by process_text_file / process_json / process_alto so all three
         formats classify identically once they've each produced an ordered
-        list of lines. Perplexity is batched (#8), mirroring how classify_TEXT.py
-        favours batched GPU perplexity over a per-line model call — in batches of
-        PPL_BATCH_LINES (atrium-project#53), so one file is never one padded batch.
+        list of lines. It is the batch pipeline's per-line procedure
+        (classify_TEXT.process_document): the CPU pre-filter first, which answers
+        `Empty` / `Non-text` on its own (no language identification, no model call) and
+        repairs the OCR digit/letter confusions of the rest, then batched perplexity and
+        the shared scorer on the repaired text. One entry per line, in order.
+
+        Perplexity is batched (#8), mirroring how classify_TEXT.py favours batched GPU
+        perplexity over a per-line model call — in batches of PPL_BATCH_LINES
+        (atrium-project#53), so one file is never one padded batch.
 
         With *notes*, records a line the perplexity model read only in part
-        (``ppl_max_tokens``, ``trimmed``) and a batch it could not score
-        (``ppl_batch_lines``, ``skipped``: its lines carry perplexity 99999).
+        (``ppl_max_tokens``, ``trimmed``) and a line it could not score at all
+        (``ppl_batch_lines``, ``skipped``: it carries perplexity 99999).
         """
         if not lines:
             return []
 
+        prepared = [pre_filter_line(line) for line in lines]
+        to_score = [clean for category, clean in prepared if category == "Process"]
+
         batch = tool_limits.PPL_BATCH_LINES.get()
         ppls: List[float] = []
-        for start in range(0, len(lines), batch):
-            chunk = lines[start : start + batch]
-            scores = calculate_perplexity_batch(chunk, self.ppl_model, self.ppl_tokenizer, self.device)
+        for start in range(0, len(to_score), batch):
+            chunk = to_score[start : start + batch]
+            with self._gpu_lock:
+                scores = calculate_perplexity_batch(chunk, self.ppl_model, self.ppl_tokenizer, self.device)
+                if notes is not None:
+                    self._note_perplexity(chunk, scores, notes)
             ppls.extend(scores)
-            if notes is not None:
-                self._note_perplexity(chunk, scores, notes)
+
+        scored = iter(ppls)
         cleaned_lines: List[Dict[str, Any]] = []
-        for line_num, (text, ppl) in enumerate(zip(lines, ppls, strict=True), start=1):
-            entry = _classify_line(
-                text,
-                ppl,
-                ft_model=self.ft_model,
-                ppl_model=self.ppl_model,
-                tokenizer=self.ppl_tokenizer,
-                device=self.device,
-            )
+        for line_num, (raw, (category, clean)) in enumerate(zip(lines, prepared, strict=True), start=1):
+            if category == "Process":
+                entry = _classify_line(
+                    clean,
+                    next(scored),
+                    ft_model=self.ft_model,
+                    ppl_model=self.ppl_model,
+                    tokenizer=self.ppl_tokenizer,
+                    device=self.device,
+                    original_text=raw,
+                )
+            else:
+                entry = _fast_track_entry(clean, category)
             entry["line_num"] = line_num
             cleaned_lines.append(entry)
         return cleaned_lines
@@ -236,20 +274,25 @@ class TextModelManager:
         return self._classify_lines(list(lines), notes)
 
     def _note_perplexity(self, chunk: List[str], scores: List[float], notes: LimitNotes) -> None:
-        if chunk and all(score == _PPL_FAILED for score in scores):
+        failed = sum(1 for score in scores if score == PPL_FAILED)
+        if failed:
             notes.note(
                 tool_limits.PPL_BATCH_LINES,
                 "skipped",
-                len(chunk),
-                "line(s) whose perplexity batch failed were scored 99999 (worst quality)",
+                failed,
+                "line(s) whose perplexity could not be computed (out of memory even on their own, or another "
+                "error) were scored 99999 (worst quality)",
             )
-            return
         window = self.ppl_max_tokens()
         if not window or self.ppl_tokenizer is None:
             return
         # A token is at least one byte here, so only a line longer than the window in
         # bytes can be over it in tokens; only those are tokenised a second time.
-        long_lines = [line for line in chunk if len(line.encode("utf-8")) > window]
+        long_lines = [
+            line
+            for line, score in zip(chunk, scores, strict=True)
+            if score != PPL_FAILED and len(line.encode("utf-8")) > window
+        ]
         try:
             cut = sum(1 for line in long_lines if len(self.ppl_tokenizer(line)["input_ids"]) > window)
         except Exception:  # a tokenizer that cannot say must not fail the request
@@ -364,7 +407,9 @@ class TextModelManager:
         lines = page_text_lines(data)
         return {"type": "json", "cleaned_lines": self._classify_lines(lines, notes)}
 
-    def process_alto(self, path: str, notes: Optional[LimitNotes] = None) -> Dict[str, Any]:
+    def process_alto(
+        self, path: str, notes: Optional[LimitNotes] = None, components: Optional[Set[str]] = None
+    ) -> Dict[str, Any]:
         """Classify an ALTO XML upload: parse -> reorder -> dehyphenate -> classify.
 
         Uses the line-level parser (parse_alto_xml_lines), not the word-level
@@ -374,7 +419,9 @@ class TextModelManager:
 
         Raises ``service.utils.AltoUnreadable`` when the file is not readable as ALTO (broken
         XML, no ``<Page>``): the service answers it with 422. An ALTO page without text is not
-        an error; it returns ``cleaned_lines: []``.
+        an error; it returns ``cleaned_lines: []``. `components`, when given, receives
+        ``layoutlmv3`` when LayoutReader ordered the page (its outputs carry CC BY-NC-SA 4.0,
+        as the batch method logs it), for the caller's paradata.
         """
         # strict: an upload that is not ALTO raises AltoUnreadable (the service's 422), and a page
         # that merely has no text still comes back as an empty result.
@@ -385,9 +432,12 @@ class TextModelManager:
         norm_boxes = normalize_boxes(boxes, page_w, page_h)
 
         if boxes2inputs is not None and self.layout_model is not None:
-            ordered_lines, ordered_boxes = _run_layout_reader(
-                lines, norm_boxes, self.layout_model, self.device, notes=notes
-            )
+            if components is not None:
+                components.add("layoutlmv3")
+            with self._gpu_lock:
+                ordered_lines, ordered_boxes = _run_layout_reader(
+                    lines, norm_boxes, self.layout_model, self.device, notes=notes
+                )
         else:
             # v3.helpers unavailable: fall back to document order rather than
             # failing the whole request (#8; mirrors the startup warning above).
@@ -573,17 +623,45 @@ def _lang_config() -> "tuple[list[str], frozenset]":
     are expected, merely trusted, or unknown.
     """
     config = configparser.ConfigParser()
-    config.read(os.getenv("LANGID_CONFIG", str(project_root / "setup" / "config.txt")))
+    config.read(os.getenv("LANGID_CONFIG", str(project_root / "setup" / "config.txt")), encoding="utf-8")
     expected = [
-        s.strip() for s in config.get("CLASSIFY", "EXPECTED_LANGS", fallback="ces,deu,eng").split(",") if s.strip()
+        s.strip()
+        for s in config.get("CLASSIFY", "EXPECTED_LANGS", fallback=DEFAULT_EXPECTED_LANGS).split(",")
+        if s.strip()
     ]
     trusted = [
         s.strip()
-        for s in config.get("CLASSIFY", "TRUSTED_FOREIGN_LANGS", fallback="deu,eng,fra,pol,ita").split(",")
+        for s in config.get("CLASSIFY", "TRUSTED_FOREIGN_LANGS", fallback=DEFAULT_TRUSTED_FOREIGN_LANGS).split(",")
         if s.strip()
     ]
     known_bases = frozenset(_lang_base(code) for code in (trusted + expected))
     return expected, known_bases
+
+
+def _fast_track_entry(text: str, category: str) -> Dict[str, Any]:
+    """The answer for a line the CPU pre-filter settled (`Empty` / `Non-text`).
+
+    The values the batch pipeline writes for such a line (classify_TEXT._fast_track_row): the
+    pre-filter's own category, quality score 0.0, no language (`NO_LANG`), no model signal.
+    No FastText call and no perplexity were spent on it.
+    """
+    return {
+        "text": text,
+        "lang": NO_LANG,
+        "lang_score": 0.0,
+        "original_lang": NO_LANG,
+        "orig_lang_score": 0.0,
+        "perplexity": 0.0,
+        "garbage_density": 0.0,
+        "sym_count": 0,
+        "upper_count": 0,
+        "repeated_count": 0,
+        "ldl_fuses": 0,
+        "gibberish": 0,
+        "word_weird": 0.0,
+        "quality_score": 0.0,
+        "category": category,
+    }
 
 
 def _classify_line(
@@ -594,6 +672,7 @@ def _classify_line(
     ppl_model,
     tokenizer,
     device: str,
+    original_text: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Classify a single line through the pipeline's own scoring step.
 
@@ -609,10 +688,10 @@ def _classify_line(
     It now calls ``classify_TEXT.score_line``, the single scoring step shared
     with the batch pipeline and the offline re-scorer.
 
-    The service sees one text per line with no separate pre-repair variant, so
-    the same string is passed as both ``text_content`` and ``original_text``;
-    that is what the previous code did implicitly by computing every signal on
-    ``text``.
+    ``text`` is the line the pre-filter left (OCR digit/letter repairs applied) and
+    ``original_text`` the line as submitted, as in the batch pipeline: garbage density and
+    the vowel ratio are measured on the original so a repair can never hide noise. A caller
+    without a pre-filter step passes ``text`` alone, and it serves as both.
     """
     # 1. Language identification (unchanged: raw FastText prediction)
     labels, scores = ft_model.predict([text.lower()], k=1)
@@ -624,7 +703,7 @@ def _classify_line(
     # 2-5. The ONE scoring step, shared with classify_TEXT / recategorize_from_csv.
     sig = score_line(
         text_content=text,
-        original_text=text,
+        original_text=text if original_text is None else original_text,
         original_lang=original_lang,
         original_lang_score=original_lang_score,
         perplexity=ppl,

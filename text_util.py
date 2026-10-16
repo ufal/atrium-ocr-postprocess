@@ -173,7 +173,7 @@ _DEFAULT_CONFIG_PATH = Path(__file__).resolve().parent / "setup" / "config.txt"
 _config_path = Path(os.getenv("LANGID_CONFIG", str(_DEFAULT_CONFIG_PATH)))
 
 if _config_path.exists():
-    _config.read(_config_path)
+    _config.read(_config_path, encoding="utf-8")
 elif os.getenv("LANGID_CONFIG"):
     # Explicitly pointed somewhere that does not exist. Previously this fell
     # through to the in-code defaults in silence, so a typo'd path ran the whole
@@ -1405,37 +1405,93 @@ def compute_word_weird_ratio(word_scores: list[tuple[str, float]]) -> float:
 # ---------------------------------------------------------------------------
 
 
-def calculate_perplexity_batch(texts: list[str], model, tokenizer, device) -> list[float]:
+#: What a line gets when its perplexity could not be computed at all: the worst quality.
+PPL_FAILED = 99999.0
+
+
+def _is_oom_error(exc: BaseException) -> bool:
+    """Whether *exc* is an out-of-memory error: ``torch.cuda.OutOfMemoryError``, or any
+    ``RuntimeError`` that says it ran out of memory (the CPU allocator's form). The same
+    test the LayoutReader window fallback applies (service/text_inference.py)."""
+    return type(exc).__name__ == "OutOfMemoryError" or (isinstance(exc, RuntimeError) and "memory" in str(exc).lower())
+
+
+def _perplexity_forward(texts: list[str], model, tokenizer, device) -> list[float]:
+    """One padded forward pass over *texts*; raises on any failure.
+
+    No ``labels=`` is passed to the model: with it, Hugging Face computes a second, upcast
+    cross-entropy over a further copy of the logits that this function then discards and
+    recomputes below (the logits are lines x padded tokens x the vocabulary, so each copy
+    is gigabytes at a batch of 32+). The logits themselves are the same either way.
+    """
     import torch
     from torch import nn
 
+    max_length = getattr(model.config, "max_position_embeddings", getattr(model.config, "n_positions", 1024))
+    encodings = tokenizer(texts, return_tensors="pt", padding=True, truncation=True, max_length=max_length)
+    input_ids = encodings.input_ids.to(device)
+    attention_mask = encodings.attention_mask.to(device)
+
+    target_ids = input_ids.clone()
+    target_ids[attention_mask == 0] = -100
+
+    with torch.no_grad():
+        outputs = model(input_ids, attention_mask=attention_mask)
+        logits = outputs.logits
+        shift_logits = logits[..., :-1, :].contiguous()
+        shift_labels = target_ids[..., 1:].contiguous()
+        loss_fct = nn.CrossEntropyLoss(reduction="none")
+        loss = loss_fct(shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1))
+        loss = loss.view(target_ids.size(0), -1)
+        non_masked = shift_labels != -100
+        seq_loss = (loss * non_masked).sum(dim=1)
+        num_tokens = non_masked.sum(dim=1).clamp(min=1)
+        ppl = torch.exp(seq_loss / num_tokens)
+        return ppl.tolist()
+
+
+def _release_accelerator_memory() -> None:
+    """Hand the cached CUDA blocks back after an out-of-memory batch (a no-op on CPU)."""
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+    except Exception:  # never let the cleanup turn a retry into a crash
+        pass
+
+
+def calculate_perplexity_batch(texts: list[str], model, tokenizer, device) -> list[float]:
+    """Perplexity of every line of *texts*, in order.
+
+    A batch that runs out of memory is split in halves and each half retried, down to one
+    line: a smaller batch costs time, never quality. Only a line that fails on its own
+    (or any error that is not an out-of-memory one) scores ``PPL_FAILED`` (99999), which the
+    callers report as a ``ppl_batch_lines`` ``skipped`` note. Before this, one out-of-memory
+    batch scored all of its lines 99999 (atrium-digital-convert#5: 1,280 lines in 6 documents).
+    """
     if not texts:
         return []
+    oom = False
     try:
-        max_length = getattr(model.config, "max_position_embeddings", getattr(model.config, "n_positions", 1024))
-        encodings = tokenizer(texts, return_tensors="pt", padding=True, truncation=True, max_length=max_length)
-        input_ids = encodings.input_ids.to(device)
-        attention_mask = encodings.attention_mask.to(device)
-
-        target_ids = input_ids.clone()
-        target_ids[attention_mask == 0] = -100
-
-        with torch.no_grad():
-            outputs = model(input_ids, attention_mask=attention_mask, labels=target_ids)
-            logits = outputs.logits
-            shift_logits = logits[..., :-1, :].contiguous()
-            shift_labels = target_ids[..., 1:].contiguous()
-            loss_fct = nn.CrossEntropyLoss(reduction="none")
-            loss = loss_fct(shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1))
-            loss = loss.view(target_ids.size(0), -1)
-            non_masked = shift_labels != -100
-            seq_loss = (loss * non_masked).sum(dim=1)
-            num_tokens = non_masked.sum(dim=1).clamp(min=1)
-            ppl = torch.exp(seq_loss / num_tokens)
-            return ppl.tolist()
+        return _perplexity_forward(texts, model, tokenizer, device)
     except Exception as e:
+        oom = _is_oom_error(e)
         print(f"[Error] Batch PPL ({len(texts)} lines) failed: {e}", file=sys.stderr, flush=True)
-        return [99999.0] * len(texts)
+    # Retried OUTSIDE the except block: while it is open, the traceback keeps the failed
+    # batch's tensors alive, and freeing them is the point of retrying smaller.
+    if oom and len(texts) > 1:
+        _release_accelerator_memory()
+        half = len(texts) // 2
+        print(
+            f"[Warn] Batch PPL out of memory at {len(texts)} lines: retrying as {half} + {len(texts) - half}.",
+            file=sys.stderr,
+            flush=True,
+        )
+        return calculate_perplexity_batch(texts[:half], model, tokenizer, device) + calculate_perplexity_batch(
+            texts[half:], model, tokenizer, device
+        )
+    return [PPL_FAILED] * len(texts)
 
 
 # ---------------------------------------------------------------------------
@@ -3681,6 +3737,58 @@ def override_constants(values, modules=None):
         # later.
         for mod, name in touched_caches:
             _clear_flag_caches(mod, name)
+
+
+#: The quality-score weights; the score is divided by their sum, so it must stay positive.
+QS_WEIGHT_NAMES = (
+    "QS_WEIGHT_VALID_WORD",
+    "QS_WEIGHT_WEIRD",
+    "QS_WEIGHT_PERPLEXITY",
+    "QS_WEIGHT_LENGTH",
+    "QS_WEIGHT_GARBAGE",
+    "QS_WEIGHT_VOWEL",
+    "QS_WEIGHT_LANG",
+    "QS_WEIGHT_GIBBERISH",
+    "QS_WEIGHT_FUSED",
+)
+
+
+def constant_invariant_errors(values: Mapping[str, object] | None = None) -> list[str]:
+    """What is wrong with the constants the categoriser relies on; empty when they are sound.
+
+    Three relations must hold, or a boundary silently inverts: ``CATEG_TRASH_SCORE_MAX <
+    CATEG_NOISY_SCORE_MAX`` (the Trash band sits below the Noisy one), ``SHORT_PPL_CAP <
+    PERPLEXITY_THRESHOLD_MAX`` (a capped short line is never scored as worse than the
+    ceiling), and the quality-score weights sum to more than zero (the score is divided
+    by their sum).
+
+    With *values*, a name found there replaces the live module value, as a candidate
+    configuration in ``tools/recategorize_from_csv.py`` does; without it, the live constants
+    are read. Read at call time, not at import, so a research run that varies a constant through
+    ``ATRIUM_TEXT_UTILS_*`` can still import the module: the entry points that serve or
+    produce categories (the service start, ``classify_TEXT.main``) call this and refuse to run.
+    """
+    live = sys.modules[__name__]
+
+    def _g(name: str) -> float:
+        if values is not None and name in values:
+            return float(values[name])  # type: ignore[arg-type]
+        return float(getattr(live, name))
+
+    errors: list[str] = []
+    if _g("CATEG_TRASH_SCORE_MAX") >= _g("CATEG_NOISY_SCORE_MAX"):
+        errors.append(
+            f"CATEG_TRASH_SCORE_MAX ({_g('CATEG_TRASH_SCORE_MAX'):g}) must be < "
+            f"CATEG_NOISY_SCORE_MAX ({_g('CATEG_NOISY_SCORE_MAX'):g})"
+        )
+    if _g("SHORT_PPL_CAP") >= _g("PERPLEXITY_THRESHOLD_MAX"):
+        errors.append(
+            f"SHORT_PPL_CAP ({_g('SHORT_PPL_CAP'):g}) must be < PERPLEXITY_THRESHOLD_MAX "
+            f"({_g('PERPLEXITY_THRESHOLD_MAX'):g})"
+        )
+    if sum(_g(name) for name in QS_WEIGHT_NAMES) <= 0:
+        errors.append("the QS_WEIGHT_* constants must sum to a positive number")
+    return errors
 
 
 def compute_quality_score(

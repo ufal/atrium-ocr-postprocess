@@ -81,7 +81,7 @@ from atrium_service import (  # noqa: E402
     read_upload_bounded,
     serve_lifecycle,
 )
-from text_inference import ingest_settings, text_manager  # noqa: E402
+from text_inference import NO_LANG, ingest_settings, text_manager  # noqa: E402
 
 # Bare like its siblings above, for the same reason: `utils` is service/utils.py,
 # reached through the sys.path bootstrap, so the import resolves under
@@ -121,6 +121,7 @@ from text_formats import (  # noqa: E402
     producer_origin,
     sniff_kind,
 )
+from text_util import constant_invariant_errors  # noqa: E402
 from tool_limits import (  # noqa: E402
     LIMITS,
     MAX_FILE_MB,
@@ -271,7 +272,9 @@ class AltoLine(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     line_num: int = Field(description="1-based position after layout reordering; per page for a document.")
-    text: str = Field(description="The cleaned text, with split-word merges applied.")
+    text: str = Field(
+        description="The cleaned text: split-word merges and the pre-filter's OCR repairs applied (the line as the CSV's `text`)."
+    )
     lang: str = Field(
         description="The language code after the expected-language remap (FastText, then setup/config.txt)."
     )
@@ -370,7 +373,9 @@ class ScoredPage(BaseModel):
     """One page of a `/score_record` call (`pages[]`)."""
 
     page: str = Field(description="The record's page key.")
-    lines_scored: int = Field(description="Lines the model scored on this page.")
+    lines_scored: int = Field(
+        description="Lines classified on this page, those the CPU pre-filter answered `Non-text` or `Empty` included."
+    )
     skipped_decode_verdict: int = Field(
         description="Lines left as they were: digital-convert's decode verdict (`Garbage`, `Inverted`) stands."
     )
@@ -437,6 +442,13 @@ async def lifespan(app: FastAPI):
         await asyncio.to_thread(ingest_settings)
     except ValueError as exc:
         raise RuntimeError(f"invalid [TEXT_INGEST]/[DOCUMENT] configuration: {exc}") from exc
+    # A categoriser whose boundaries are inverted (CATEG_TRASH_SCORE_MAX >= CATEG_NOISY_SCORE_MAX,
+    # SHORT_PPL_CAP >= PERPLEXITY_THRESHOLD_MAX, no positive QS weights) answers every line
+    # confidently and wrongly, so it fails the start rather than serve: the same check
+    # classify_TEXT.main and tools/recategorize_from_csv.py apply.
+    invalid = constant_invariant_errors()
+    if invalid:
+        raise RuntimeError("invalid [TEXT_UTILS] constants: " + "; ".join(invalid))
     try:
         # Off the event loop (issue #55): load_models() pulls several torch models, and
         # the loop should be free to answer the /ready probe a startupProbe is polling.
@@ -473,7 +485,12 @@ add_cors(app, methods=["GET", "POST"])
 
 def _deep_health() -> str | None:
     """Deep readiness (§4.1): quality/language models are loaded."""
-    if getattr(text_manager, "device", None) is None:
+    # `device` is set in the constructor ("cpu"), so it says nothing: ask whether the load finished.
+    if (
+        not getattr(text_manager, "_models_loaded", False)
+        or text_manager.ppl_model is None
+        or text_manager.ft_model is None
+    ):
         return "text models not loaded"
     return None
 
@@ -583,11 +600,33 @@ def _lines_records_from_result(result: Dict[str, Any], page: str = SERVICE_PAGE_
             ("quality_score", "quality_score"),
             ("category", "categ"),
         ):
-            value = entry.get(source_key)
+            value = _record_lang(entry) if source_key == "lang" else entry.get(source_key)
             if value is not None:
                 record[schema_field] = value
         records.append(record)
     return records
+
+
+#: The categories the CPU pre-filter assigns on its own: no language, no model, quality score 0.0.
+PREFILTER_CATEGORIES = ("Empty", "Non-text")
+
+
+def _model_components(cleaned_lines: Any) -> Set[str]:
+    """The licensed model component a request exercised: the perplexity model, when at least one
+    line was scored by it (a line the CPU pre-filter answered on its own used no model). Logged
+    like `classify_TEXT.py` logs it, so an API run's paradata names what a batch run's does."""
+    if any(
+        isinstance(entry, dict) and entry.get("category") not in PREFILTER_CATEGORIES for entry in cleaned_lines or []
+    ):
+        return {text_manager.ppl_component()}
+    return set()
+
+
+def _record_lang(entry: Dict[str, Any]) -> Optional[str]:
+    """The `lang` a line contributes to the record: none for a line no language was identified for
+    (`NO_LANG`), as the batch path omits it (its CSV's "N/A" reads back as missing)."""
+    lang = entry.get("lang")
+    return None if lang in (None, NO_LANG) else lang
 
 
 def _page_records_from_lines(line_records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -609,7 +648,14 @@ def _page_records_from_lines(line_records: List[Dict[str, Any]]) -> List[Dict[st
     pages: List[Dict[str, Any]] = []
     for page, rows in by_page.items():
         record: Dict[str, Any] = {"page": page}
-        scores = [r["quality_score"] for r in rows if isinstance(r.get("quality_score"), (int, float))]
+        # The mean of the lines a quality model judged. A line the CPU pre-filter answered
+        # (`Empty` / `Non-text`) carries a 0.0 placeholder, as in the batch CSV, and is no evidence
+        # of low quality: counting it would pull a page of clean prose with a few page numbers down.
+        scores = [
+            r["quality_score"]
+            for r in rows
+            if isinstance(r.get("quality_score"), (int, float)) and r.get("categ") not in PREFILTER_CATEGORIES
+        ]
         if scores:
             record["quality_score"] = round(sum(scores) / len(scores), 4)
         categs = [r.get("categ") for r in rows]
@@ -620,7 +666,23 @@ def _page_records_from_lines(line_records: List[Dict[str, Any]]) -> List[Dict[st
     return pages
 
 
-def _accretion_records(task_type: str, upload_path: str, result: Dict[str, Any], page: Optional[str] = None):
+def _record_page_count(record: Optional[Dict[str, Any]]) -> int:
+    """How many distinct pages the record already carries, in `pages[]` or `lines[]`."""
+    keys = set()
+    for block in ("pages", "lines"):
+        for row in (record or {}).get(block) or []:
+            if isinstance(row, dict) and row.get("page") is not None:
+                keys.add(str(row["page"]))
+    return len(keys)
+
+
+def _accretion_records(
+    task_type: str,
+    upload_path: str,
+    result: Dict[str, Any],
+    page: Optional[str] = None,
+    record: Optional[Dict[str, Any]] = None,
+):
     """The (pages, lines) contribution for one /process request, or ([], []) when it
     cannot be attributed to a page truthfully. `page`, when given, is the record's key the
     one-page upload is written under (the `page` form field); otherwise the upload's own label.
@@ -660,6 +722,17 @@ def _accretion_records(task_type: str, upload_path: str, result: Dict[str, Any],
             "document first (page_split.py) and post one page per request, or "
             "use the batch pipeline.",
             len(page_labels),
+        )
+        return [], []
+
+    if page is None and task_type in ("json", "text") and _record_page_count(record) > 1:
+        # A JSON or text upload says nothing about which page it is, and the record has several:
+        # writing it under the default page "1" would silently replace that page's lines.
+        logger.warning(
+            "a %s upload without `page` was sent with a record of %d pages: not writing it into the record "
+            "(send `page`, the record's key for it). The classified lines are still returned.",
+            task_type,
+            _record_page_count(record),
         )
         return [], []
 
@@ -1008,7 +1081,9 @@ async def process_document(
             # JSON upload that does not parse. It used to come back as 200 with no lines, which
             # reads as a blank page.
             try:
-                result = await asyncio.to_thread(text_manager.process_alto, tmp_path, notes=notes)
+                result = await asyncio.to_thread(
+                    text_manager.process_alto, tmp_path, notes=notes, components=components
+                )
             except AltoUnreadable as exc:
                 raise AtriumHTTPError(
                     422, f"malformed: the ALTO upload cannot be read: {exc}.", cause="malformed"
@@ -1044,6 +1119,7 @@ async def process_document(
 
         result["filename"] = file.filename
         result["limits_applied"] = notes.as_list()
+        components |= _model_components(result.get("cleaned_lines"))
 
         # --- Paradata Pair Accretion Hook ---
         if record_bytes is not None:
@@ -1068,7 +1144,9 @@ async def process_document(
                     )
                     page_metrics, lines_metrics = [], []
                 else:
-                    page_metrics, lines_metrics = _accretion_records(task_type, tmp_path, result, page=target_page)
+                    page_metrics, lines_metrics = _accretion_records(
+                        task_type, tmp_path, result, page=target_page, record=record
+                    )
                 ocr_pages = None
                 upload_source = _upload_source(task_type, result, file.filename, upload_entity["sha256"])
                 if handoff and target_page is not None:
@@ -1222,12 +1300,16 @@ async def score_record(
         if unknown:
             raise HTTPException(status_code=422, detail=f"pages: the record has no page {', '.join(unknown)}.")
 
-    MAX_PAGES.check(len(by_page), detail=f"{len(by_page)} pages to score; the limit is {MAX_PAGES.get()} (MAX_PAGES).")
+    # The limits as /info reports them: the environment and the config file, not the default alone.
+    max_pages, max_lines = LIMITS.get("max_pages"), LIMITS.get("max_lines_per_page")
+    MAX_PAGES.check(
+        len(by_page), value=max_pages, detail=f"{len(by_page)} pages to score; the limit is {max_pages} (MAX_PAGES)."
+    )
     for page, rows in by_page.items():
         MAX_LINES_PER_PAGE.check(
             len(rows),
-            detail=f"page {page!r} has {len(rows)} lines to score; the limit is {MAX_LINES_PER_PAGE.get()} "
-            "(MAX_LINES_PER_PAGE).",
+            value=max_lines,
+            detail=f"page {page!r} has {len(rows)} lines to score; the limit is {max_lines} (MAX_LINES_PER_PAGE).",
         )
 
     notes = LimitNotes()
@@ -1249,9 +1331,13 @@ async def score_record(
         line_records = [
             {"page": e["page"], "line": e["line"]}
             | {
-                field: e[key]
-                for key, field in (("category", "categ"), ("quality_score", "quality_score"), ("lang", "lang"))
-                if e.get(key) is not None
+                field: value
+                for field, value in (
+                    ("categ", e.get("category")),
+                    ("quality_score", e.get("quality_score")),
+                    ("lang", _record_lang(e)),
+                )
+                if value is not None
             }
             for e in cleaned
         ]
@@ -1296,6 +1382,8 @@ async def score_record(
             "limits_applied": notes.as_list(),
             "document_json": returned,
         }
+        for name in sorted(_model_components(cleaned)):
+            para_logger.log_component(name)
         para_logger.note_limits(notes)
         para_logger.log_document_success()
         para_logger.finalize()

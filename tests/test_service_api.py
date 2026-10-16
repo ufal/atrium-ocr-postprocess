@@ -453,6 +453,55 @@ def test_process_refuses_to_attribute_a_multipage_upload(mock_process, tmp_path,
     assert "2 <Page> elements" in caplog.text
 
 
+@patch("service.text_api.text_manager.process_json", create=True)
+def test_a_json_upload_without_page_is_not_written_onto_page_one_of_a_multipage_record(
+    mock_process, tmp_path, monkeypatch, caplog
+):
+    """A JSON or text upload carries no page identity. With a record of several pages and no `page`
+    field it used to be written under the default page "1", silently replacing that page's lines
+    with the lines of whichever page the caller meant. Now it is skipped, loudly, like a multi-page
+    ALTO, while the response still carries the classified lines."""
+    monkeypatch.chdir(tmp_path)
+    mock_process.return_value = {"type": "json", "cleaned_lines": _CLASSIFIED_LINES}
+    baseline_path = _real_baseline(tmp_path, pages=("1", "2", "3"))
+
+    response = client.post(
+        "/process",
+        files={
+            "file": (f"{_DOC_ID}.json", b'{"page": {"lines": [{"textline": "x"}]}}', "application/json"),
+            "document_record": (f"{_DOC_ID}.document.json", baseline_path.read_bytes(), "application/json"),
+        },
+        data={"task_type": "json"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert [e["text"] for e in body["cleaned_lines"]] == [e["text"] for e in _CLASSIFIED_LINES]
+    record = body["document_json_out"]
+    assert "lines" not in record, "nothing was written onto page 1 (or any page)"
+    assert record["pages"] == json.loads(baseline_path.read_text(encoding="utf-8"))["pages"]
+    assert "without `page`" in caplog.text and "3 pages" in caplog.text
+
+
+@patch("service.text_api.text_manager.process_json", create=True)
+def test_a_json_upload_with_its_page_is_written_under_that_page(mock_process, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    mock_process.return_value = {"type": "json", "cleaned_lines": _CLASSIFIED_LINES}
+    baseline_path = _real_baseline(tmp_path, pages=("1", "2", "3"))
+
+    response = client.post(
+        "/process",
+        files={
+            "file": (f"{_DOC_ID}.json", b'{"page": {"lines": [{"textline": "x"}]}}', "application/json"),
+            "document_record": (f"{_DOC_ID}.document.json", baseline_path.read_bytes(), "application/json"),
+        },
+        data={"task_type": "json", "page": "2"},
+    )
+    assert response.status_code == 200
+    record = response.json()["document_json_out"]
+    assert {row["page"] for row in record["lines"]} == {"2"}
+    assert len(record["lines"]) == len(_CLASSIFIED_LINES)
+
+
 # ── (atrium-project#68) a seed keyed unlike the upload ────────────────────────
 #
 # An AMČR seed carries the AMČR file id as its doc_id, and the upload has another name.

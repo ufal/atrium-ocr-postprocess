@@ -90,18 +90,19 @@ class TestPageMajoritySweep:
     """(#3 A3) page-MAJORITY arm catches interspersed garbage with no long run."""
 
     def test_interspersed_garbage_trashed_by_majority(self):
-        # 6 scoreable lines, 4 suspicious (66% >= 60%), but broken up by
-        # Empty/Non-text so the longest contiguous suspicious run is only 2 ->
-        # the run rule alone would NOT fire; the majority arm must.
+        # 6 scoreable lines, 4 suspicious (66% >= 60%), broken up by two clean lines so the longest
+        # contiguous suspicious run is only 2 -> the run rule alone would NOT fire; the majority arm
+        # must. (Empty / Non-text lines do not break a run: the sweep leaves them out before it counts,
+        # so they are here only to show they are not scored -- the clean lines are what split the run.)
         rows = [
             _row("1", 1, "Noisy", "wL-U kyuto", lang_score=_LOW),
             _row("1", 2, "Noisy", "Cona JaaVH", lang_score=_LOW),
-            _row("1", 3, "Empty", ""),
+            _row("1", 3, "Clear", "Náčrt sondy", lang_score=_HIGH),
             _row("1", 4, "Noisy", "e ao u xqz", lang_score=_LOW),
-            _row("1", 5, "Non-text", "---"),
-            _row("1", 6, "Noisy", "zzx qwp lm", lang_score=_LOW),
-            _row("1", 7, "Clear", "Náčrt sondy", lang_score=_HIGH),
-            _row("1", 8, "Clear", "Praha mesto", lang_score=_HIGH),
+            _row("1", 5, "Empty", ""),
+            _row("1", 6, "Clear", "Praha mesto", lang_score=_HIGH),
+            _row("1", 7, "Non-text", "---"),
+            _row("1", 8, "Noisy", "zzx qwp lm", lang_score=_LOW),
         ]
         out = apply_document_postprocessing(_df(rows))
         cats = dict(zip(out["text"], out["categ"], strict=False))

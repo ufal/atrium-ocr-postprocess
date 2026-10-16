@@ -77,7 +77,7 @@ def test_cli_missing_args():
 
 def test_cli_nonexistent_input_dir(workdir, capsys):
     result = main([str(workdir / "nope"), str(workdir / "out")])
-    assert result is None
+    assert result == 1, "a missing input directory fails the stage (it used to exit 0)"
     assert "Input directory not found" in capsys.readouterr().out
 
 

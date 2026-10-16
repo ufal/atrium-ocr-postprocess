@@ -521,13 +521,15 @@ def main(argv=None):
     args = parser.parse_args(argv)
 
     _doc_cfg = configparser.ConfigParser()
-    _doc_cfg.read(DOCUMENT_CONFIG_PATH)
+    _doc_cfg.read(DOCUMENT_CONFIG_PATH, encoding="utf-8")
     document_json_dir = document_hook.resolve_document_json_dir(_doc_cfg.get("DOCUMENT", "JSON_DIR", fallback=""))
     _configured_origin = _doc_cfg.get("DOCUMENT", "SOURCE_ORIGIN", fallback="")
 
     if not os.path.isdir(args.input_dir):
         print(f"Error: Input directory not found at '{args.input_dir}'")
-        return
+        # Non-zero: the pipeline runner stops here instead of going on with the page directories
+        # an earlier run left (it used to exit 0 and carry on over stale pages).
+        return 1
 
     os.makedirs(args.output_dir, exist_ok=True)
     print(f"Output will be saved to '{os.path.abspath(args.output_dir)}'\n")
@@ -636,4 +638,4 @@ def _drop_stale_pages(output_dir: str, filename: str, suffix: str) -> None:
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

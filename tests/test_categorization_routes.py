@@ -27,7 +27,9 @@ class TestExplicitDiagnosticHardGates:
     """Test explicit hard gates routing directly on rule firing + garbage evidence."""
 
     def test_bigram_run_with_garbage_evidence_routes_to_trash(self):
-        # High quality score base, but bigram run + low valid word ratio -> Trash
+        # High quality score base, but bigram run + low valid word ratio -> Trash. Two words, so
+        # this is gate 7's short-line bigram branch (`rule_short_line`); `rule_bigram_run`, the late
+        # gate, is reached from three words up.
         cat, _, reason = categorize_line(0.85, "IDIDID text", 2, 0.3, 100.0, valid_word_ratio=0.10, return_reason=True)
         assert cat == "Trash" and reason in ("trash_threshold", "trash_hard_sweep")
 

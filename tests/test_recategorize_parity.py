@@ -166,9 +166,9 @@ _DELIBERATELY_NOT_TUNABLE: dict[str, str] = {
     "VOWEL_RATIO_LOW": "same",
     "DIACRITIC_INFER_THRESHOLD": "language inference, upstream of categorisation",
     "QS_LENGTH_MAX": "normalisation domain for the length term, swept via QS_WEIGHT_LENGTH",
-    "ANCHOR_MIN_WORDS": "rotation-anchor shape test",
-    "ANCHOR_VOWEL_RATIO": "rotation-anchor shape test",
-    "ANCHOR_WORD_LEN": "rotation-anchor shape test",
+    "ANCHOR_MIN_WORDS": "pre-filter anchor bypass shape test",
+    "ANCHOR_VOWEL_RATIO": "pre-filter anchor bypass shape test",
+    "ANCHOR_WORD_LEN": "pre-filter anchor bypass shape test",
     "HEADLINE_MAX_WORDS": "forgiven-headline shape test",
     "HEADLINE_MAX_DIGITS": "forgiven-headline shape test",
     # Issue #30. These five steer _has_shape_garbage_evidence(), which is only

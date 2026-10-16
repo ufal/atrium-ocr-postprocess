@@ -323,7 +323,7 @@ def test_the_short_line_penalty_makes_the_effect_a_cliff_not_a_weight_share(tmp_
         `Dauerleihe` (10 chars)  0.5870 -> 0.8800   +0.2930
 
     That crosses a category boundary -- `CATEG_TRASH_SCORE_MAX` is 0.55 and the
-    `Clear` band opens at 0.70 -- which is precisely why `[allowed]` shipped empty
+    `Clear` band opens at 0.80 -- which is precisely why `[allowed]` shipped empty
     until its candidates were reviewed (Q5a). Arming an entry is a categorisation
     change, not a tuning nudge. Measured here with the shipped list held out, so
     `before` is the unlisted score.

@@ -181,7 +181,8 @@ def test_perplexity_is_batched_on_every_path(tmp_path, monkeypatch):
 def test_a_failed_perplexity_batch_is_noted(monkeypatch):
     monkeypatch.setattr("service.text_inference.calculate_perplexity_batch", lambda t, *a: [99999.0] * len(t))
     notes = LimitNotes()
-    _manager()._classify_lines(["jedna", "dva"], notes)
+    # Lines the CPU pre-filter lets through to the model ("dva" is under four characters: Non-text).
+    _manager()._classify_lines(["první řádek", "druhý řádek"], notes)
     [entry] = notes.as_list()
     assert (entry["limit"], entry["effect"], entry["count"]) == ("ppl_batch_lines", "skipped", 2)
 

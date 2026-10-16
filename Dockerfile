@@ -67,8 +67,9 @@ RUN apt-get update \
 
 WORKDIR /app
 
-# 1) deps first for layer caching. CPU torch pinned, then the unpinned `torch`
-#    in the requirements files is already satisfied (stays CPU).
+# 1) deps first for layer caching. CPU torch first, in the range the requirements files
+#    declare (a bare `torch` took whatever the CPU index served that day, a future major
+#    included), so the `torch` line in those files is already satisfied (stays CPU).
 #
 #    Runtime requirements only (atrium-project#69, roadmap H4). The image used to install
 #    setup/requirements-test.txt (pytest, pytest-cov, httpx, openapi-spec-validator, PyYAML)
@@ -79,7 +80,7 @@ WORKDIR /app
 #    installs its own extras. fastapi/pydantic keep their exact pins in service/requirements.txt.
 COPY setup/requirements.txt setup/
 COPY service/requirements.txt service/requirements.txt
-RUN pip install --index-url ${TORCH_INDEX_URL} torch \
+RUN pip install --index-url ${TORCH_INDEX_URL} "torch>=2.1,<3.0" \
     && pip install -r setup/requirements.txt -r service/requirements.txt
 
 # 2) LayoutReader v3/ (translated from setup_api_server.sh) -> /app/v3 (on sys.path)
@@ -106,13 +107,13 @@ RUN git init /tmp/layoutreader \
 RUN useradd --create-home --uid 10001 atrium
 
 # 4) FastText LID weights -> $MODEL_DIR/lid.176.bin, symlinked to the bare CWD path the
-#    batch pipeline loads (classify_TEXT.py:516's FASTTEXT_MODEL default, loaded at :530).
+#    batch pipeline loads (classify_TEXT.py's FASTTEXT_MODEL default, read through _cfg_get).
 #
 #    WHAT THE FILE IS. `facebook/fasttext-language-identification`'s `model.bin`: the NLLB
 #    project's fastText language-ID model, 1,176,355,829 bytes, CC BY-NC 4.0 -- NOT the
 #    126 MB fastText `lid.176.bin` its local name suggests. The name stays (roadmap H3's
-#    rename is retired): it is the default in classify_TEXT.py:516, setup/config.txt:83,
-#    service/text_inference.py:83, tools/quality_model/ and tests/test_config_constants.py,
+#    rename is retired): it is the default in classify_TEXT.py (FASTTEXT_MODEL), setup/config.txt,
+#    service/text_inference.py (FASTTEXT_MODEL_PATH), tools/quality_model/ and tests/test_config_constants.py,
 #    and the alto-models volume is seeded from the image only when it is EMPTY, so a renamed
 #    file would never reach an existing volume.
 #
@@ -186,7 +187,7 @@ CMD []
 
 
 # ---------------------------------------------------------------------------
-# API surface — published as :<version>-api (issue #55)
+# API surface — published as ghcr.io/ufal/atrium-ocr-postprocess-api:<version> (issue #55)
 #
 # Before this stage existed, alto-postprocess's FastAPI service was reachable only
 # through a docker-compose `entrypoint:` override on the BATCH image, so no runnable
