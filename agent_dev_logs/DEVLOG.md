@@ -1,5 +1,5 @@
 # 📓 atrium-ocr-postprocess — agent_dev_logs/DEVLOG.md (timeline index)
-> _OCR/ALTO post-processing and line categorization; the successor of atrium-alto-postprocess since 2026-10-01 (#56 there; the open issues were transferred and renumbered). 4 open issues: #1 (category definitions), #2 (calibration), #4 (fine-tuning the quality model), #5 (documentation of the categorization logic); #3 closed 2026-10-13 and #6 2026-10-07. `test` = `35bb9a7` (2026-10-14) · **v1.11.0-beta** (2026-10-13, `247b6ae`; #3's parameter work). #3's parameter stages after 2026-10-09, up to `v1.11.0-beta`, are recorded in its digest and plan, not here. Entries before 2026-10-01 use atrium-alto-postprocess's issue numbers._
+> _OCR/ALTO post-processing and line categorization; the successor of atrium-alto-postprocess since 2026-10-01 (#56 there; the open issues were transferred and renumbered). 3 open issues: #2 (calibration), #4 (fine-tuning the quality model), #5 (documentation of the categorization logic); #1 closed 2026-10-16, #3 2026-10-13 and #6 2026-10-07. `test` = `0d266dd` (2026-10-16) · **v1.12.0-beta** (2026-10-16, `fd15701`; the production-readiness review). Latest entry: 2026-10-18. #3's parameter stages after 2026-10-09, up to `v1.11.0-beta`, are recorded in its digest and plan, not here. Entries before 2026-10-01 use atrium-alto-postprocess's issue numbers._
 > _Per-issue detail: `digests/{id}.digest.md` · `plans/{id}.plan.md` · `issues/` exports (source of truth). Cross-repo/hub history lives in `ufal/atrium-project/agent_dev_logs/DEVLOG.md` (deduplicated out of this file)._
 
 ## 2026-03-13
@@ -1549,3 +1549,39 @@ week, ≈ 2026-10-02). Recorded in the #30 digest and plan; nothing switched on.
 * **Checks:** 2091 passed, 11 skipped, 2 xfailed; ruff check and format clean; spec current; image closure OK.
 
   Files delivered in chat; pushed as `9060c22`, tagged `v1.10.0-beta` at `95fc0c0`.
+
+## 2026-10-16 — v1.12.0-beta: the production-readiness review (#5), #1 closed
+* **The API pre-filters like the batch path:**
+  * `/process` and `/score_record` answer a numeric, code-like or blank line `Non-text` or `Empty` (score 0.0, language
+    `N/A`) without a model call, and score the rest on the repaired text;
+  * a page's score averages `Clear`, `Noisy` and `Trash` only;
+  * batch output is unchanged, so `DOC_LINE_CATEG_1210` stays valid.
+* **Robustness:**
+  * a perplexity pass that runs out of memory is split and retried (`PPL_BATCH_LINES` default 32, as
+    atrium-digital-convert#5 needs);
+  * the service serialises its GPU work, and `GET /health?deep=true` fails while a model is missing;
+  * each batch CSV is written as `.part` and replaced atomically;
+  * the batch entry points exit non-zero on an aborted stage, a lost GPU, all documents failing, or a missing input.
+* **Documentation:** `docs/categorization_logic.md` was rebuilt to the code and pinned by
+  `tests/test_categorization_walkthrough.py` (79 model-free tests; the worked-example table is generated from them).
+  README Step 4 was restructured. Thresholds, weights and word lists are unchanged.
+* **Comments** on #2 (the July and June items answered) and #5 (two findings; motyc asked to confirm). #1 was
+  closed the same day.
+
+  Pushed as `fd15701`, tagged `v1.12.0-beta`; `5c97383` fixed the GitHub Actions tests.
+
+## 2026-10-18 — The #2 and #5 pairs consolidated
+* **The pairs were last refreshed on 10-07** and still used atrium-alto-postprocess's numbers (#3 for calibration, #4
+  for documentation, #30 for the 2010+ round) and linked exports that no longer exist (`issues/2026-04-17.3…`,
+  `issues/2026-05-28.4…`). Each now has one header, one Status, one "Where it stands — 2026-10-18" and a short History,
+  in this repository's numbering.
+* **#2:**
+  * `v1.10`–`v1.12` and #3's close (`DOC_LINE_CATEG_1210`, 10-12);
+  * the 10-16 answers to the 2 July and 20 June items;
+  * the accuracy against the labels, about 75 % (507 / 2,067), inside the 70–80 % AMČR accepted;
+  * left: Dana's 👍 on `LANG_REMAP_ALWAYS`, the close, the FileSender hand-over of the 1210 outputs.
+* **#5:** the rebuilt document and its tests, and the two findings (the 0.80 clamp; Czech-first heuristics on foreign
+  lines, pinned as `known_limit`). Left: motyc's read, then the close.
+* No code change. No new comment is needed: both questions were asked on 10-16.
+
+  Files delivered in chat.
