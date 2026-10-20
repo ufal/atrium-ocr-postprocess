@@ -1585,3 +1585,14 @@ week, ≈ 2026-10-02). Recorded in the #30 digest and plan; nothing switched on.
 * No code change. No new comment is needed: both questions were asked on 10-16.
 
   Files delivered in chat.
+
+## 2026-10-20 — v1.12.1-beta: the images v1.12.0-beta never got
+* **Found while checking the releases:** `v1.12.0-beta` has its GitHub release but no image. Its Docker run
+  (38900467879) stopped at `build / test`: `test_categorization_walkthrough.py` compared the walkthrough table of
+  `docs/categorization_logic.md` character by character, the table had been re-aligned, and so `build-and-push`
+  never ran. `ghcr.io/ufal/atrium-ocr-postprocess{,-api}:1.12.0-beta` do not exist; `latest` is still `1.11.0-beta`.
+  The test compares cells since `5c97383`, after the tag.
+* **`v1.12.1-beta` prepared** on the current code: `setup/para_config.txt`, `CITATION.cff`, the spec (version only),
+  the CONTRIBUTING row. Nothing else changes. Checks: 2,260 passed (fast suite), `check_version` agrees.
+* **#5:** motyc (10-19) finds its scope fulfilled, moves readability to atrium-project#79 and agrees to close it.
+  Dev logs `{5}` updated.
