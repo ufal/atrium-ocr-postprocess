@@ -574,6 +574,14 @@ running; stage 8 written, validated and not yet submitted.
 
   Files delivered in chat.
 
+## 2026-10-21 (round 2) — The agent-skill branch under its new name (atrium-project#77 C)
+* `SKILL.md` is `atrium-ocr-postprocess`; the branch README's links and title follow the rename. The client retries
+  a 502 only when it is not final and exits 1 on a usage error; `scripts/server.sh` waits for `/ready`.
+  `service/README.md` is this repo's runbook (hub paths as links, the LINDAT frontend pointed at `test`); the
+  standalone frontend is `test`'s.
+* **Checks:** skill-validate steps 1–4a; drift check aligned with `test` `8a768ec`. Delivered as
+  `atrium-ocr-postprocess-agent-skill.zip`, not pushed. `test` moved to `8a768ec` (issue exports only).
+
 ---
 _Timeline index refreshed 2026-09-09 against live `test`/`master` HEAD, the current release list, open-issue state
 via the GitHub API, and the refreshed `30.digest.md`/`37.digest.md`; 2026-09-20 entry appended from the stage-7
