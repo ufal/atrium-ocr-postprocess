@@ -39,7 +39,7 @@ python tools/quality_model/evaluate.py --model-dir runs/distilbert \
 | _(primary)_         | —    | —                    | distilbert-base-multilingual-cased | Huber(0.1)+0.3·CE | —     | —          | —           | —         | strategy D6 primary                            |
 | _(fallback)_        | —    | —                    | google/canine-s                    | Huber(0.1)+0.3·CE | —     | —          | —           | —         | run if subword fragmentation on garbage hurts  |
 
-## Success criteria (from `agent_dev_logs/plans/23.plan.md` §3)
+## Success criteria (from `agent_dev_logs/plans/4.plan.md` §3)
 
 - Held-out MAE ≤ 0.06, Spearman ≥ 0.90, banded macro-F1 ≥ 0.85 (≥ 92% agreement).
 - **Beats the GBM(−perplexity) baseline** — otherwise the encoder is not earning its cost.

@@ -427,4 +427,4 @@ added on 2026-09-22 from a separate 23-rule review scored against the 2,064 anno
 remaining sections were measured on 2026-09-21 and are unaffected by the repeat, because they
 describe the archive rather than the rule. Every figure here is recomputed from the files attached
 to issue #30 and is reproducible from them. The technical write-up is
-`agent_dev_logs/digests/30.digest.md`, § "Stage 8 f/g re-run read against its own delivery"._
+`agent_dev_logs/digests/3.digest.md`, § "Stage 8 f/g re-run read against its own delivery"._

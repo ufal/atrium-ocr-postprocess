@@ -1,5 +1,5 @@
 # 📓 atrium-ocr-postprocess — agent_dev_logs/DEVLOG.md (timeline index)
-> _OCR/ALTO post-processing and line categorization; the successor of atrium-alto-postprocess since 2026-10-01 (#56 there; the open issues were transferred and renumbered). 3 open issues: #2 (calibration), #4 (fine-tuning the quality model), #5 (documentation of the categorization logic); #1 closed 2026-10-16, #3 2026-10-13 and #6 2026-10-07. `test` = `0d266dd` (2026-10-16) · **v1.12.0-beta** (2026-10-16, `fd15701`; the production-readiness review). Latest entry: 2026-10-18. #3's parameter stages after 2026-10-09, up to `v1.11.0-beta`, are recorded in its digest and plan, not here. Entries before 2026-10-01 use atrium-alto-postprocess's issue numbers._
+> _OCR/ALTO post-processing and line categorization; the successor of atrium-alto-postprocess since 2026-10-01 (#56 there; the open issues were transferred and renumbered). 3 open issues: #2 (calibration), #4 (fine-tuning the quality model), #5 (documentation of the categorization logic); #1 closed 2026-10-16, #3 2026-10-13 and #6 2026-10-07. `test` = `9dabbe3` (2026-10-21) · **v1.12.0-beta** (2026-10-16, `fd15701`; the production-readiness review). Latest entry: 2026-10-18. #3's parameter stages after 2026-10-09, up to `v1.11.0-beta`, are recorded in its digest and plan, not here. Entries before 2026-10-01 use atrium-alto-postprocess's issue numbers._
 > _Per-issue detail: `digests/{id}.digest.md` · `plans/{id}.plan.md` · `issues/` exports (source of truth). Cross-repo/hub history lives in `ufal/atrium-project/agent_dev_logs/DEVLOG.md` (deduplicated out of this file)._
 
 ## 2026-03-13
@@ -581,6 +581,16 @@ running; stage 8 written, validated and not yet submitted.
   standalone frontend is `test`'s.
 * **Checks:** skill-validate steps 1–4a; drift check aligned with `test` `8a768ec`. Delivered as
   `atrium-ocr-postprocess-agent-skill.zip`, not pushed. `test` moved to `8a768ec` (issue exports only).
+
+## 2026-10-21 (round 3) — Old issue numbers repointed; the skill branch carries data_samples/
+* **Old atrium-alto-postprocess numbers, repointed** (22 lines in 12 files): `30.plan.md` / `30.digest.md` are now
+  `3.*` (old #30 is #3 here), `23.plan.md` is `4.plan.md` (old #23 is #4), and the two `31.plan.md` references
+  name atrium-alto-postprocess#31, whose plan stayed there. On `test` and, where the files are carried, on
+  `agent-skill`. The headers of the #3 and #4 pairs carry the new numbers.
+* **Dev logs:** the closed #1 and #6 pairs are removed; #3 (cited by the repointed references) and #5 (cited by #4's
+  plan and digest) stay as records.
+* **The agent-skill branch** carries `data_samples/` (71 files, 328 KB), which the image keeps as its configured
+  defaults: the hub's `skill_ify.py` now keeps what `.dockerignore` lets into the image.
 
 ---
 _Timeline index refreshed 2026-09-09 against live `test`/`master` HEAD, the current release list, open-issue state

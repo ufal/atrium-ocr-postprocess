@@ -41,7 +41,7 @@ The easiest way to execute the full parameter optimization suite (Coverage, RF, 
 > 🛑 **Superseded 2026-09-22 by stage 6** (#30): the 87-hour sweep scored all 23 rules on the
 > 822-document corpus against the 2,064-row gold sidecar. Its delivered summary read two rules
 > DEAD — `rule_mid_uppercase` and `rule_short_garbage_witness` — and the second is switched off,
-> not dead, so it now classifies INERT (D35). Readings in `agent_dev_logs/digests/30.digest.md`
+> not dead, so it now classifies INERT (D35). Readings in `agent_dev_logs/digests/3.digest.md`
 > § "Stage 6 read against its own delivery" (U0–U8). The table below is the 2,171-line reading
 > and is kept as such.
 
@@ -49,7 +49,7 @@ Run on `test` @ `4017a76` over **19 documents / 2,171 lines (1,471 scored)** —
 same corpus as the stale log below, so the two are directly comparable. This is
 the regeneration the warning banner under the next heading asked for, and it
 closes the "numbers need regenerating" risk recorded in
-`agent_dev_logs/plans/30.plan.md`.
+`agent_dev_logs/plans/3.plan.md`.
 
 Note the corpus is a local `DOC_LINE_CATEG` set, not the three CSVs committed to
 `data_samples/` (15 lines); it spans CTX1921–CTX2016, including three post-2000
@@ -66,7 +66,7 @@ worth recording because every driver in `tools/` reads flips as damage.
 > **Two caveats on that sentence, both raised elsewhere and reconciled here.**
 > `tests/test_recategorize_parity.py` no longer *enforces* `flip_rate == 0`; it
 > allows 5% globally and 30% per document, relaxed when the structural rules were
-> added (see `agent_dev_logs/plans/30.plan.md`, and the stale-log warning further
+> added (see `agent_dev_logs/plans/3.plan.md`, and the stale-log warning further
 > down this file, which says the same thing). The baseline is an observation on
 > this corpus, not a guarantee. And until 2026-09-10 `rescore_csv`'s diff report
 > sorted one frame and not the other before comparing positionally, so a
@@ -144,7 +144,7 @@ Three points worth keeping in view:
   file:** the "30 of 508 graded lines, 29 matching" figure recorded here was
   superseded on 2026-09-09 — closing the label lexicon narrowed
   `is_domain_notation()` to **24 of 508**, of which **25 of the 30** original
-  matches survive. `agent_dev_logs/digests/30.digest.md` §5 carries the table.
+  matches survive. `agent_dev_logs/digests/3.digest.md` §5 carries the table.
 
 <details>
     <summary>Latest console output from the pipeline run (no optuna due to sqlite3 dep)</summary>

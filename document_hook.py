@@ -22,7 +22,7 @@ stages import PROGRAM_NAME from here; the other stages spell the literal) and na
 the script in `config.script`. The older per-stage names (`langID-classify`,
 `langID-aggregate`) survive only in the 2026-06 sample logs under `paradata/`, so
 atrium-llm-enrich#13's "normalise the alto-postprocess program names" TODO is done
-(agent_dev_logs/plans/31.plan.md, Phase 4).
+(the plan of atrium-alto-postprocess#31, Phase 4; it stayed with that repository).
 
 (#31 Phase 4) `SOURCE_ORIGIN_BY_KIND` — a per-kind `source.origin` override for the
 text-lines inputs — is parsed and resolved here (`parse_origin_by_kind`,

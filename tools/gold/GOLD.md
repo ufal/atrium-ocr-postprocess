@@ -16,7 +16,7 @@ miss because nothing errors:
 2. **A genuine accuracy improvement scores as pure damage.** A constant change
    that corrects 1,000 wrong labels registers as 1,000 flips away from "truth".
 
-`agent_dev_logs/plans/30.plan.md` states it plainly:
+`agent_dev_logs/plans/3.plan.md` states it plainly:
 
 > Every offline tool in `tools/` grades against the pipeline's own stored `categ`,
 > so a label-changing improvement scores as pure damage on all of them. Without a
@@ -184,8 +184,8 @@ layout, it is a filesystem full of fragments.
 
 > [!IMPORTANT]
 > **The rows are not missing — they are on the cluster, and they have been the
-> whole time.** For a month this file, `agent_dev_logs/plans/30.plan.md` and
-> `agent_dev_logs/digests/30.digest.md` all recorded the work as blocked because
+> whole time.** For a month this file, `agent_dev_logs/plans/3.plan.md` and
+> `agent_dev_logs/digests/3.digest.md` all recorded the work as blocked because
 > "the gold is here; the rows it labels are not", and every measurement that
 > gates `SHORT_GARBAGE_WITNESS_ENABLE` was parked behind it.
 >

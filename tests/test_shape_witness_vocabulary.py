@@ -16,7 +16,7 @@ close it:
      depends on a signal outside this predicate. Measuring that class against
      annotated lines is a precondition for enabling the flag, not a follow-up."
 
-``agent_dev_logs/plans/30.plan.md`` carried it for a month as "still a stated
+``agent_dev_logs/plans/3.plan.md`` carried it for a month as "still a stated
 precondition for flipping the flag, still unmeasured". Measured, it fails, and
 not marginally: ``-aceae`` is the botanical FAMILY suffix, so the vowel-run
 clause did not make an occasional mistake on this class -- it convicted all of
@@ -979,7 +979,7 @@ def test_no_unregistered_zero_arg_cache_reads_a_flag():
         "zero-argument lru_cache(s) not registered in _CACHES_FROM_FLAG: "
         f"{unregistered}. Either key the cache on the constants it reads, or add it "
         "to _CACHES_FROM_FLAG so override_constants() can clear it between A/B arms. "
-        "See the 07b write-up in agent_dev_logs/digests/30.digest.md."
+        "See the 07b write-up in agent_dev_logs/digests/3.digest.md."
     )
 
 
