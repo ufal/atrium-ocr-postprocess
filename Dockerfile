@@ -3,7 +3,7 @@ FROM python:3.11-slim AS base
 
 # --- Provenance (flows into atrium_paradata.py via ENV) ---
 ARG ATRIUM_RUNNER_IMAGE=""
-ARG ATRIUM_RUNNER_REPO="https://github.com/ufal/atrium-alto-postprocess"
+ARG ATRIUM_RUNNER_REPO="https://github.com/ufal/atrium-ocr-postprocess"
 ARG ATRIUM_RUNNER_REF=""
 # CPU torch by default (alto-tools method needs no GPU; LayoutReader runs on CPU too,
 # just slower). Override to a CUDA wheel index (e.g. .../whl/cu121) to build a GPU
@@ -67,12 +67,21 @@ RUN apt-get update \
 
 WORKDIR /app
 
-# 1) deps first for layer caching. CPU torch pinned, then the unpinned `torch`
-#    in the requirements files is already satisfied (stays CPU).
-COPY setup/requirements.txt setup/requirements-test.txt setup/requirements-sweep.txt setup/
+# 1) deps first for layer caching. CPU torch first, in the range the requirements files
+#    declare (a bare `torch` took whatever the CPU index served that day, a future major
+#    included), so the `torch` line in those files is already satisfied (stays CPU).
+#
+#    Runtime requirements only (atrium-project#69, roadmap H4). The image used to install
+#    setup/requirements-test.txt (pytest, pytest-cov, httpx, openapi-spec-validator, PyYAML)
+#    and setup/requirements-sweep.txt (optuna, SALib, scikit-learn, matplotlib) as well --
+#    the sweep file against its own header ("NOT needed by the production pipeline"). Nothing
+#    the ENTRYPOINTs reach imports a package only those two carry: the tests run on the CI
+#    runner, and the constant sweep (tools/run_optim_pipeline.sh) runs in a host venv and
+#    installs its own extras. fastapi/pydantic keep their exact pins in service/requirements.txt.
+COPY setup/requirements.txt setup/
 COPY service/requirements.txt service/requirements.txt
-RUN pip install --index-url ${TORCH_INDEX_URL} torch \
-    && pip install -r setup/requirements.txt -r service/requirements.txt -r setup/requirements-test.txt -r setup/requirements-sweep.txt
+RUN pip install --index-url ${TORCH_INDEX_URL} "torch>=2.1,<3.0" \
+    && pip install -r setup/requirements.txt -r service/requirements.txt
 
 # 2) LayoutReader v3/ (translated from setup_api_server.sh) -> /app/v3 (on sys.path)
 #    Required by the GPU extraction method (extract_LytRdr_ALTO_2_TXT.py).
@@ -91,35 +100,86 @@ RUN git init /tmp/layoutreader \
     && mv /tmp/layoutreader/v3 /app/v3 \
     && rm -rf /tmp/layoutreader
 
-# 3) FastText LID weights -> $MODEL_DIR/lid.176.bin, symlinked to the bare CWD path
-#    the batch pipeline (classify_TEXT.py:99) loads.
+# 3) Non-root runtime user, created BEFORE the weights (atrium-project#69), so the 1.18 GB
+#    file below is written with its final ownership in its own layer. It used to be
+#    downloaded as root and chowned by the `chown -R /app` at the end, and overlayfs copies
+#    a file up on any metadata change: the image carried the weights twice.
+RUN useradd --create-home --uid 10001 atrium
+
+# 4) FastText LID weights -> $MODEL_DIR/lid.176.bin, symlinked to the bare CWD path the
+#    batch pipeline loads (classify_TEXT.py's FASTTEXT_MODEL default, read through _cfg_get).
 #
-#    Hardened fetch:
+#    WHAT THE FILE IS. `facebook/fasttext-language-identification`'s `model.bin`: the NLLB
+#    project's fastText language-ID model, 1,176,355,829 bytes, CC BY-NC 4.0 -- NOT the
+#    126 MB fastText `lid.176.bin` its local name suggests. The name stays (roadmap H3's
+#    rename is retired): it is the default in classify_TEXT.py (FASTTEXT_MODEL), setup/config.txt,
+#    service/text_inference.py (FASTTEXT_MODEL_PATH), tools/quality_model/ and tests/test_config_constants.py,
+#    and the alto-models volume is seeded from the image only when it is EMPTY, so a renamed
+#    file would never reach an existing volume.
+#
+#    PINNED AND CHECKSUMMED (roadmap H3). The URL names a Hub commit, not `main`, and the
+#    file must match the LFS SHA-256 and size. The revision and checksum below are the
+#    verified values for facebook/fasttext-language-identification/model.bin. The build
+#    still FAILS CLOSED if either value is overridden to empty.
+#    To refresh these values from the Hub, inspect the headers of the unpinned URL (no redirect):
+#      curl -sI https://huggingface.co/facebook/fasttext-language-identification/resolve/main/model.bin \
+#        | grep -iE '^(x-repo-commit|x-linked-etag|x-linked-size):'
+#    x-repo-commit -> FASTTEXT_REVISION; x-linked-etag (without the quotes) -> FASTTEXT_SHA256;
+#    x-linked-size must equal FASTTEXT_SIZE.
+#
+#    Hardened fetch, as before:
 #      * follows the canonical ?download=true redirect to the LFS CDN,
 #      * sends a non-empty User-Agent (Cloudflare rejects some empty-UA bots),
 #      * retries transient HTTP errors and connection drops with backoff,
-#      * resumes (--continue) the ~2 GB download instead of restarting it,
-#      * verifies the result is a non-empty file so a truncated body or an HTML
-#        error page fails the build here, loudly, rather than producing a broken
-#        model that only blows up at runtime.
-#    `-nv` keeps the log readable while still surfacing errors (unlike `-q`).
-RUN mkdir -p "$MODEL_DIR" \
+#      * resumes (--continue) the 1.18 GB download instead of restarting it.
+#    `-nv` keeps the log readable while still surfacing errors (unlike `-q`). The size
+#    check runs before the checksum only so that a truncated body or an HTML error page is
+#    named as such; the checksum is what makes the file the pinned one.
+ARG FASTTEXT_REVISION=3af127d4124fc58b75666f3594bb5143b9757e78
+ARG FASTTEXT_SHA256=8ded5749a2ad79ae9ab7c9190c7c8b97ff20d54ad8b9527ffa50107238fc7f6a
+ARG FASTTEXT_SIZE=1176355829
+RUN if [ -z "$FASTTEXT_REVISION" ] || [ -z "$FASTTEXT_SHA256" ]; then \
+        echo "ERROR: FASTTEXT_REVISION and FASTTEXT_SHA256 are not set, so the fastText weights" >&2; \
+        echo "       cannot be fetched pinned. See the comment above this step for the curl" >&2; \
+        echo "       one-liner that reads both from the Hugging Face Hub (atrium-project#69, H3)." >&2; \
+        exit 1; \
+    fi \
+    && mkdir -p "$MODEL_DIR" \
     && wget -nv --tries=5 --continue --timeout=60 \
             --retry-connrefused --waitretry=10 \
             --retry-on-http-error=403,408,429,500,502,503,504 \
-            --header="User-Agent: atrium-alto-postprocess-docker-build/1.0" \
-            "https://huggingface.co/facebook/fasttext-language-identification/resolve/main/model.bin?download=true" \
+            --header="User-Agent: atrium-ocr-postprocess-docker-build/1.0" \
+            "https://huggingface.co/facebook/fasttext-language-identification/resolve/${FASTTEXT_REVISION}/model.bin?download=true" \
             -O "$MODEL_DIR/lid.176.bin" \
-    && test -s "$MODEL_DIR/lid.176.bin" \
-    && ln -s "$MODEL_DIR/lid.176.bin" /app/lid.176.bin
+    && size="$(stat -c %s "$MODEL_DIR/lid.176.bin")" \
+    && if [ "$size" != "$FASTTEXT_SIZE" ]; then \
+        echo "ERROR: $MODEL_DIR/lid.176.bin is $size bytes, expected $FASTTEXT_SIZE (truncated or not the model)" >&2; \
+        exit 1; \
+    fi \
+    && echo "${FASTTEXT_SHA256}  $MODEL_DIR/lid.176.bin" | sha256sum -c - \
+    && ln -s "$MODEL_DIR/lid.176.bin" /app/lid.176.bin \
+    && chown -R atrium:0 "$MODEL_DIR" \
+    && chmod -R g=u "$MODEL_DIR"
 
-# 4) source
+# 5) source
 COPY . .
 
-# 5) non-root runtime user owning app + caches + data mount
-RUN useradd --create-home --uid 10001 atrium \
-    && mkdir -p /cache/huggingface /data \
-    && chown -R atrium:atrium /app /cache /data
+# 6) ownership of everything else the runtime writes: atrium:0 and group-writable (`g=u`),
+#    the arbitrary-UID convention (OpenShift's), atrium-project#69 / roadmap B6.
+#    docker-compose.yml runs this image as `user: "${ATRIUM_UID:-10001}:0"`, so on Linux the
+#    container can run as the uid that owns the ./data bind mount, and a uid with no passwd
+#    entry still reaches /app, /cache, /data and $HOME through group 0. HOME is explicit
+#    because without a passwd entry it would be `/`. The default runtime -- uid 10001 as
+#    the owner -- is unchanged.
+#
+#    $MODEL_DIR is PRUNED: it got its ownership in its own layer above, and touching it here
+#    would copy the 1.18 GB file into this layer too. The /app/lid.176.bin symlink is
+#    changed with `chown -h` and skipped by chmod, which would otherwise follow it to that
+#    same file.
+RUN mkdir -p /cache/huggingface /data \
+    && find /app /cache /data /home/atrium -path "$MODEL_DIR" -prune -o -exec chown -h atrium:0 {} + \
+    && find /app /cache /data /home/atrium -path "$MODEL_DIR" -prune -o ! -type l -exec chmod g=u {} +
+ENV HOME=/home/atrium
 USER atrium
 
 ENTRYPOINT ["python", "run_pipeline.py"]
@@ -127,7 +187,7 @@ CMD []
 
 
 # ---------------------------------------------------------------------------
-# API surface — published as :<version>-api (issue #55)
+# API surface — published as ghcr.io/ufal/atrium-ocr-postprocess-api:<version> (issue #55)
 #
 # Before this stage existed, alto-postprocess's FastAPI service was reachable only
 # through a docker-compose `entrypoint:` override on the BATCH image, so no runnable

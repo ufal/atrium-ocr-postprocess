@@ -1,0 +1,323 @@
+# setup/word_lists.txt — the word lists this program consults, in one editable place
+# ===================================================================================
+#
+# EDIT THIS FILE BY HAND. It is meant to be edited by the people who know the
+# material, not only by the people who deploy the code. Nothing here is generated
+# and nothing regenerates it.
+#
+# EVERY LIST IS A VETO. Listing a token can stop the program calling it rubbish.
+# No list here can make the program call anything rubbish. Adding a word that was
+# never at risk simply does nothing, which is the safe direction to be wrong in.
+#
+# BUT THE SECTIONS REACH DIFFERENT DISTANCES, and that is the one thing to get
+# right. Each section says below exactly what listing a token there does. If you
+# are not sure which section a word belongs in, [allowed] is the one to use: it is
+# the most conservative and it is the one written for this purpose.
+#
+# FORMAT
+#   [section]        starts a section; everything after it belongs to that section
+#   one token per line   — a single word, never a phrase
+#   case does not matter — `Kaukasus` and `kaukasus` are the same entry
+#   `#` starts a comment, on its own line or after a token
+#   blank lines are ignored
+#   accented characters are fine, in UTF-8
+#
+# PLEASE SAY WHY. Each entry should carry a short note. Two years from now the
+# reason is the only thing that makes an entry safe to remove, and this issue has
+# already had to undo three thresholds that were set from examples nobody wrote
+# down.
+#
+# The path is `WORD_LISTS_PATH` in setup/config.txt. Point it elsewhere for a
+# different archive, or empty it to fall back to the values compiled into
+# text_util.py.
+
+
+# ── [allowed] ───────────────────────────────────────────────────────────────
+# WHAT IT DOES: a token listed here is not counted against the line's quality
+# score. It stops contributing to the "invalid word", "weird word", "gibberish"
+# and "fused word" measurements — it neither helps the score nor hurts it.
+#
+# AND (issue #30 Q5b, answered 2026-10-01: "yes, listed means never evidence of
+# damage"): the new short-line rule's shape tests skip it, so a listed word can
+# never be the reason a line is discarded. Other words on the same line are
+# still judged as before.
+#
+# THIS IS THE SECTION FOR ORDINARY WORDS the program keeps getting wrong: place
+# names, German and French museum vocabulary, Latin species names, old spellings,
+# local abbreviations, anything the archive uses that a Czech word list would not
+# contain.
+#
+# REVIEWED 2026-10-01 (issue #30 Q5a, @david-spacil). The entries below that are
+# not commented out are switched on; the commented ones were left out on review,
+# with the reason beside each. Switching an entry on or off changes stored
+# categories, so it is a deliberate, measurable act: change it here, re-score and
+# compare. tests/test_word_lists.py pins the reviewed set, so an edit here has to
+# be made there too.
+[allowed]
+# ── old and dialect spellings ──
+ssuti        # old spelling of `suť` (rubble) — @david-spacil, 2026-09-22
+ssutí        # the same word, another old form — @david-spacil, 2026-09-22
+ssutě        # the same word, another old form — @david-spacil, 2026-09-22
+#
+# ── abbreviations and house conventions ──
+ppole        # `popelnicová pole`, urnfield culture; `pp` doubled for the
+#              # plural, as in `pp.` for pages — @david-spacil, 2026-09-19.
+#              # A convention of ARUB's 2010s forms, not a scanning error.
+#
+# ── German and French the archive actually contains ──
+# The first four carry a native vowel run (`aue`, `euo`, `eui`). The language
+# split (issue #30 D44) covers those when the language is detected correctly;
+# they are candidates here as well because detection on a one-word line is
+# exactly where it is least reliable. The split does nothing for the rest:
+# `Kaukasus`, `Hallstatthaus` and `Schuhleistenkeilbruchstueck` are convicted
+# on letter variety in every language, and `Forsterhaus` by no shape test.
+Dauerleihe   # permanent loan — museum term, 286 lines
+# Bauerleihe   # real OCR damage
+Neuotting    # Neuötting, Bavarian place name
+Feuilleton   # newspaper section heading
+Forsterhaus  # forester's house
+Kaukasus     # the Caucasus
+Hallstatthaus            # Hallstatt-period building
+# Schuhleistenkeilbruchstueck   # shoe-last adze fragment; a real compound, and
+#              # the reason no length or letter-variety cut can separate this
+#              # class from rubbish of the same shape (issue #30 D34)
+#
+# ── Latin species and anatomy ──
+# Against the shape tests these are protected only when a corpus frequency table
+# is configured, and no such table ships with this repository -- except the
+# `-aceae` family names at the end, which the taxonomic-suffix exemption spares
+# without one.
+malakofauna  # mollusc fauna
+diapozitiv   # slide (photographic)
+occipitale   # occipital bone
+equus        # horse — genus
+caballus     # horse — species epithet
+triticum     # wheat — genus
+monococcum   # einkorn — species epithet
+lepus        # hare — genus
+europaeus    # European — species epithet
+arvicola     # vole — genus
+terrestris   # ground-dwelling — species epithet
+linum        # flax — genus
+usitatissimum            # common flax — species epithet
+poaceae      # grass family
+rosaceae     # rose family
+fabaceae     # legume family
+brassicaceae # cabbage family
+cyperaceae   # sedge family
+chenopodiaceae           # goosefoot family
+asteraceae   # daisy family
+betulaceae   # birch family
+fagaceae     # beech family
+polygonaceae # knotweed family
+#
+# ── loans and toponyms ──
+# naiade       # not present in the corpus?
+# beuern       # OCR damage: should be bauern
+# oueste       # not present in the corpus?
+kaaden       # Kadaň, German form
+
+
+# ── [neutral] ───────────────────────────────────────────────────────────────
+# WHAT IT DOES: a token listed here is not judged as a word at all when the
+# program measures how much of a line is real vocabulary. Units and measurement
+# abbreviations belong here: `12 cm` should count as one word and a number, not as
+# one word and one unrecognisable token.
+#
+# Was `_NEUTRAL_LEXICON`, compiled into text_util.py until 2026-09-22.
+[neutral]
+cm
+dkg
+dm
+dr
+g
+ha
+hl
+kg
+km
+ks
+l
+m
+mm
+x
+
+
+# ── [notation_labels] ───────────────────────────────────────────────────────
+# WHAT IT DOES: these are the words that can introduce a site or find reference —
+# the `Sonda` in `Sonda: III`, the `Vrstva` in `Vrstva 3`. A line whose label is
+# in this list is recognised as a reference rather than as damaged prose.
+#
+# DELIBERATELY A CLOSED LIST. It used to be "any word of 3 to 20 letters", which
+# accepted a mis-scanned label as readily as a real one: `Bokalisace: B-XII-c` is
+# `Lokalisace` with B read for L, and it was the one false positive in a
+# reviewer's thirty-line sample. Add real labels freely; the closure is the point.
+#
+# Was `_NOTATION_LABELS`, compiled into text_util.py until 2026-09-22.
+[notation_labels]
+blok
+horizont
+hrob
+inv
+jáma
+karton
+kat
+komponenta
+kontext
+kvadrant
+lokalisace
+lokalizace
+nález
+objekt
+orientace
+plocha
+profil
+segment
+sektor
+situace
+sonda
+sáček
+vrstva
+výkop
+čtverec
+řez
+
+
+# ── [header_labels] ─────────────────────────────────────────────────────────
+# WHAT IT DOES: section headings that stand alone on a line. A line that is just
+# `Literatura` or `Obsah` is a heading, not a one-word fragment of damaged text.
+#
+# Was `_DOCUMENT_HEADER_LABELS`, compiled into text_util.py until 2026-09-22.
+[header_labels]
+literatura
+obsah
+poznámka
+příloha
+přílohy
+resumé
+seznam
+shrnutí
+závěr
+úvod
+
+
+# ── [short_valid] ───────────────────────────────────────────────────────────
+# WHAT IT DOES: short Czech function words that are real content. A line made of
+# these is prose, not a one-word fragment, so they count as valid vocabulary and
+# the short-line rules leave them alone.
+#
+# Was `SHORT_VALID_WORDS` in setup/config.txt until 2026-09-22.
+[short_valid]
+a
+ač
+až
+by
+co
+do
+i
+je
+ji
+jí
+k
+ke
+ku
+mi
+my
+na
+ní
+o
+od
+on
+po
+s
+se
+si
+ti
+to
+ty
+u
+už
+v
+ve
+z
+za
+ze
+
+
+# ── [short_exception] ───────────────────────────────────────────────────────
+# WHAT IT DOES: tokens that may stand alone on a line without the line being
+# treated as a fragment — units and catalogue abbreviations that really do appear
+# by themselves in these documents.
+#
+# Was `SHORT_EXCEPTION_TOKENS` in setup/config.txt until 2026-09-22.
+[short_exception]
+cm
+g
+ha
+kg
+km
+l
+m
+ml
+mm
+neg
+obr
+str
+tb
+č
+čneg
+
+
+# ── [ldl_units] ─────────────────────────────────────────────────────────────
+# WHAT IT DOES: units allowed on the far side of a letter-digit-letter join, so
+# `12cm` and `3,5kg` read as measurements rather than as fused words.
+#
+# Was `LDL_UNITS` in setup/config.txt until 2026-09-22.
+[ldl_units]
+cm
+g
+ha
+kg
+km
+l
+m
+ml
+mm
+
+
+# ── [rot_whitelist] ─────────────────────────────────────────────────────────
+# WHAT IT DOES: short Czech words that survive being read upside down as another
+# short Czech word. The rotation detector must not treat these as evidence that a
+# page was scanned inverted, because they are just as likely to be themselves.
+#
+# Was `ROT_WHITELIST` in setup/config.txt until 2026-09-22.
+[rot_whitelist]
+bez
+bude
+by
+den
+do
+mez
+ne
+nebo
+od
+on
+ony
+po
+pod
+pouze
+se
+ve
+ven
+zde
+
+
+# ── [ghost_collisions] ──────────────────────────────────────────────────────
+# WHAT IT DOES: words that are BOTH a real Czech word and the upside-down image of
+# another one. Listing them here stops the rotation detector counting them as
+# ghosts — `no` and `bo` are real words far more often than they are flipped `ou`
+# and `oq`.
+#
+# Was `GHOST_WORD_COLLISIONS` in setup/config.txt until 2026-09-22.
+[ghost_collisions]
+bo
+no

@@ -21,6 +21,12 @@ Input directory (#4): the text source defaults to [CLASSIFY] TEXT_DIR but is
 overridden by the LANGID_TEXT_DIR env var, which run_pipeline.py sets to the
 selected extraction method's output directory.
 
+Input CSV (#31 Phase 5): the page statistics CSV defaults to [CLASSIFY] INPUT_CSV;
+`--input-csv` overrides it (run_pipeline.py passes its own --input-csv, and the
+text-lines stats CSV). Resume: a document is skipped when its output CSV is at
+least as new as every one of its page texts; an output older than a page text is
+deleted and the document classified again.
+
 Output columns (#3): rows are emitted dict-keyed against CSV_HEADER so the scored
 and fast-track (Empty/Non-text) writers can never drift out of column alignment.
 `categ`/`quality_score` lead the file; `original_text`, `original_lang`,
@@ -29,6 +35,7 @@ values. The page aggregator reads strictly by column NAME, so this reorder is
 safe; every aggregate-consumed name is retained verbatim.
 """
 
+import argparse
 import configparser
 import csv
 import multiprocessing as mp
@@ -38,6 +45,7 @@ import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from itertools import groupby
 from pathlib import Path
+from typing import List, Optional
 
 import numpy as np
 import pandas as pd
@@ -82,6 +90,7 @@ from text_util import (
     compute_valid_ratio,
     compute_vowel_ratio,
     compute_word_weird_ratio,
+    constant_invariant_errors,
     count_damaged_tokens,
     detect_fused_words,
     detect_gibberish_words,
@@ -94,6 +103,7 @@ from text_util import (
     is_structured_line,
     parse_line_splits,
     pre_filter_line,
+    quality_word_set,
     remap_lang,
     score_words_in_line,
 )
@@ -242,7 +252,13 @@ def score_line(
     is_upright_czech, ghost_dominated = analyze_rotation_signals(text_content)
     caps_header = is_all_caps_line(text_content)
     weird_ratio = compute_word_weird_ratio(score_words_in_line(text_content))
-    valid_ratio = compute_valid_ratio(text_content)
+    # (#30 D26) `quality_word_set()` is None unless QUALITY_VOCABULARY_ENABLE is
+    # set and a lexicon is configured, in which case this call is exactly what it
+    # has always been. Armed, `valid_word_ratio` stops being a shape proxy and
+    # becomes a real vocabulary measure -- and moves quality_score on every line,
+    # which is why it ships off. Measured on gold as 08d (07b's valid re-run): a
+    # decisive REJECT, 212 fixes against 540 breaks, `Clear`-loss 40 -> 180.
+    valid_ratio = compute_valid_ratio(text_content, quality_word_set())
 
     structured_flag = is_structured_line(text_content)
     damaged_flag = count_damaged_tokens(text_content) > 0
@@ -285,6 +301,14 @@ def score_line(
         garbage_density=g_density,
         is_upright_czech=is_upright_czech,
         ghost_dominated=ghost_dominated,
+        # (#30 D44) The RAW FastText label, not the remapped `lang` below.
+        # `remap_lang()` rewrites any base outside EXPECTED_LANGS +
+        # TRUSTED_FOREIGN_LANGS to Czech, so passing the stored column would let
+        # that remap answer a question about phonotactics -- and it would answer
+        # it in exactly the direction that costs the most, by relabelling
+        # unrecognised foreign text as Czech and so applying the stricter
+        # three-vowel threshold to it.
+        lang=original_lang,
     )
 
     return {
@@ -480,7 +504,7 @@ _config = configparser.ConfigParser()
 _DEFAULT_CONFIG_PATH = Path(__file__).resolve().parent / "setup" / "config.txt"
 _config_path = Path(os.getenv("LANGID_CONFIG", str(_DEFAULT_CONFIG_PATH)))
 if _config_path.exists():
-    _config.read(_config_path)
+    _config.read(_config_path, encoding="utf-8")
 
 
 def _cfg_get(key: str, default: str) -> str:
@@ -497,6 +521,9 @@ FASTTEXT_MODEL = _cfg_get("FASTTEXT_MODEL", "lid.176.bin")
 TRUST_TIER_TRUSTED = float(_cfg_get("TRUST_TIER_TRUSTED", "0.85"))
 TRUST_TIER_UNKNOWN = float(_cfg_get("TRUST_TIER_UNKNOWN", "0.50"))
 
+#: PERPLEXITY_THRESHOLD_MAX at or above this is distilgpt2's scale (README: 3000), not Qwen's (1000).
+_QWEN_SCALE_WARN_ABOVE = 2000.0
+
 worker_models = {}
 
 
@@ -507,9 +534,23 @@ def init_cpu_worker():
     worker_models["ft"] = fasttext.load_model(FASTTEXT_MODEL)
 
 
+def doc_part_path(output_dir, file_id: str) -> Path:
+    """Where a document's rows are built before it is complete: `<doc>.csv.part`.
+
+    A document's rows are appended batch by batch, then re-read for the document-level passes and
+    rewritten. Written straight to `<doc>.csv`, a job that died in the middle (GPU worker lost,
+    walltime, an exception) left a truncated, never-post-processed CSV that the next run's resume
+    check read as finished and `aggregate_STAT.py` aggregated into page stats. Built under another
+    name and renamed once whole, a `<doc>.csv` present is a `<doc>.csv` complete -- the convention
+    `tools/corpus_change.py` already keeps. No `*.csv` glob (resume, `aggregate_STAT.py`,
+    `outputs_outside_the_index`) matches a `.part`.
+    """
+    return Path(output_dir) / f"{file_id}.csv.part"
+
+
 def write_rows_to_doc(output_dir: Path, file_id: str, rows: list):
-    """Safely appends classified rows to a specific document's CSV file."""
-    out_path = output_dir / f"{file_id}.csv"
+    """Safely appends classified rows to a specific document's (in-progress) CSV file."""
+    out_path = doc_part_path(output_dir, file_id)
     file_exists = out_path.exists()
 
     with open(out_path, "a", encoding="utf-8", newline="") as f:
@@ -820,6 +861,26 @@ def apply_document_postprocessing(df: "pd.DataFrame") -> "pd.DataFrame":
     df = df.sort_values(by=["page_num", "line_num"], ascending=True).copy()
 
     # 1. header/footer dedup -> modal category
+    #
+    # THE TIE-BREAK IS ALPHABETICAL, AND IT IS LOAD-BEARING (#30 H6/§2).
+    # `Series.mode()` returns its tied values SORTED, so `[0]` takes the
+    # alphabetically first, and 'Clear' < 'Empty' < 'Noisy' < 'Non-text' <
+    # 'Trash'. A tied vote therefore CANNOT land on `Trash`. That is an accident
+    # of how the five categories happen to be spelled, not a design decision --
+    # and it is the reason the third dedup option @david-spacil was offered
+    # ("stop a bare majority pushing a readable line into Trash") reached zero
+    # groups when it was measured: the dangerous case is already impossible.
+    #
+    # Renaming a category, or adding one that sorts before 'Clear', would change
+    # which way every tie falls, silently. `tests/test_page_postprocess.py`
+    # pins this on THIS function; a second test in
+    # tests/test_short_garbage_witness_report.py pins the offline tool's
+    # re-implementation of the same vote.
+    #
+    # Measured full-archive (2026-09-22, lexicon armed): 43,103 groups, 43,052
+    # unanimous, 51 contested, 17 of them ties. The vote pulls 10 readable lines
+    # down and rescues 51, net +41 in its favour. @david-spacil accepted it as it
+    # stands and asked for the bare-plurality option to be dropped.
     text_modes = df.groupby("text", dropna=False)["categ"].transform(
         lambda x: x.mode()[0] if not x.mode().empty else x.iloc[0]
     )
@@ -964,6 +1025,17 @@ def _lines_records_from_df(df) -> list:
     return records
 
 
+def page_text_path(text_dir, file_id, page_id) -> Path:
+    """One page's text file: `<text_dir>/<file>/<file>-<page>.txt`, with the older
+    underscore layout as a fallback (the hyphen path when neither exists)."""
+    path = Path(text_dir) / file_id / f"{file_id}-{page_id}.txt"
+    if not path.exists():
+        legacy = Path(text_dir) / file_id / f"{file_id}_{page_id}.txt"
+        if legacy.exists():
+            return legacy
+    return path
+
+
 def process_document(task):
     """
     Worker function executed by CPU pool.
@@ -987,16 +1059,28 @@ def process_document(task):
     document_json_dir = _rest[1] if len(_rest) > 1 else ""
     doc_run_id = _rest[2] if len(_rest) > 2 else None
     doc_paradata_ref = _rest[3] if len(_rest) > 3 else ""
+    doc_run_uuid = _rest[4] if len(_rest) > 4 else None
+
+    out_path = Path(output_dir) / f"{file_id}.csv"
+    part_path = doc_part_path(output_dir, file_id)
 
     try:
-        out_path = Path(output_dir) / f"{file_id}.csv"
+        reclassified = False
+        part_path.unlink(missing_ok=True)  # what a run that died mid-document left: never trusted
         if out_path.exists():
-            return {
-                "status": "skipped",
-                "file_id": file_id,
-                "lines": 0,
-                "reason": "output already exists (resume)",
-            }
+            # (#31 Phase 5) Resume only while the output is at least as new as every page
+            # text; a re-ingested (changed) document used to keep its old categories.
+            page_paths = [page_text_path(text_dir, file_id, str(row["page"])) for _, row in group.iterrows()]
+            if document_hook.output_is_current(out_path, page_paths):
+                return {
+                    "status": "skipped",
+                    "file_id": file_id,
+                    "lines": 0,
+                    "reason": "output already exists (resume)",
+                }
+            # The old CSV stays until the new one replaces it whole: a re-classification that fails
+            # keeps the last complete output (which resume still sees as stale) instead of none.
+            reclassified = True
 
         batch_lines = []
         batch_meta = []
@@ -1005,9 +1089,7 @@ def process_document(task):
 
         for _, row in group.iterrows():
             page_id = str(row["page"])
-            txt_path = Path(text_dir) / file_id / f"{file_id}-{page_id}.txt"
-            if not txt_path.exists():
-                txt_path = Path(text_dir) / file_id / f"{file_id}_{page_id}.txt"
+            txt_path = page_text_path(text_dir, file_id, page_id)
 
             if not txt_path.exists():
                 continue
@@ -1083,19 +1165,12 @@ def process_document(task):
                 gpu_time_out=gpu_timeout,
             )
 
-        if out_path.exists():
-            df = pd.read_csv(
-                out_path,
-                dtype={
-                    "text": str,
-                    "original_text": str,
-                    "split_ws": str,
-                    "split_we": str,
-                    "lang": str,
-                    "original_lang": str,
-                    "categ": str,
-                },
-            )
+        if not part_path.exists() and reclassified:
+            # Nothing came out of the changed pages (no text left): the old output is stale, not kept.
+            out_path.unlink(missing_ok=True)
+
+        if part_path.exists():
+            df = read_doc_line_csv(part_path, file_id)
 
             if not df.empty:
                 df = apply_page_perplexity_blend(
@@ -1109,9 +1184,10 @@ def process_document(task):
 
             # (#3.7) UTF-8 keeps Czech diacritics intact on the finalised file.
             df = df[CSV_HEADER]  # guard: write columns in canonical order
-            df.to_csv(out_path, index=False, encoding="utf-8")
+            df.to_csv(part_path, index=False, encoding="utf-8")
+            os.replace(part_path, out_path)  # complete: only now does `<doc>.csv` exist
 
-            # (atrium-project#13) lines[] is field-owned here: categ/quality_score/
+            # (atrium-llm-enrich#13) lines[] is field-owned here: categ/quality_score/
             # lang/text only — a co-contributor's fields on the same row (nlp-enrich's
             # lemma/upos/feats/teitok_ref/bbox) survive untouched via merge_block.
             document_hook.write_document_block(
@@ -1120,21 +1196,110 @@ def process_document(task):
                 doc_run_id,
                 doc_paradata_ref,
                 merge_blocks={"lines": _lines_records_from_df(df)},
+                run_uuid=doc_run_uuid,
             )
 
-        return {"status": "success", "file_id": file_id, "lines": processed_count}
+        return {"status": "success", "file_id": file_id, "lines": processed_count, "reclassified": reclassified}
 
     except Exception as e:
+        part_path.unlink(missing_ok=True)  # an incomplete document leaves nothing a resume could trust
         return {"status": "error", "file_id": file_id, "reason": str(e)}
 
 
-def main():
+def incomplete_reason(total_documents: int, failed_documents: int, gpu_was_lost: bool) -> Optional[str]:
+    """Why this stage must exit non-zero, or None when it completed.
+
+    A stage that classified nothing, or lost its GPU worker, did not complete: run_pipeline, a SLURM
+    job or CI must not read exit 0 over missing or partial outputs. Some documents failing while the
+    rest were classified is not a failed stage (aggregation of the finished ones is still wanted; each
+    failure is in the paradata's skipped_files_detail and is warned about).
+    """
+    if gpu_was_lost or (total_documents and failed_documents == total_documents):
+        return (
+            f"[Main] Classification did not complete: {failed_documents} of {total_documents} document(s) failed"
+            + ("; the GPU worker was lost" if gpu_was_lost else "")
+            + ". Re-run to resume; finished documents are kept."
+        )
+    return None
+
+
+def outputs_outside_the_index(output_dir, doc_ids) -> List[str]:
+    """The `<doc>.csv` files in `output_dir` whose document is not in this run's page
+    index, sorted. (#31 Phase 5) They may belong to another batch — or to an input that
+    was deleted, and aggregate_STAT aggregates every CSV in the directory, so say so."""
+    out = Path(output_dir)
+    if not out.is_dir():
+        return []
+    wanted = {str(d) for d in doc_ids}
+    return sorted(p.name for p in out.glob("*.csv") if p.is_file() and p.stem not in wanted)
+
+
+#: The dtypes classify re-reads its own per-document CSV with (see read_doc_line_csv).
+_DOC_CSV_DTYPES = {
+    "file": str,
+    "text": str,
+    "original_text": str,
+    "split_ws": str,
+    "split_we": str,
+    "lang": str,
+    "original_lang": str,
+    "categ": str,
+}
+
+
+def read_doc_line_csv(path, file_id) -> "pd.DataFrame":
+    """Re-read one document's DOC_LINE_CATEG CSV for the document-level passes.
+
+    (#31 Phase 4) `file` is pinned to the task's own id: every row of `<file_id>.csv`
+    was written for that id, and pandas' type inference used to turn `0001` into 1
+    (and `NA` into NaN) on this re-read, so the finalised CSV named another document.
+    The text columns keep pandas' default NA handling exactly as before, so ALTO
+    output is unchanged.
+    """
+    df = pd.read_csv(path, dtype=_DOC_CSV_DTYPES)
+    if "file" in df.columns:
+        df["file"] = str(file_id)
+    return df
+
+
+def load_page_index(csv_path) -> "pd.DataFrame":
+    """Read the page statistics CSV that drives this stage.
+
+    (#31) `file` is read as a string, so ids such as `0001` or `NA` survive; `page`
+    stays numeric (the sort below relies on it). The one reader every extractor
+    shares, `document_hook.read_page_index` (#31 Phase 5).
+    """
+    return document_hook.read_page_index(csv_path)
+
+
+def _parse_args(argv=None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Classify every extracted text line (stage 4 of run_pipeline.py).")
+    parser.add_argument(
+        "--input-csv",
+        default=None,
+        help="Page statistics CSV that lists the pages to classify (default: [CLASSIFY].INPUT_CSV).",
+    )
+    return parser.parse_args(argv)
+
+
+def main(argv=None):
     """Initializes queue managers, sets up models, and maps CPU document tasks."""
+    args = _parse_args(argv)
+    # Refuse to categorise with constants whose boundaries are inverted (the invariants are the
+    # engine's; the service refuses to start on them too). Before any model is downloaded or a
+    # GPU worker started, so a bad config costs seconds, not a queued cluster job.
+    _bad_constants = constant_invariant_errors()
+    if _bad_constants:
+        raise SystemExit(
+            "[Main] Invalid categorisation constants, nothing was classified: " + "; ".join(_bad_constants)
+        )
     config_path = os.getenv("LANGID_CONFIG", "setup/config.txt")
     config = configparser.ConfigParser()
-    config.read(config_path)
+    config.read(config_path, encoding="utf-8")
 
-    INPUT_CSV = config.get("CLASSIFY", "INPUT_CSV")
+    # (#31 Phase 5) --input-csv: run_pipeline's --input-csv (and text-lines' own stats
+    # CSV) now reaches this stage too; it used to read the config only.
+    INPUT_CSV = args.input_csv or config.get("CLASSIFY", "INPUT_CSV")
     # (#4) LANGID_TEXT_DIR (set by run_pipeline for the chosen extraction method)
     # takes precedence over the config default.
     TEXT_DIR = os.getenv("LANGID_TEXT_DIR") or config.get("CLASSIFY", "TEXT_DIR")
@@ -1145,11 +1310,14 @@ def main():
 
     MODEL_NAME = config.get("CLASSIFY", "MODEL_NAME", fallback="Qwen/Qwen2.5-0.5B")
 
-    # [NEW] Guard against scale mismatch
-    if "qwen" in MODEL_NAME.lower() and PERPLEXITY_THRESHOLD_MAX > 500.0:
+    # Guard against a scale mismatch: Qwen2.5-0.5B scores roughly a third of distilgpt2's
+    # perplexity on the same Czech text, so the distilgpt2-scale value (3000, README) is far too
+    # lenient for it. The shipped Qwen value is 1000, which this guard must stay quiet about --
+    # it used to fire (threshold 500) on every run of the shipped configuration.
+    if "qwen" in MODEL_NAME.lower() and PERPLEXITY_THRESHOLD_MAX >= _QWEN_SCALE_WARN_ABOVE:
         print(f"\n[WARNING] Configuration Mismatch: You are using '{MODEL_NAME}'.")
-        print(f"          PERPLEXITY_THRESHOLD_MAX is set to {PERPLEXITY_THRESHOLD_MAX}.")
-        print("          Qwen generally produces much lower perplexities than DistilGPT2.")
+        print(f"          PERPLEXITY_THRESHOLD_MAX is set to {PERPLEXITY_THRESHOLD_MAX}, a distilgpt2-scale value.")
+        print("          Qwen generally produces much lower perplexities than DistilGPT2 (shipped for Qwen: 1000).")
         print("          Consider lowering the threshold to avoid false 'Clear' categorizations.\n")
 
     EXPECTED_LANGS_STR = config.get("CLASSIFY", "EXPECTED_LANGS", fallback=DEFAULT_EXPECTED_LANGS)
@@ -1165,7 +1333,7 @@ def main():
 
     print(f"[Main] Classifying text from: {TEXT_DIR}")
 
-    df = pd.read_csv(INPUT_CSV)
+    df = load_page_index(INPUT_CSV)
     sort_cols = ["file", "page", "line_order"] if "line_order" in df.columns else ["file", "page"]
     df = df.sort_values(by=sort_cols)
 
@@ -1192,6 +1360,7 @@ def main():
         config={
             "batch_size": BATCH_SIZE,
             "max_workers": WORKERS_MAX,
+            "input_csv": INPUT_CSV,
             "text_dir": TEXT_DIR,
             "output_dir": OUTPUT_DIR,
             "model_name": MODEL_NAME,
@@ -1206,12 +1375,13 @@ def main():
     _ppl_component = "distilgpt2" if "distilgpt2" in MODEL_NAME.lower() else "qwen2.5_0.5b"
     logger.log_component(_ppl_component)
 
-    # (atrium-project#13) resolved once here — cheap primitives, safe to hand to
+    # (atrium-llm-enrich#13) resolved once here — cheap primitives, safe to hand to
     # every worker process; the ParadataLogger object itself is not passed down.
     _doc_cfg = configparser.ConfigParser()
-    _doc_cfg.read(config_path)
+    _doc_cfg.read(config_path, encoding="utf-8")
     _document_json_dir = document_hook.resolve_document_json_dir(_doc_cfg.get("DOCUMENT", "JSON_DIR", fallback=""))
     _doc_run_id = logger.run_id
+    _doc_run_uuid = logger.run_uuid
     _doc_paradata_ref = document_hook.paradata_ref_for(logger)
 
     grouped_tasks = []
@@ -1232,7 +1402,16 @@ def main():
                 _document_json_dir,
                 _doc_run_id,
                 _doc_paradata_ref,
+                _doc_run_uuid,
             )
+        )
+
+    _foreign = outputs_outside_the_index(OUTPUT_DIR, (t[0] for t in grouped_tasks))
+    if _foreign:
+        print(
+            f"[Main] WARNING: {len(_foreign)} categorized CSV(s) in {OUTPUT_DIR} belong to documents not in "
+            f"{INPUT_CSV} (e.g. {', '.join(_foreign[:5])}). aggregate_STAT aggregates every CSV there: "
+            f"remove those whose inputs were deleted."
         )
 
     # Size the pool from the CPUs actually allocated to this process (SLURM cgroup /
@@ -1250,6 +1429,7 @@ def main():
 
     total_processed = 0
     total_tasks = len(grouped_tasks)
+    failed_documents = 0
 
     try:
         with ProcessPoolExecutor(max_workers=max_cores, initializer=init_cpu_worker) as executor:
@@ -1270,25 +1450,39 @@ def main():
                     if status == "success":
                         total_processed += result["lines"]
                         logger.log_success("csv")
+                        if result.get("reclassified"):
+                            tqdm.write(f"Re-classified (a page text changed since its output): {result['file_id']}")
                     elif status == "skipped":
                         # (#11) record resume-skips so paradata reflects real work
                         logger.log_skip(result["file_id"], result.get("reason", "output already exists (resume)"))
                         tqdm.write(f"Skipped (already exists): {result['file_id']}")
                     else:
+                        failed_documents += 1
                         logger.log_skip(result["file_id"], result["reason"])
                         tqdm.write(f"Skipped {result['file_id']}: {result['reason']}")
 
                 except Exception as e:
+                    failed_documents += 1
                     logger.log_skip(file_id, f"Worker crashed unexpectedly: {e}")
                     tqdm.write(f"Error processing {file_id}: {e}")
 
     finally:
+        gpu_was_lost = gpu_dead.is_set()
         task_queue.put("STOP")
         gpu_process.join(timeout=30)
         if gpu_process.is_alive():
             gpu_process.terminate()
 
         logger.finalize(input_total=total_tasks)
+
+    _incomplete = incomplete_reason(total_tasks, failed_documents, gpu_was_lost)
+    if _incomplete:
+        raise SystemExit(_incomplete)
+    if failed_documents:
+        print(
+            f"[Main] WARNING: {failed_documents} of {total_tasks} document(s) were not classified "
+            f"(see the paradata's skipped_files_detail); the rest are done."
+        )
 
     print(f"All done! Processed {total_processed} total lines.")
 

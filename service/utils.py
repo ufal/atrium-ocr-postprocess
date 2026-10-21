@@ -130,11 +130,45 @@ def parse_alto_page_labels(xml_path: str) -> List[str]:
     return [page.attrib.get("PHYSICAL_IMG_NR") or str(i) for i, page in enumerate(root.findall(page_tag, ns), 1)]
 
 
-def parse_alto_xml_lines(xml_path: str) -> Tuple[List[str], List[List[int]], Tuple[int, int]]:
+def parse_alto_software(xml_path: str) -> List[str]:
+    """The software an ALTO upload's ``Description`` names (``softwareName``, ``softwareCreator``),
+    in document order; [] when it names none or does not parse.
+
+    Added for the OCR hand-off (atrium-digital-convert#4 W4): a page re-acquired by OCR records the
+    engine in ``pages[].ocr.engine``, and ``text_formats.producer_origin`` maps these names to the
+    engine's origin (``ocr:pero``, ``ocr:tesseract``, ...). The same hardened parser as above.
+    """
+    try:
+        root = ET.parse(xml_path, parser=_SAFE_PARSER).getroot()
+    except Exception as e:
+        logger.error(f"XML Parse Error in {xml_path}: {e}")
+        return []
+    names: List[str] = []
+    for child in root:
+        if not isinstance(child.tag, str) or ET.QName(child).localname != "Description":
+            continue
+        for el in child.iter():
+            if isinstance(el.tag, str) and ET.QName(el).localname in ("softwareName", "softwareCreator"):
+                names.append(el.text or "")
+    return names
+
+
+class AltoUnreadable(ValueError):
+    """An upload that cannot be read as ALTO: not well-formed XML, no ``<Page>``, or a
+    ``<Page>`` whose size is not a number. Raised by ``parse_alto_xml_lines(strict=True)``;
+    ``/process`` answers it with 422 ``malformed`` instead of an empty 200."""
+
+
+def parse_alto_xml_lines(xml_path: str, *, strict: bool = False) -> Tuple[List[str], List[List[int]], Tuple[int, int]]:
     """
     Parses ALTO XML from a file path, grouping text by <TextLine> (one
     bounding box per line spanning all of its words) instead of parse_alto_xml's
     word-level output.
+
+    A file that is not readable as ALTO comes back empty, ``([], [], (0, 0))``, and is logged,
+    which is also what a page without text looks like to a caller that only reads the lines. With
+    ``strict=True`` it raises :class:`AltoUnreadable` instead, so a caller that answers a client
+    (the service's ``process_alto``) can tell a broken upload from a blank page.
 
     Line granularity is what the LayoutReader reading-order model and the
     per-line classification pipeline expect (process_alto in text_inference.py);
@@ -149,6 +183,8 @@ def parse_alto_xml_lines(xml_path: str) -> Tuple[List[str], List[List[int]], Tup
         root = tree.getroot()
     except Exception as e:
         logger.error(f"XML Parse Error in {xml_path}: {e}")
+        if strict:
+            raise AltoUnreadable(f"it is not well-formed XML ({e})") from e
         return [], [], (0, 0)
 
     ns = {"alto": root.tag.split("}")[0].strip("{")} if "}" in root.tag else {}
@@ -157,12 +193,16 @@ def parse_alto_xml_lines(xml_path: str) -> Tuple[List[str], List[List[int]], Tup
 
     page = root.find(page_tag, ns)
     if page is None:
+        if strict:
+            raise AltoUnreadable("it has no <Page> element, so it is not ALTO")
         return [], [], (0, 0)
 
     try:
         page_w = int(float(page.attrib.get("WIDTH", 0)))
         page_h = int(float(page.attrib.get("HEIGHT", 0)))
-    except (ValueError, TypeError):
+    except (ValueError, TypeError) as e:
+        if strict:
+            raise AltoUnreadable(f"its <Page> has a WIDTH or HEIGHT that is not a number ({e})") from e
         return [], [], (0, 0)
 
     lines: List[str] = []

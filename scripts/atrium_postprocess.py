@@ -43,6 +43,9 @@ from typing import Optional
 DEFAULT_BASE_URL = os.environ.get("ATRIUM_AP_URL", "http://localhost:8000")
 MAX_UPLOAD_MB = 10  # mirrors the server's MAX_UPLOAD_MB default
 RETRY_STATUS = {502, 503, 504}
+# A 502 is retried only with one of these reasons (atrium_service.REASON_CODES); without one,
+# `detail` names a cause that a retry does not change (atrium-nlp-enrich#41).
+RETRY_502_REASONS = {"upstream_unavailable"}
 RETRY_ATTEMPTS = 3
 RETRY_WAIT_S = 10
 
@@ -78,6 +81,20 @@ def build_multipart(fields: dict, files: dict) -> tuple[bytes, str]:
     return body, content_type
 
 
+def is_retryable(status: int, body: str) -> bool:
+    """A 503/504 is. A 502 in the service's error body is retried only with a reason in
+    RETRY_502_REASONS; a 502 without that body came from a proxy in front of the service and is."""
+    if status != 502:
+        return True
+    try:
+        error = json.loads(body)
+    except ValueError:
+        return True  # not the service's answer: a proxy or gateway page
+    if not isinstance(error, dict) or "reason" not in error:
+        return True
+    return error["reason"] in RETRY_502_REASONS
+
+
 def http_json(url: str, data: bytes = None, content_type: str = None, timeout: int = 600) -> dict:
     """POST (or GET when data is None) and decode a JSON response, with retry on 502/503/504."""
     last_error = None
@@ -90,7 +107,7 @@ def http_json(url: str, data: bytes = None, content_type: str = None, timeout: i
                 return json.loads(response.read().decode("utf-8"))
         except urllib.error.HTTPError as e:
             detail = e.read().decode("utf-8", errors="replace")
-            if e.code in RETRY_STATUS and attempt < RETRY_ATTEMPTS:
+            if e.code in RETRY_STATUS and attempt < RETRY_ATTEMPTS and is_retryable(e.code, detail):
                 print(
                     f"[retry {attempt}/{RETRY_ATTEMPTS}] HTTP {e.code}, waiting {RETRY_WAIT_S}s...",
                     file=sys.stderr,
@@ -167,8 +184,17 @@ def print_table(rows: list[tuple], as_csv: bool) -> None:
             print(f"{row[0]:<28} {row[1]:>4} {str(row[2]):<5} {quality} {str(row[4]):<9} {text}")
 
 
+class UsageParser(argparse.ArgumentParser):
+    """argparse exits 2 on a usage error; the client contract keeps 2 for "server unreachable"."""
+
+    def error(self, message):
+        self.print_usage(sys.stderr)
+        print(f"{self.prog}: error: {message}", file=sys.stderr)
+        sys.exit(1)
+
+
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = UsageParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("files", nargs="*", help="ALTO XML page(s) and/or plain-text file(s) to classify")
     parser.add_argument(
         "--base-url", default=DEFAULT_BASE_URL, help=f"API base URL (default: {DEFAULT_BASE_URL}, env: ATRIUM_AP_URL)"

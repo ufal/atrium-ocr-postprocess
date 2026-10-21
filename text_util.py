@@ -23,13 +23,20 @@ that is deliberate and is not drift to reconcile.
 """
 
 import configparser
+import functools
 import itertools
 import os
 import re
 import sys
 import unicodedata
+from collections.abc import Mapping
 from contextlib import contextmanager
 from pathlib import Path
+from types import MappingProxyType
+
+# The empty lexicon, shared so that "no table configured" and "table unreadable"
+# return the same object rather than two equal-but-distinct ones.
+_EMPTY_LEXICON: Mapping[str, int] = MappingProxyType({})
 
 # ---------------------------------------------------------------------------
 # Line-category labels  (hub registry: atrium_vocab.LINE_CATEGORY_ORIGINATORS)
@@ -42,8 +49,8 @@ from pathlib import Path
 #     re-ordered vendored copy of atrium_vocab.py silently change what the
 #     pipeline outputs -- the registry is a description of behaviour, not a knob
 #     that steers it;
-#   * `lines[].categ` has a SECOND authorised originator (`digital-convert`, in
-#     atrium-llm-enrich) which emits {Garbage, Inverted}. The two sets are
+#   * `lines[].categ` has a SECOND authorised originator (`digital-convert`,
+#     atrium-digital-convert) which emits {Garbage, Inverted}. The two sets are
 #     disjoint ON PURPOSE -- one is an OCR verdict over a rendered image, the
 #     other a decode-sanity verdict over an embedded text layer -- so "align the
 #     two" is never the fix for a disagreement found here.
@@ -166,7 +173,7 @@ _DEFAULT_CONFIG_PATH = Path(__file__).resolve().parent / "setup" / "config.txt"
 _config_path = Path(os.getenv("LANGID_CONFIG", str(_DEFAULT_CONFIG_PATH)))
 
 if _config_path.exists():
-    _config.read(_config_path)
+    _config.read(_config_path, encoding="utf-8")
 elif os.getenv("LANGID_CONFIG"):
     # Explicitly pointed somewhere that does not exist. Previously this fell
     # through to the in-code defaults in silence, so a typo'd path ran the whole
@@ -221,6 +228,118 @@ def _get_csv_set(section, key, default):
     """Parse a comma-separated config value into a frozenset of stripped tokens."""
     raw = _get_str(section, key, default)
     return frozenset(t.strip() for t in raw.split(",") if t.strip())
+
+
+# ---------------------------------------------------------------------------
+# The hand-maintained word lists (#30)
+# ---------------------------------------------------------------------------
+#
+# Defined HERE, high in the module, because the constants that read it are
+# themselves module-level and are evaluated in source order. Everything below
+# needs only `_get_str`, `os`, `Path`, `functools` and `MappingProxyType`, all of
+# which exist by this point.
+
+# (#30) Where the hand-maintained word lists live. This is the one file in the
+# repository meant to be edited by the people who know the material rather than
+# by the people who deploy the code: units, reference labels, section headings,
+# and -- the section that did not exist before -- ordinary open-class words this
+# archive uses that the program keeps getting wrong.
+#
+# Every section is a VETO. Nothing in that file can make the program convict a
+# line; it can only stop it. Adding a word that was never at risk does nothing.
+#
+# EMPTY = fall back to the values compiled in below, which is exactly the
+# behaviour that shipped before the file existed. A file that omits a section
+# falls back for that section alone, so deleting a section cannot silently empty
+# a list production depends on.
+WORD_LISTS_PATH = _get_str("TEXT_UTILS", "WORD_LISTS_PATH", "setup/word_lists.txt").strip()
+if WORD_LISTS_PATH and not os.path.isabs(WORD_LISTS_PATH):
+    # Anchored to this module, not to the working directory -- the same fix
+    # 30.plan.md records for the config path itself, made here before it bites.
+    WORD_LISTS_PATH = str(Path(__file__).resolve().parent / WORD_LISTS_PATH)
+
+#: The sections `setup/word_lists.txt` may define, and the in-code fallback for
+#: each. The fallback is what the module used before the file existed, so an empty
+#: `WORD_LISTS_PATH` — or a file that simply omits a section — is byte-identical to
+#: the behaviour that shipped before 2026-09-22.
+#:
+#: `allowed` has no fallback and defaults to empty: it is the new open-class layer
+#: (#30), and an archive that has not written one has none.
+_WORD_LIST_SECTIONS: tuple[str, ...] = ("allowed", "neutral", "notation_labels", "header_labels")
+
+
+@functools.lru_cache(maxsize=4)
+def _read_word_lists(path: str, mtime: float) -> Mapping[str, frozenset]:
+    """Parse the hand-maintained section file, keyed on path+mtime so edits are seen.
+
+    Format, and it is deliberately the plainest thing that can hold several lists:
+    ``[section]`` opens a section, one token per line, ``#`` starts a comment
+    anywhere on a line, blanks are skipped, and everything is case-folded. A
+    section that is absent or empty is simply absent from the result, and the
+    caller falls back to its in-code default — so deleting a section cannot
+    silently empty a list that production depends on.
+
+    A file that cannot be read degrades to ``{}`` rather than raising. This is
+    configuration, not input: a missing file must not stop the pipeline, and the
+    fallbacks are the values that shipped for a year before the file existed.
+
+    Cached on (path, mtime) rather than zero-argument, like ``_read_token_lexicon``
+    above and for the same reason — a zero-argument cache would freeze a flag and
+    is exactly the class of bug ``_CACHES_FROM_FLAG`` exists to close (#30 D28).
+    """
+    out: dict[str, set] = {}
+    section: str | None = None
+    try:
+        with open(path, encoding="utf-8") as handle:
+            for raw in handle:
+                line = raw.split("#", 1)[0].strip()
+                if not line:
+                    continue
+                if line.startswith("[") and line.endswith("]"):
+                    section = line[1:-1].strip().lower()
+                    out.setdefault(section, set())
+                    continue
+                if section is None:
+                    continue
+                out[section].add(line.lower())
+    except OSError:
+        return MappingProxyType({})
+    return MappingProxyType({k: frozenset(v) for k, v in out.items() if v})
+
+
+def word_list(section: str, fallback: frozenset, override: str = "") -> frozenset:
+    """One section of the hand-maintained file, with the config key still on top.
+
+    PRECEDENCE, and the middle layer is the new one:
+
+        1. an explicit config/env value  -- `ATRIUM_TEXT_UTILS_<KEY>`, or the key
+           in whatever `LANGID_CONFIG` points at;
+        2. the `[section]` in `setup/word_lists.txt`;
+        3. the in-code default.
+
+    Layer 1 exists because moving a list into the file would otherwise TAKE AWAY
+    an operator's ability to override it -- `tests/test_config_constants.py`'s
+    tier-1 round-trip caught exactly that, by pointing `LANGID_CONFIG` at an
+    alternate config and finding `ROT_WHITELIST` no longer followed it. The keys
+    therefore stay in `setup/config.txt`, but EMPTY: empty means "not overridden,
+    use the file", so the member list lives in one place while the override path
+    stays open.
+
+    Read at CALL time, not at import, so an operator editing the file does not
+    have to restart a long-running service to see the change -- the mtime key on
+    the cache above is what makes that cheap.
+    """
+    override = (override or "").strip()
+    if override:
+        return frozenset(t.strip() for t in override.split(",") if t.strip())
+    path = (WORD_LISTS_PATH or "").strip()
+    if not path:
+        return fallback
+    try:
+        mtime = os.path.getmtime(path)
+    except OSError:
+        return fallback
+    return _read_word_lists(path, mtime).get(section.lower(), fallback)
 
 
 # (#30) The two [CLASSIFY] language fallbacks, named once.
@@ -300,7 +419,7 @@ WEIRD_RATIO_INVERTED_MIN = _get_float("TEXT_UTILS", "WEIRD_RATIO_INVERTED_MIN", 
 PPL_INVERTED_MIN = _get_float("TEXT_UTILS", "PPL_INVERTED_MIN", 200.0)
 ROT_HIGH_LANG_CONF = _get_float("TEXT_UTILS", "ROT_HIGH_LANG_CONF", 0.90)
 
-LOWPPL_CLEAR_MAX = _get_float("TEXT_UTILS", "LOWPPL_CLEAR_MAX", 50.0)
+LOWPPL_CLEAR_MAX = _get_float("TEXT_UTILS", "LOWPPL_CLEAR_MAX", 35.0)
 HARD_SWEEP_LANG_MAX = _get_float("TEXT_UTILS", "HARD_SWEEP_LANG_MAX", 0.45)
 HARD_SWEEP_PPL_MIN = _get_float("TEXT_UTILS", "HARD_SWEEP_PPL_MIN", 1000.0)
 GHOST_DOMINATED_MIN_RATIO = _get_float("TEXT_UTILS", "GHOST_DOMINATED_MIN_RATIO", 0.5)
@@ -364,11 +483,11 @@ PAGE_PPL_LONG_MIN_WC = _get_int("TEXT_UTILS", "PAGE_PPL_LONG_MIN_WC", 4)
 # Minimum number of such lines before a page reference is trusted at all.
 PAGE_PPL_MIN_LONG_LINES = _get_int("TEXT_UTILS", "PAGE_PPL_MIN_LONG_LINES", 3)
 
-SHORT_VALID_WORDS = _get_csv_set(
-    "TEXT_UTILS",
-    "SHORT_VALID_WORDS",
-    "a,i,k,o,s,u,v,z,se,si,po,na,za,ze,do,od,ke,ku,ve,ní,mi,ti,by,je,to,co,ač,my,ty,on,ji,jí,už,až",
+SHORT_VALID_WORDS_DEFAULT = frozenset(
+    "a,i,k,o,s,u,v,z,se,si,po,na,za,ze,do,od,ke,ku,ve,ní,mi,ti,by,je,to,co,ač,my,ty,on,ji,jí,už,až".split(",")
 )
+#: Hand-editable in setup/word_lists.txt [short_valid] since 2026-09-22.
+SHORT_VALID_WORDS = word_list("short_valid", SHORT_VALID_WORDS_DEFAULT, _get_str("TEXT_UTILS", "SHORT_VALID_WORDS", ""))
 
 REPEAT_ALLOWED_CHARS = _get_str("TEXT_UTILS", "REPEAT_ALLOWED_CHARS", "oOuU")
 REPEATED_DOUBLE_MIN = _get_int("TEXT_UTILS", "REPEATED_DOUBLE_MIN", 2)
@@ -381,12 +500,14 @@ ACADEMIC_TITLES = _get_csv_set(
 )
 
 LDL_ALLOWED_FOLLOW = frozenset(_get_str("TEXT_UTILS", "LDL_ALLOWED_FOLLOW", ".,/:%-;?)="))
-LDL_UNITS = _get_csv_set("TEXT_UTILS", "LDL_UNITS", "m,cm,mm,g,kg,km,ha,l,ml")
+LDL_UNITS_DEFAULT: frozenset = frozenset("m,cm,mm,g,kg,km,ha,l,ml".split(","))
+#: Hand-editable in setup/word_lists.txt [ldl_units] since 2026-09-22.
+LDL_UNITS: frozenset = word_list("ldl_units", LDL_UNITS_DEFAULT, _get_str("TEXT_UTILS", "LDL_UNITS", ""))
 
-SHORT_EXCEPTION_TOKENS = _get_csv_set(
-    "TEXT_UTILS",
-    "SHORT_EXCEPTION_TOKENS",
-    "mm,cm,m,g,kg,km,ha,l,ml,tb,neg,obr,str,č,čneg",
+SHORT_EXCEPTION_TOKENS_DEFAULT = frozenset("mm,cm,m,g,kg,km,ha,l,ml,tb,neg,obr,str,č,čneg".split(","))
+#: Hand-editable in setup/word_lists.txt [short_exception] since 2026-09-22.
+SHORT_EXCEPTION_TOKENS = word_list(
+    "short_exception", SHORT_EXCEPTION_TOKENS_DEFAULT, _get_str("TEXT_UTILS", "SHORT_EXCEPTION_TOKENS", "")
 )
 HEADLINE_MAX_WORDS = _get_int("TEXT_UTILS", "HEADLINE_MAX_WORDS", 8)
 HEADLINE_MAX_DIGITS = _get_int("TEXT_UTILS", "HEADLINE_MAX_DIGITS", 2)
@@ -409,10 +530,219 @@ SHORT_GARBAGE_WITNESS_ENABLE = _get_str("TEXT_UTILS", "SHORT_GARBAGE_WITNESS_ENA
     "yes",
     "on",
 )
+
+# (#30 D47) The witness floor: a short line the shape witness convicts is never
+# `Clear`. Where the cascade would answer `Clear` for such a line it answers
+# `Noisy` instead (reason `noisy_threshold`, rule `rule_short_garbage_witness_floor`).
+# INDEPENDENT of SHORT_GARBAGE_WITNESS_ENABLE: that flag lets the witness return
+# `Trash` at gate 6, behind the signal half of `rule_short_garbage` (which reaches
+# ~3% of the witness's population, digest AA4); this one acts after the whole
+# cascade and never returns `Trash`. A BOOLEAN, not a category name, because the
+# answer is fixed by Q1 -- convicted means damaged, not necessarily illegible --
+# and `ab_constant_eval` varies numbers and booleans only. SHIPS OFF: it changes
+# no category until stage 13 has measured it on both sidecars.
+SHORT_GARBAGE_WITNESS_FLOOR = _get_str("TEXT_UTILS", "SHORT_GARBAGE_WITNESS_FLOOR", "false").strip().lower() in (
+    "true",
+    "1",
+    "yes",
+    "on",
+)
+
+# (#30 D35) Rules whose `_fire()` is gated by a CONFIG FLAG rather than by their
+# own predicate, and the flag that gates each. A rule listed here reports
+# `fire_count == 0` on every corpus while its flag is off -- not because it has
+# no population, but because the branch is unreachable by configuration.
+#
+# This exists because `tools/rule_coverage_report.py` could not tell the two
+# apart. Its `_classify()` reads `fire_count == 0` and returns DEAD, whose own
+# docstring says the rule "is unreachable dead code and can be permanently
+# deleted ... because deletion provably changes nothing". For
+# `rule_short_garbage_witness` that is false in the most expensive possible way:
+# the 2026-09-21 stage-6 sweep classified it DEAD and recommended retirement,
+# while stage 08f had measured the same predicate reaching 100,824 lines across
+# both collections and stage 08b had flipped the flag and passed the adoption
+# gate (McNemar p = 0.01294). `RULE_COVERAGE.md` called `fire_count == 0` the
+# "config-independent" retirement criterion; it is exactly not that.
+#
+# The taxonomy is not new -- `tests/test_pipeline_parity.py::UNREACHABLE_RULES`
+# already separates "unreachable BY CONFIGURATION" from gate shadowing
+# (`rule_mid_uppercase`, shadowed by gate 7). It lived only in a test, so no
+# tool could read it. This is that distinction, sited next to the flag it is
+# about, so a future flag-gated rule has one obvious place to declare itself.
+#
+# Values are the NAME of the module-level flag, resolved at read time rather
+# than captured, so `override_constants()` is visible to readers of this map.
+CONFIG_GATED_RULES: dict[str, str] = {
+    "rule_short_garbage_witness": "SHORT_GARBAGE_WITNESS_ENABLE",
+    "rule_short_garbage_witness_floor": "SHORT_GARBAGE_WITNESS_FLOOR",
+    "rule_domain_notation_categ": "DOMAIN_NOTATION_CATEG",
+}
+
+
+def rule_is_config_gated_off(rule: str) -> bool:
+    """Is ``rule``'s fire site currently unreachable because its flag is off?
+
+    Veto only, and deliberately narrow: it answers "can this rule fire at all in
+    the configuration now in force", never "does this rule matter". A rule that
+    is not in ``CONFIG_GATED_RULES`` always returns False, so the default answer
+    is the honest one.
+    """
+    flag = CONFIG_GATED_RULES.get(rule)
+    if flag is None:
+        return False
+    return not bool(globals().get(flag, False))
+
+
 SHORT_GARBAGE_WITNESS_MIN_ALPHA = _get_int("TEXT_UTILS", "SHORT_GARBAGE_WITNESS_MIN_ALPHA", 4)
 SHORT_GARBAGE_WITNESS_VARIETY_MIN_ALPHA = _get_int("TEXT_UTILS", "SHORT_GARBAGE_WITNESS_VARIETY_MIN_ALPHA", 7)
 SHORT_GARBAGE_WITNESS_VARIETY_MAX = _get_float("TEXT_UTILS", "SHORT_GARBAGE_WITNESS_VARIETY_MAX", 0.50)
 SHORT_GARBAGE_WITNESS_TRIPLE_MAX_ALPHA = _get_int("TEXT_UTILS", "SHORT_GARBAGE_WITNESS_TRIPLE_MAX_ALPHA", 8)
+# (#30) The witness's OWN vowel-run length, decoupled from FUSED_VOWEL_RUN_MIN.
+# It defaults to that value, so the shipped behaviour is unchanged -- but
+# detect_fused_words() feeds `fused_ratio` in the quality score and the
+# `fused_words` CSV column, so the two knobs steering each other meant the only
+# clause that discriminates on the #30 population could not be tuned without
+# moving scores on every line in the corpus. The trade at 3 vs 4 is measured on
+# gold (stage 10d): errors 503 = 503, `Clear`-loss 38 = 38, fixes 2 / breaks 2,
+# p = 1, `Trash`-recall 34 -> 32/180. A global 4 buys nothing and costs recall,
+# so this stays 3 and the D44 split below is the answer.
+SHORT_GARBAGE_WITNESS_VOWEL_RUN_MIN = _get_int("TEXT_UTILS", "SHORT_GARBAGE_WITNESS_VOWEL_RUN_MIN", FUSED_VOWEL_RUN_MIN)
+# (#30 D44) The vowel-run clause is a fact about CZECH PHONOTACTICS, not about
+# scanning. Czech has no triphthongs, so three vowels in a row is good evidence of
+# damage -- in Czech. German and French have them natively, which is why the
+# clause reaches `Dauerleihe` (*aue*, permanent loan) and `FEUILLETON` (*eui*),
+# both scanned perfectly correctly, and why @david-spacil's answer on 2026-09-22
+# was to split by language rather than to blunt the threshold:
+#
+#   "For Czech, 3+ vowels in a row is a good rule -- Czech has no triphthongs.
+#    For German and French it does damage. So either split by language, or try 4+."
+#
+# Blunting it to 4 everywhere was measured and is the worse trade: it releases
+# `J. Vysoean` (*Vysočan*), `POSTKRANIAINY SKELET`, `lenaye` and `noienm k.`,
+# which are damage, to spare two German words -- 3.5 lines that currently agree
+# with `Trash` given up per at-risk line spared (stage 10b).
+#
+# So: 3 vowels convict in any language EXCEPT these, and 4 convict everywhere,
+# including these. Set EXEMPT_LANGS empty to get a single global threshold back.
+# The language is the RAW FastText label, not the stored `lang` column -- see the
+# note on `determine_category`'s `lang` parameter.
+SHORT_GARBAGE_WITNESS_VOWEL_RUN_EXEMPT_LANGS: frozenset = _get_csv_set(
+    "TEXT_UTILS", "SHORT_GARBAGE_WITNESS_VOWEL_RUN_EXEMPT_LANGS", "deu,fra"
+)
+# The run length required in an exempt language. 4 rather than "never": a German
+# line can still be scanned into `oueussd`, and four vowels in a row is not a word
+# in any of these languages either.
+SHORT_GARBAGE_WITNESS_VOWEL_RUN_MIN_EXEMPT = _get_int("TEXT_UTILS", "SHORT_GARBAGE_WITNESS_VOWEL_RUN_MIN_EXEMPT", 4)
+# (#30 D43) What category a recognised web or e-mail address gets.
+#
+# @david-spacil, 2026-09-22, on what the five categories mean: "`Trash` =
+# illegible. Anything legible is `Clear`, easily decipherable is `Noisy` --
+# regardless of how useful the line is to us." `http://www.arub.cz` is scanned
+# perfectly correctly on 5,309 lines, so by that definition it is `Clear`. D33
+# moved it Trash -> Noisy, the right direction and one step short.
+#
+# This is a CATEGORY NAME rather than an on/off switch on purpose. The question
+# "what is a legible URL worth?" has had three different answers in this issue --
+# `Trash` (before D33), `Noisy` (D33), `Clear` (W4) -- and a fourth is arguable
+# (`Non-text`, since the README says that category "may be checked for
+# identifiers of finds/sites"). Which one the archive wants is @DanaKriv's and
+# @david-spacil's to settle, not a code change per answer. Set the key, re-score,
+# compare.
+#
+# SHIPS EMPTY = the route is off and behaviour is exactly as before: the address
+# falls through the cascade and lands wherever the ordinary rules put it.
+# Any of the five category names arms it.
+DOMAIN_NOTATION_CATEG = _get_str("TEXT_UTILS", "DOMAIN_NOTATION_CATEG", "").strip()
+#: The `reason` each category is reported under, so the three threshold columns in
+#: DOC_LINE_CATEG keep meaning what they say instead of all reading False on a
+#: novel reason string. `Non-text` and `Empty` have no threshold column, and their
+#: reasons are the ones the pre-filter already uses.
+_DOMAIN_NOTATION_REASON: dict[str, str] = {
+    CATEG_CLEAR: "clear_threshold",
+    CATEG_NOISY: "noisy_threshold",
+    CATEG_TRASH: "trash_threshold",
+    CATEG_NON_TEXT: "non_text",
+    CATEG_EMPTY: "empty",
+}
+if DOMAIN_NOTATION_CATEG and DOMAIN_NOTATION_CATEG not in _DOMAIN_NOTATION_REASON:
+    raise ValueError(
+        f"DOMAIN_NOTATION_CATEG={DOMAIN_NOTATION_CATEG!r} is not one of "
+        f"{sorted(_DOMAIN_NOTATION_REASON)}. Leave it empty to keep the shipped behaviour, in "
+        "which a recognised address is categorised by the ordinary cascade."
+    )
+# (#30 D14) The lexical signal for the residue. A path to a token/document-frequency
+# table built by tools/build_token_lexicon.py. EMPTY BY DEFAULT: with no table the
+# veto is inert and the predicate is byte-identical to the shape-only version, so
+# this key changes nothing until an operator points it at a built table.
+SHORT_GARBAGE_LEXICON_PATH = _get_str("TEXT_UTILS", "SHORT_GARBAGE_LEXICON_PATH", "").strip()
+SHORT_GARBAGE_LEXICON_MIN_DF = _get_int("TEXT_UTILS", "SHORT_GARBAGE_LEXICON_MIN_DF", 3)
+# (#30 D40, removed 2026-09-22) The de-gemination guard used to live here --
+# SHORT_GARBAGE_LEXICON_GEMINATE_RATIO and _MAX_DF, a pair that let the witness
+# convict a doubled-initial token ALTHOUGH the lexicon attested it. Removed on
+# @david-spacil's answer ("if the dictionary already covers all eight, it looks
+# redundant"), and because three of the eight tokens it was fitted to -- `ssuti`,
+# `ssutí`, `ssutě` -- turned out to be an old spelling of `suť`, so the gap the
+# ratio sat in had real language on BOTH sides of it. Zero of 42,853 rows in the
+# full-scale witness queue carried any of the eight.
+# (#30, 2026-09-19) Feed the corpus lexicon to `compute_valid_ratio` as its
+# `word_set`. SHIPS FALSE: `valid_word_ratio` feeds `compute_quality_score` and
+# every threshold under it, so this moves scores on every line in the corpus --
+# the largest change this issue has proposed. Off, it is byte-identical.
+QUALITY_VOCABULARY_ENABLE = _get_str("TEXT_UTILS", "QUALITY_VOCABULARY_ENABLE", "false").strip().lower() in (
+    "true",
+    "1",
+    "yes",
+    "on",
+)
+# (#30, 2026-09-19) Strip bullet and marker glyphs alongside punctuation. The full
+# table ends in `♦zkoumaná`, `✓stopy`, `•nevelká` -- a marker fused to a real
+# word, which corrupts the lexicon at build time AND hides the real word at
+# lookup time. SHIPS FALSE because it changes tokenisation for every line.
+STRIP_SYMBOL_GLYPHS = _get_str("TEXT_UTILS", "STRIP_SYMBOL_GLYPHS", "false").strip().lower() in (
+    "true",
+    "1",
+    "yes",
+    "on",
+)
+#: The glyphs STRIP_SYMBOL_GLYPHS adds. Markers and bullets only -- no character
+#: that can carry meaning inside an excavation code.
+_SYMBOL_GLYPHS = "♦✓■□●○•▪▫★☆†‡§¶–—―‹›«»„“”‘’"
+# (#30 D14) The lexicon used as EVIDENCE rather than as a veto: a token with no
+# attestation anywhere in the collection convicts. This is the only mechanism in
+# this module that can reach `edelite` -- the phonotactically legal residue -- and
+# it is the only part of the witness that can ADD a conviction, so it is gated
+# separately and ships false. Double-gated in practice: it is read only when
+# SHORT_GARBAGE_WITNESS_ENABLE is also true, and only when a table is configured.
+# Measured on gold as stage 5c and REJECTED: +44 `Trash` catches for +21 `Clear`
+# losses, `Clear`-loss 42 -> 63 (docs/issue30/issue30_gold_ab_findings.md § 6). An
+# unattested token is not the same thing as a non-word, and rare real vocabulary
+# is the failure mode.
+SHORT_GARBAGE_LEXICON_CONVICT = _get_str("TEXT_UTILS", "SHORT_GARBAGE_LEXICON_CONVICT", "false").strip().lower() in (
+    "true",
+    "1",
+    "yes",
+    "on",
+)
+
+
+def _warn_uncoupled_witness() -> None:
+    """Emit the configuration advisories once at import.
+
+    Defined here, evaluated after the keys exist. Same house idiom as the
+    atrium_vocab check at the top of this module: a NOTE on stderr, never fatal,
+    and silence on the happy path -- which includes the shipped configuration,
+    where the witness flag is false and no lexicon is configured.
+
+    A tuple of one, deliberately: it held two until the de-gemination guard's
+    scale advisory went with the guard (#30 D40), and the next configuration
+    advisory belongs in it rather than in a second bespoke call site.
+    """
+    for warning in (uncoupled_witness_warning,):
+        message = warning()
+        if message:
+            print(f"[text_util] NOTE - {message}", file=sys.stderr)
+
+
 SYM_LET_DIG_NONTEXT = _get_str("TEXT_UTILS", "SYM_LET_DIG_NONTEXT", "true").strip().lower() in (
     "true",
     "1",
@@ -422,6 +752,12 @@ SYM_LET_DIG_NONTEXT = _get_str("TEXT_UTILS", "SYM_LET_DIG_NONTEXT", "true").stri
 
 ALLOWED_INTERNAL: frozenset = frozenset(_get_str("TEXT_UTILS", "ALLOWED_INTERNAL", ".-,+()\"'/—–:%;?!/"))
 _STRIP_CHARS: str = _get_str("TEXT_UTILS", "STRIP_CHARS", ".,;:!?()[]\"'/\\")
+# (#30 D27) Extended here rather than at the 28 call sites, so the builder and the
+# predicate cannot drift apart -- the divergence this repository has been bitten by
+# four times. Off by default: with the flag false this line is a no-op and
+# tokenisation is byte-identical to every table already built.
+if STRIP_SYMBOL_GLYPHS:
+    _STRIP_CHARS = _STRIP_CHARS + _SYMBOL_GLYPHS
 
 RE_TRASH_MULTI_SYMBOL: re.Pattern = re.compile(r"[^\w\s]{2,}")
 RE_TRASH_LDL: re.Pattern = re.compile(r"[a-zA-Z][^a-zA-Z\s]+[a-zA-Z]")
@@ -533,10 +869,18 @@ def _transform_word(w: str, glyph_map: dict) -> str | None:
     return "".join(reversed(out))
 
 
-ROT_WHITELIST: frozenset = _get_csv_set(
-    "TEXT_UTILS", "ROT_WHITELIST", "po,pod,do,od,on,ony,by,bez,ne,nebo,ven,den,zde,se,ve,mez,pouze,bude"
+ROT_WHITELIST_DEFAULT: frozenset = frozenset(
+    "po,pod,do,od,on,ony,by,bez,ne,nebo,ven,den,zde,se,ve,mez,pouze,bude".split(",")
 )
-_GHOST_REAL_WORD_COLLISIONS: frozenset = _get_csv_set("TEXT_UTILS", "GHOST_WORD_COLLISIONS", "no,bo")
+#: Hand-editable in setup/word_lists.txt [rot_whitelist] since 2026-09-22.
+ROT_WHITELIST: frozenset = word_list(
+    "rot_whitelist", ROT_WHITELIST_DEFAULT, _get_str("TEXT_UTILS", "ROT_WHITELIST", "")
+)
+_GHOST_REAL_WORD_COLLISIONS_DEFAULT: frozenset = frozenset({"no", "bo"})
+#: Hand-editable in setup/word_lists.txt [ghost_collisions] since 2026-09-22.
+_GHOST_REAL_WORD_COLLISIONS: frozenset = word_list(
+    "ghost_collisions", _GHOST_REAL_WORD_COLLISIONS_DEFAULT, _get_str("TEXT_UTILS", "GHOST_WORD_COLLISIONS", "")
+)
 
 
 def _build_ghostlist() -> frozenset:
@@ -715,12 +1059,43 @@ def compute_vowel_ratio(text: str) -> float:
     return sum(1 for c in denom if c in VOWEL_CHARS) / len(denom)
 
 
+def _is_allowed_token(core: str) -> bool:
+    """Is this token on the archive's hand-maintained allow list? (#30)
+
+    Reads `setup/word_lists.txt` `[allowed]`. It shipped EMPTY until 2026-10-01;
+    since then it carries @david-spacil's reviewed entries (#30 Q5a, PR #7), so
+    every caller below is live for those words and for nothing else.
+
+    WHAT IT MEANS, TWICE OVER. (1) The shape witness never reads it as evidence
+    of damage: `shape_garbage_clauses()` skips it (#30 Q5b, answered yes on
+    2026-10-01). (2) The token contributes NOTHING to the line's quality score. It
+    stops counting toward the invalid-word, weird-word, gibberish and fused-word
+    measurements -- which together are 0.60 of the score's weight. It does not
+    count as a GOOD word either: `compute_valid_ratio` treats it as non-evaluable,
+    the way `_is_neutral_token` already treats a unit. "Not debuffed" is the ask;
+    actively raising the ratio would be more than the ask.
+
+    MATCHING IS EXACT, case-folded and `_STRIP_CHARS`-stripped, and deliberately
+    does NOT fold diacritics -- unlike `_NOTATION_LABELS_FOLDED`, which does.
+    Folding here would mean that listing `jáma` also excuses `jama`, i.e. the
+    accent-stripped form OCR produces when it fails. That is the damaged reading,
+    and a list of words the archive says are real should not quietly also cover
+    the ways they come out wrong. An archive that wants both lists both.
+    """
+    lst = word_list("allowed", frozenset())
+    if not lst:
+        return False
+    return core.strip(_STRIP_CHARS).lower() in lst
+
+
 def detect_gibberish_words(text: str) -> int:
     count = 0
     for word in text.split():
         flagged = False
         for sub in _split_subtokens(word):
             core = sub.strip(_STRIP_CHARS)
+            if _is_allowed_token(core):
+                continue
             if len(core) < 4 or core.isupper():
                 continue
             numeric_chars = sum(1 for c in core if c.isdigit() or c in "-./,;:")
@@ -774,7 +1149,7 @@ def detect_wx_words(text: str) -> int:
         flagged = False
         for sub in _split_subtokens(word):
             core = sub.strip(_STRIP_CHARS)
-            if not core:
+            if not core or _is_allowed_token(core):
                 continue
             if sum(1 for c in core if c in "wW") >= WX_REPEAT_MIN or sum(1 for c in core if c in "xX") >= WX_REPEAT_MIN:
                 flagged = True
@@ -801,7 +1176,7 @@ def detect_fused_words(text: str) -> int:
         flagged = False
         for sub in _split_subtokens(word):
             core = sub.strip(_STRIP_CHARS)
-            if not core or not any(c.isalpha() for c in core):
+            if not core or not any(c.isalpha() for c in core) or _is_allowed_token(core):
                 continue
             if len(core) > 14 or _RE_FUSED_CONSONANT_RUN.search(core) or _RE_FUSED_VOWEL_RUN.search(core):
                 flagged = True
@@ -941,6 +1316,11 @@ def parse_line_splits(line_text: str) -> tuple[str, str, str]:
 
 def score_word(word: str) -> float:
     core = word.strip(_STRIP_CHARS)
+    # (#30) The archive's own allow list, before any shape test. A word a person
+    # has vouched for carries no weirdness, whatever it looks like -- which is the
+    # point, since every word on that list is there BECAUSE it looks wrong.
+    if _is_allowed_token(core):
+        return 0.0
     if len(core) == 1:
         if core in SINGLE_CHAR_ALLOWED or "." in word:
             return 0.0
@@ -1025,37 +1405,93 @@ def compute_word_weird_ratio(word_scores: list[tuple[str, float]]) -> float:
 # ---------------------------------------------------------------------------
 
 
-def calculate_perplexity_batch(texts: list[str], model, tokenizer, device) -> list[float]:
+#: What a line gets when its perplexity could not be computed at all: the worst quality.
+PPL_FAILED = 99999.0
+
+
+def _is_oom_error(exc: BaseException) -> bool:
+    """Whether *exc* is an out-of-memory error: ``torch.cuda.OutOfMemoryError``, or any
+    ``RuntimeError`` that says it ran out of memory (the CPU allocator's form). The same
+    test the LayoutReader window fallback applies (service/text_inference.py)."""
+    return type(exc).__name__ == "OutOfMemoryError" or (isinstance(exc, RuntimeError) and "memory" in str(exc).lower())
+
+
+def _perplexity_forward(texts: list[str], model, tokenizer, device) -> list[float]:
+    """One padded forward pass over *texts*; raises on any failure.
+
+    No ``labels=`` is passed to the model: with it, Hugging Face computes a second, upcast
+    cross-entropy over a further copy of the logits that this function then discards and
+    recomputes below (the logits are lines x padded tokens x the vocabulary, so each copy
+    is gigabytes at a batch of 32+). The logits themselves are the same either way.
+    """
     import torch
     from torch import nn
 
+    max_length = getattr(model.config, "max_position_embeddings", getattr(model.config, "n_positions", 1024))
+    encodings = tokenizer(texts, return_tensors="pt", padding=True, truncation=True, max_length=max_length)
+    input_ids = encodings.input_ids.to(device)
+    attention_mask = encodings.attention_mask.to(device)
+
+    target_ids = input_ids.clone()
+    target_ids[attention_mask == 0] = -100
+
+    with torch.no_grad():
+        outputs = model(input_ids, attention_mask=attention_mask)
+        logits = outputs.logits
+        shift_logits = logits[..., :-1, :].contiguous()
+        shift_labels = target_ids[..., 1:].contiguous()
+        loss_fct = nn.CrossEntropyLoss(reduction="none")
+        loss = loss_fct(shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1))
+        loss = loss.view(target_ids.size(0), -1)
+        non_masked = shift_labels != -100
+        seq_loss = (loss * non_masked).sum(dim=1)
+        num_tokens = non_masked.sum(dim=1).clamp(min=1)
+        ppl = torch.exp(seq_loss / num_tokens)
+        return ppl.tolist()
+
+
+def _release_accelerator_memory() -> None:
+    """Hand the cached CUDA blocks back after an out-of-memory batch (a no-op on CPU)."""
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+    except Exception:  # never let the cleanup turn a retry into a crash
+        pass
+
+
+def calculate_perplexity_batch(texts: list[str], model, tokenizer, device) -> list[float]:
+    """Perplexity of every line of *texts*, in order.
+
+    A batch that runs out of memory is split in halves and each half retried, down to one
+    line: a smaller batch costs time, never quality. Only a line that fails on its own
+    (or any error that is not an out-of-memory one) scores ``PPL_FAILED`` (99999), which the
+    callers report as a ``ppl_batch_lines`` ``skipped`` note. Before this, one out-of-memory
+    batch scored all of its lines 99999 (atrium-digital-convert#5: 1,280 lines in 6 documents).
+    """
     if not texts:
         return []
+    oom = False
     try:
-        max_length = getattr(model.config, "max_position_embeddings", getattr(model.config, "n_positions", 1024))
-        encodings = tokenizer(texts, return_tensors="pt", padding=True, truncation=True, max_length=max_length)
-        input_ids = encodings.input_ids.to(device)
-        attention_mask = encodings.attention_mask.to(device)
-
-        target_ids = input_ids.clone()
-        target_ids[attention_mask == 0] = -100
-
-        with torch.no_grad():
-            outputs = model(input_ids, attention_mask=attention_mask, labels=target_ids)
-            logits = outputs.logits
-            shift_logits = logits[..., :-1, :].contiguous()
-            shift_labels = target_ids[..., 1:].contiguous()
-            loss_fct = nn.CrossEntropyLoss(reduction="none")
-            loss = loss_fct(shift_logits.view(-1, shift_logits.size(-1)), shift_labels.view(-1))
-            loss = loss.view(target_ids.size(0), -1)
-            non_masked = shift_labels != -100
-            seq_loss = (loss * non_masked).sum(dim=1)
-            num_tokens = non_masked.sum(dim=1).clamp(min=1)
-            ppl = torch.exp(seq_loss / num_tokens)
-            return ppl.tolist()
+        return _perplexity_forward(texts, model, tokenizer, device)
     except Exception as e:
+        oom = _is_oom_error(e)
         print(f"[Error] Batch PPL ({len(texts)} lines) failed: {e}", file=sys.stderr, flush=True)
-        return [99999.0] * len(texts)
+    # Retried OUTSIDE the except block: while it is open, the traceback keeps the failed
+    # batch's tensors alive, and freeing them is the point of retrying smaller.
+    if oom and len(texts) > 1:
+        _release_accelerator_memory()
+        half = len(texts) // 2
+        print(
+            f"[Warn] Batch PPL out of memory at {len(texts)} lines: retrying as {half} + {len(texts) - half}.",
+            file=sys.stderr,
+            flush=True,
+        )
+        return calculate_perplexity_batch(texts[:half], model, tokenizer, device) + calculate_perplexity_batch(
+            texts[half:], model, tokenizer, device
+        )
+    return [PPL_FAILED] * len(texts)
 
 
 # ---------------------------------------------------------------------------
@@ -1256,7 +1692,17 @@ def determine_category(
     garbage_density: float = 0.0,
     is_upright_czech: bool = False,
     ghost_dominated: bool = False,
+    lang: str | None = None,
 ) -> tuple[str, str]:
+    """`lang` is the RAW detected language label, and only the vowel-run clause reads it.
+
+    (#30 D44.) Pass `original_lang` -- what FastText actually said -- and not the
+    stored `lang` column. That column has been through `remap_lang()`, which
+    rewrites any base outside EXPECTED_LANGS + TRUSTED_FOREIGN_LANGS to Czech, so
+    feeding it here would let a remap decide a phonotactic question. None is the
+    honest default for a caller that does not know, and it applies the general
+    threshold rather than an exemption.
+    """
     if word_count == 0 or not text_source.strip():
         return "Empty", "empty"
 
@@ -1282,6 +1728,47 @@ def determine_category(
     # all three let 65% escape to Noisy/Clear, while leaving hard sweep armed
     # trashed 600 of 600 and cost nothing on the pinned notation shapes.
     notation = "rule_domain_notation" not in DISABLED_RULES and is_domain_notation(text_source)
+
+    # ------------------------------------------------------------
+    # 0b. Web and e-mail addresses -- the category is chosen in config
+    # ------------------------------------------------------------
+    # (#30 D43) SHIPS EMPTY = this block is skipped and nothing changes.
+    #
+    # A recognised address gets whatever category `DOMAIN_NOTATION_CATEG` names,
+    # and EVERY address the pattern catches gets it -- not only the short ones.
+    # That is the point: `http://www.arub.cz` and
+    # `roku 1820 (http://www.hrady.cz/index.php?OID=1291).` are the same kind of
+    # thing to a reader, and today they land in different categories for reasons
+    # that are about token counts rather than about the address.
+    #
+    # WHY IT IS FIRST, above even the hard sweep. Every signal below this line
+    # measures how word-like a string is, and an address is not trying to be a
+    # word: `weird_ratio` is 1.00 on `http://www.arub.cz` because every character
+    # a URL needs past the letters is a symbol, `detect_fused_words` fires on the
+    # address shape rather than on a fusion, an `@` halves `valid_word_ratio`, and
+    # perplexity on a domain name is noise. Letting those decide and then
+    # correcting them afterwards is how this one line has had three different
+    # answers in this issue. If the archive has a rule for addresses, the rule is
+    # the answer.
+    #
+    # The `notation` exemption at gates 1a/1b is narrower and stays: it covers
+    # every notation shape (sigla, grid references, labels), where the perplexity
+    # routes are wrong but the rest of the cascade is not, and it deliberately
+    # does NOT exempt `rule_hard_sweep`. This route is only the URL/e-mail
+    # sub-shape, and only once an operator has said what that shape is worth.
+    #
+    # KNOWN LIMIT, measured rather than assumed: nothing here separates a
+    # correctly scanned address from a mis-scanned one. `e-mail: officeauappmost.cz`
+    # -- the same label with its `@` lost to the scanner -- already reads `Clear`
+    # today without this route. A configured category therefore applies to both,
+    # and `Noisy` is the honest setting for an archive that minds the difference.
+    if (
+        DOMAIN_NOTATION_CATEG
+        and "rule_domain_notation_categ" not in DISABLED_RULES
+        and _RE_NOTATION_URL.search(stripped)
+    ):
+        _fire("rule_domain_notation_categ")
+        return DOMAIN_NOTATION_CATEG, _DOMAIN_NOTATION_REASON[DOMAIN_NOTATION_CATEG]
 
     # ------------------------------------------------------------
     # 1. Hard sweep
@@ -1392,8 +1879,9 @@ def determine_category(
             # suspension of the rule rather than a narrowing of it. That is the
             # accepted debt: roughly 26,000 garbage lines reach `Clear`.
             #
-            # `_has_shape_garbage_evidence()` is the narrowing. It is a pure
-            # function of the text and it separates the half that IS separable
+            # `_has_shape_garbage_evidence()` is the narrowing. It is a function
+            # of the text -- plus, since D44, the raw language label for the
+            # vowel-run clause -- and it separates the half that IS separable
             # (`oueussd` from `malakofauna`); the phonotactically legal residue
             # (`edelite`) still needs a lexicon and is out of scope by design.
             #
@@ -1409,7 +1897,7 @@ def determine_category(
             # and the flag must not be flipped until the witness is measured
             # against a gold set (tools/gold/GOLD.md). Wiring and enabling are
             # deliberately separate commits.
-            _shape_witness = SHORT_GARBAGE_WITNESS_ENABLE and _has_shape_garbage_evidence(text_source)
+            _shape_witness = SHORT_GARBAGE_WITNESS_ENABLE and _has_shape_garbage_evidence(text_source, lang)
             if _shape_witness:
                 _fire("rule_short_garbage_witness")
             if qs < CATEG_TRASH_SCORE_MAX + 0.35 and (
@@ -1688,6 +2176,7 @@ def categorize_line(
     garbage_density: float = 0.0,
     is_upright_czech: bool = False,
     ghost_dominated: bool = False,
+    lang: str | None = None,
 ) -> tuple[str, float] | tuple[str, float, str]:
     categ, reason = determine_category(
         qs,
@@ -1703,7 +2192,27 @@ def categorize_line(
         garbage_density,
         is_upright_czech,
         ghost_dominated,
+        lang,
     )
+
+    # (#30 D47) The witness floor. Applied AFTER the whole cascade, so it can only
+    # ever turn a `Clear` into a `Noisy`: a `Trash`, `Noisy`, `Non-text` or `Empty`
+    # verdict is never touched. The text conditions are the witness's own --
+    # `shape_garbage_clauses()` already vetoes Czech diacritics, structured lines
+    # and domain notation, and applies the lexicon, the `[allowed]` list and the
+    # language-split vowel-run clause -- plus the short-line bound of gate 6. The
+    # SIGNAL half of gate 6 (weak language score, weirdness, quality score) is
+    # deliberately NOT required: digest AA4 measured that it excludes ~97% of the
+    # population. `lang` is the RAW detected label, as in `determine_category()`.
+    if (
+        SHORT_GARBAGE_WITNESS_FLOOR
+        and categ == CATEG_CLEAR
+        and "rule_short_garbage_witness_floor" not in DISABLED_RULES
+        and wc <= ISOLATED_CHAR_MIN_TOKENS
+        and shape_garbage_clauses(txt, lang)
+    ):
+        _fire("rule_short_garbage_witness_floor")
+        categ, reason = CATEG_NOISY, "noisy_threshold"
 
     # Label constants, not literals, on the three sites where a category name is
     # COMPARED against rather than emitted: the pairing of CATEG_TRASH with
@@ -1777,8 +2286,12 @@ def _has_strong_garbage_evidence(
 # which they cannot: `edelite` is phonotactically legal and stays out of reach.
 # That residue is the part of #30 that genuinely needs a lexicon (D14).
 #
-# What is REUSED from detect_fused_words(): _RE_FUSED_VOWEL_RUN, by reference,
-# so the FUSED_VOWEL_RUN_MIN config key steers both.
+# What is REUSED from detect_fused_words(): the vowel-run test and its vowel
+# class, and nothing shared any more. It used to be _RE_FUSED_VOWEL_RUN by
+# reference, so FUSED_VOWEL_RUN_MIN steered both; the witness now compiles its
+# own (_compile_vowel_run), and the run length comes from
+# SHORT_GARBAGE_WITNESS_VOWEL_RUN_MIN and the D44 language split
+# (_vowel_run_min_for). FUSED_VOWEL_RUN_MIN only supplies the default.
 #
 # What is deliberately NOT reused, and why -- each of these was measured, and
 # each has a test naming the counterexample:
@@ -1829,6 +2342,29 @@ def _has_strong_garbage_evidence(
 # re-scored against it (that needs the delivered batch, which is not in the
 # tree), so the flag stays false.
 #
+# UPDATE 2026-09-23 -- the gold A/B exists now. On the 2,064-row sidecar the flag
+# passes the adoption gate (stage 10e: errors 513 -> 503, `Clear`-loss unchanged,
+# p = 0.013; with the D44 split, 12 fixes / 1 break), and @david-spacil's re-score
+# of the 508 on `3b02959` reads 326 -> 336 with one break. The flag still ships
+# false: those labels reach 23 of the ~20k lines the witness fires on, so it now
+# waits on the annotation ask (docs/issue30/census.csv + sample.csv) and the open
+# questions in docs/issue30/README.md, not on code.
+#
+# UPDATE 2026-10-01 -- the annotation is back (docs/issue30/census.csv + sample.csv,
+# 249 of 357 rows labelled, every blank non-Czech). Text-only with this
+# predicate and no lexicon: projected tail errors 4,844 -> 1,180, census head
+# 339 -> 358 (decipherable damage, which this route answers `Trash`; Q6 keeps
+# that), `Clear`-loss 0 -- after D46 below, which her two `Clear` labels found.
+# The flag stays false until stage 12 scores the same labels on the real lines
+# with the lexicon armed (tools/project_annotation.py join).
+#
+# UPDATE 2026-10-01, evening -- stage 12 did, and the projection above is the
+# witness's verdict on TEXT, not its effect: this gate consults it only behind
+# the signal half above, and on Dana's 826 lines the armed run moved about 26
+# (errors 648 -> 642; gold 2,064: 510 -> 499, p = 0.0034, Clear-loss flat). The
+# flip rule is met and the flag is held for #30 D47 (a witness floor outside this
+# gate) and stage 13.
+#
 # The annotations themselves are now here -- tools/gold/sidecars/, joined onto a
 # delivered batch with `--gold-sidecar`; see tools/gold/GOLD.md, including its
 # provenance note on the 55 labels that changed when the 508 were re-annotated.
@@ -1843,13 +2379,334 @@ def _has_strong_garbage_evidence(
 _RE_TRIPLE_ALPHA_RUN: re.Pattern = re.compile(r"([^\W\d_])\1\1", re.IGNORECASE)
 _RE_INITIAL_CONSONANT_GEMINATE: re.Pattern = re.compile(r"^([bcdfghjklmnpqrstvwxz])\1", re.IGNORECASE)
 
+# (#30) Latin taxonomic endings. Closed, and deliberately only the ones that
+# CONTAIN a 3+ vowel run -- this exists to stop one clause convicting one class,
+# not to hand every Latinate word an exemption. `-aceae` (and `-oideae`) are the
+# botanical FAMILY suffix: every family name ends in it, so the vowel-run clause
+# was not making an occasional mistake on this class, it was convicting all of
+# it. Measured 2026-09-17 on the shipped predicate, 10 of 10: Poaceae, Rosaceae,
+# Fabaceae, Brassicaceae, Cyperaceae, Chenopodiaceae, Asteraceae, Betulaceae,
+# Fagaceae, Polygonaceae.
+#
+# `-idae` / `-inae` are the zoological family and subfamily suffixes; they carry
+# only a 2-vowel run today, so they are listed for the case where
+# SHORT_GARBAGE_WITNESS_VOWEL_RUN_MIN is ever lowered, not because they fire now.
+_RE_TAXONOMIC_SUFFIX: re.Pattern = re.compile(r"(?:aceae|oideae|eae|iae|aea|oidea|idae|inae)$", re.IGNORECASE)
+# Below this many letters a suffix match is a coincidence, not a taxon.
+_TAXONOMIC_SUFFIX_MIN_ALPHA: int = 5
+
+# (#30) A grid/context reference whose trailing sub-letter is FUSED to the roman
+# segment: `S-VIIIb`, `K-VIIIc`, `AA-VIIIb`. `is_domain_notation()` already
+# recognises the hyphenated form -- `S-VIII-b` and `B-XII-c` both return True --
+# and the unhyphenated twin differs from it by one character, so this is a
+# near-miss in that predicate rather than a new class. The roman-numeral exemption
+# does not reach it either: `_split_subtokens` yields `VIIIb`, and the fused
+# lowercase letter keeps `_RE_ROMAN_TOKEN` from matching, so `vowel_run` (`III`)
+# and `triple` convict it.
+#
+# Exempted HERE, witness-locally, and NOT by widening `is_domain_notation()`,
+# which is also read by `rule_short_garbage`'s outer guard and by the two
+# perplexity-only routes. Widening it there would change production behaviour for
+# these strings while the witness flag is still false; here it cannot change
+# anything until the flag flips -- the discipline the roman-numeral and taxonomy
+# exemptions follow.
+#
+# Measured on the 822-document corpus: seven distinct strings, one excavation's
+# grid series -- AA-VIIIb, E-VIIIb, F-VIIIb, J-VIIIb, K-VIIIc, L-VIIIb, S-VIIIb --
+# across 7 witnessed lines, 6 of them currently Clear. `S-VIIIb` is annotated
+# `Clear` in tools/gold/sidecars/issue30_gold_2067.csv, and on the gold surface
+# this guard vetoes exactly that line and none of the gold-Trash catches.
+#
+# HISTORY, because this guard has already been lost once. Added 2026-09-18
+# (`9bc218b`) and measured in the round-2 stage-5a re-run; deleted the same
+# evening by `cc4990e`, a lexicon commit whose diff it was not otherwise part of,
+# together with the German-diacritic veto `has_expected_lang_diacs()`. No test
+# pinned either, so nothing noticed until @david-spacil's 508-line re-check on
+# 2026-09-23 found `S-VIIIb` among the witness's two breaks on the default config.
+# With a lexicon configured `viiib` is attested and survives anyway; the shipped
+# config has none, which is why the guard matters. Restored on his report, and
+# now pinned by tests/test_shape_witness_vocabulary.py. The German veto was NOT
+# restored with it: the D44 language split now overlaps it, and it needs its own
+# measurement (30.plan.md D45).
+_RE_FUSED_GRID_REF: re.Pattern = re.compile(r"^[A-Za-z]{1,3}[-/][IVXLCDM]{1,7}[a-z]?$")
+
+# (#30 D46) Punctuation that joins two words without a space. `_split_subtokens`
+# splits on `. - –` only, so the witness used to read a comma-list such as
+# `erhalten,Siedelungsfund,gefunden` as ONE 30-letter token. On a token that long
+# `low_variety` fires on alphabet saturation alone -- a long string simply runs
+# out of new letters -- and a roman numeral fused by a comma (`XXX,1937,str`,
+# `III,konec`) no longer looks like a roman numeral to `_RE_ROMAN_TOKEN`.
+#
+# Found in @DanaKriv's 357 decisions (2026-10-01, docs/issue30/census.csv): the only
+# two at-risk lines she labelled `Clear` are exactly these, `XXX,1937,str. 21`
+# and `okraj sekt.III,konec`, and 41 of the rows she left blank -- readable German
+# find descriptions -- fired only because of a fused comma or slash. Splitting
+# here, measured on her labels with this predicate: projected tail errors
+# 1,282 -> 1,180, projected `Clear`-loss 102 -> 0, one gold-`Trash` row lost
+# (`MZMRISCH,IEU Stxdter`, whose `IEU` drops below MIN_ALPHA once separated).
+#
+# WITNESS-LOCAL, like the exemptions above: `_split_subtokens` also feeds the
+# quality metrics, so changing it would move `quality_score` on every line in the
+# corpus. The lexicon builder and `tools/ocr_neighbours.py` use this splitter too,
+# because a table keyed differently from the lookup misses silently.
+_RE_WITNESS_JOINERS: re.Pattern = re.compile(r"[,/;:()\[\]{}<>\"„“”«»=_?!*#]+")
+
+
+def _witness_subtokens(word: str) -> list[str]:
+    """Split one whitespace token the way the shape witness reads it (#30 D46).
+
+    Joining punctuation first (`_RE_WITNESS_JOINERS`), then `_split_subtokens`'s
+    `. - –`. Empty pieces are dropped.
+    """
+    return [sub for piece in _RE_WITNESS_JOINERS.split(word) for sub in _split_subtokens(piece)]
+
+
+@functools.lru_cache(maxsize=8)
+def _compile_vowel_run(min_run: int) -> re.Pattern:
+    """The vowel-run pattern at an arbitrary length, cached per length.
+
+    ``_RE_FUSED_VOWEL_RUN`` is compiled once at import from ``FUSED_VOWEL_RUN_MIN``
+    and therefore does not respond to ``override_constants``. The witness needs a
+    knob the sweep can actually move, so it compiles its own.
+    """
+    return re.compile(r"[aeiouyáéíóúýěůäöü]{%d,}" % max(2, int(min_run)), re.IGNORECASE)
+
+
+@functools.lru_cache(maxsize=4)
+def _read_token_lexicon(path: str, mtime: float, min_df: int) -> Mapping[str, int]:
+    """Load a token/document-frequency table, keyed on path+mtime so edits are seen.
+
+    Returns a READ-ONLY MAPPING token -> document frequency, restricted to tokens
+    at or above ``min_df``. It was a bare set until the de-gemination guard needed
+    to compare one token's frequency against another's; that guard is gone
+    (#30 D40, 2026-09-22) but the mapping stays, because the frequencies are what
+    ``min_df`` filters on here and what ``build_token_lexicon.py``'s provenance
+    header and per-collection columns are for. A set plus a parallel frequency
+    dict would be a second copy of this vocabulary and so a second thing to
+    drift, which is the argument already made for SHAPE_GARBAGE_CLAUSES.
+    Membership tests and ``bool()`` read identically on a mapping, so every
+    existing caller is unaffected. The proxy is because the result is cached: a
+    caller that mutated it would poison every later lookup in the process.
+
+    Format, as written by ``tools/build_token_lexicon.py``: ``#``-prefixed
+    provenance header, then ``token<TAB>document_frequency`` per line. ``mtime``
+    is a cache key and nothing else -- it is what lets a rebuilt table be picked
+    up inside one process, which the test suite relies on.
+
+    A comment is a line that starts with ``#`` AND CARRIES NO TAB. Both halves
+    are load-bearing: ``#`` is not in ``_STRIP_CHARS``, so the builder emits
+    tokens like ``#rdisico`` verbatim, and 27 of them appear in the first real
+    822-document table. Skipping every ``#``-initial line dropped them at load
+    with no symptom other than a count being quietly wrong. No escaping scheme is
+    needed to tell the two apart -- a header line has no tab (``# columns:
+    token<TAB>document_frequency`` is literal text), a data line always does.
+
+    A malformed or unreadable table yields an EMPTY set rather than an exception.
+    This predicate is consulted per sub-token inside the categoriser; a corrupt
+    optional file must degrade to "no vocabulary signal", never take the pipeline
+    down mid-corpus.
+    """
+    del mtime  # cache key only
+    try:
+        out: dict[str, int] = {}
+        # errors="replace" rather than strict: a table is operator-supplied and
+        # may have been moved through a Windows editor or a lossy transfer. A
+        # mangled byte should cost that one token, not the corpus run.
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            for line in fh:
+                stripped = line.rstrip("\n")
+                if not stripped:
+                    continue
+                token, sep, rest = stripped.partition("\t")
+                # Comment == leading '#' and no tab. See the docstring: a token
+                # may legitimately begin with '#'.
+                if not sep or (not token and stripped.startswith("#")):
+                    continue
+                if not token:
+                    continue
+                # Field 1 is the TOTAL document frequency and the only column this
+                # predicate reads. A multi-collection table adds per-collection
+                # columns after it (`token<TAB>total<TAB>ARUP<TAB>ARUB`), and
+                # int() on the whole remainder would raise on every data row --
+                # dropping the entire table and leaving the veto inert with no
+                # symptom. Take the field, not the rest of the line.
+                try:
+                    freq = int(rest.partition("\t")[0])
+                except ValueError:
+                    continue
+                if freq < min_df:
+                    continue
+                out[token] = freq
+        return MappingProxyType(out)
+    except (OSError, ValueError, UnicodeError):
+        return _EMPTY_LEXICON
+
+
+def token_lexicon() -> Mapping[str, int]:
+    """The vocabulary table currently in force, or an empty mapping when none is configured.
+
+    Maps token -> document frequency. Falsy when no table is configured, which is
+    the shipped state and what every caller gates on.
+    """
+    path = (SHORT_GARBAGE_LEXICON_PATH or "").strip()
+    if not path:
+        return _EMPTY_LEXICON
+    try:
+        mtime = os.path.getmtime(path)
+    except OSError:
+        return _EMPTY_LEXICON
+    return _read_token_lexicon(path, mtime, int(SHORT_GARBAGE_LEXICON_MIN_DF))
+
+
+def uncoupled_witness_warning(
+    witness_enabled: bool | None = None,
+    lexicon_path: str | None = None,
+) -> str | None:
+    """The shape witness armed with no vocabulary table: reach it on purpose or not at all.
+
+    Returns the advisory text, or ``None`` when the configuration is fine.
+
+    The reason is CORPUS EXPOSURE, measured over both full collections (#30). With
+    no table the witness would newly convict **8,529 strings / 37,555 lines** the
+    pipeline currently keeps as ``Clear`` or ``Noisy`` (stage 08f). With the
+    113,100-document table ``tools/build_token_lexicon.py`` builds, that falls to
+    **5,563 / 6,714** (stage 9b), an 82.1% drop in lines. What the table spares is
+    led by real words, not by damage: ``ppole`` (an abbreviation), ``ARCHAIA`` (the
+    excavator's name), ``Lepus europaeus``, ``Triticum monococcum``. Caveat: 9b ran
+    after D33 took URL and e-mail citations out of the witness's scope, so the
+    82.1% is the table and D33 together, not the table alone.
+
+    Gold cannot show this, and should not be read as if it could. The 2,064-row
+    sidecar labels 23 of the ~20k lines the witness reaches in the 822-document
+    gold corpus, and on those shape-only and table-armed score alike: round-2
+    stage 5a gave 500 errors, 5a-bis (with a table) 502, and @david-spacil's
+    508-line re-check with no table went 326 -> 336 (2026-09-23).
+
+    History: until 2026-09-23 this quoted 15,217 convictions against 5,107
+    confirmations ("1:3 against"), scored against ``categ`` rather than gold, and
+    90.5% of that gap was ``ppole``. The coupling survived; that arithmetic did not.
+
+    ADVISORY, NOT A GATE -- deliberately, and in the same spirit as the
+    ``atrium_vocab`` consistency check at the top of this module. The shape-only
+    configuration is measured on purpose -- every gold A/B from stage 5a on, and
+    the 508 re-check -- and a refusal would make those measurements impossible.
+    What must not happen is someone reaching it by accident.
+    """
+    if witness_enabled is None:
+        witness_enabled = SHORT_GARBAGE_WITNESS_ENABLE
+    if lexicon_path is None:
+        lexicon_path = SHORT_GARBAGE_LEXICON_PATH
+    if not witness_enabled or (lexicon_path or "").strip():
+        return None
+    return (
+        "SHORT_GARBAGE_WITNESS_ENABLE is true with no SHORT_GARBAGE_LEXICON_PATH. "
+        "Over both collections the witness would then newly convict 37,555 lines the "
+        "pipeline currently keeps; a 113,100-document table cuts that to 6,714, and "
+        "what it spares is led by real words (ppole, ARCHAIA, Lepus europaeus). "
+        "Unless you are deliberately measuring the shape-only configuration, build a "
+        "table with tools/build_token_lexicon.py."
+    )
+
+
+def lexicon_document_count(path: str | None = None) -> int | None:
+    """How many documents the configured token table was built over, or None.
+
+    Read from the ``# documents: N  lines: M`` provenance line
+    ``tools/build_token_lexicon.py`` writes. Cheap: it stops at the first
+    non-comment row rather than parsing the table.
+    """
+    if path is None:
+        path = SHORT_GARBAGE_LEXICON_PATH
+    path = (path or "").strip()
+    if not path:
+        return None
+    try:
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            for line in fh:
+                if not line.startswith("#"):
+                    break
+                m = re.search(r"#\s*documents:\s*([\d,]+)", line)
+                if m:
+                    return int(m.group(1).replace(",", ""))
+    except OSError:
+        return None
+    return None
+
+
+def _has_vocabulary_support(token: str) -> bool:
+    """Is this token attested as vocabulary elsewhere in the collection?
+
+    (#30 D14.) The residue the shape witness cannot reach -- `edelite`,
+    `vfetennl k.` -- is phonotactically legal, so no character-level test
+    separates it from `malakofauna`. Both sides of the issue thread concluded the
+    way out is a lexicon; the external Czech ones are CC BY-NC-SA, which would
+    change this pipeline's output-licence story, so this uses the corpus as its
+    own dictionary.
+
+    The signal is DOCUMENT frequency, not line frequency and not category: a
+    token that appears in many distinct documents is vocabulary, because OCR
+    noise is idiosyncratic to the scan that produced it. Document frequency is a
+    property of the data, so consulting it does not re-introduce the circularity
+    of scoring against the pipeline's own labels -- which is the mistake this
+    issue has already made once, in the sweep objective.
+
+    Veto only: it can withdraw a conviction, never add one.
+
+    KNOWN LIMIT, and it is now accepted rather than carved out (#30 D40,
+    2026-09-22). The premise above -- that OCR noise is idiosyncratic to its
+    scan -- FAILS for a pre-printed form scanned across the collection: there the
+    error is systematic, reproduces once per document and accrues document
+    frequency exactly like a word. A de-gemination guard used to carve that shape
+    out, letting the witness convict a doubled-initial token although the table
+    attested it. It is gone, on the data provider's answer and on measurement:
+
+    * `ppole` (`KULTURA: ppole`) is not the artefact the guard was built for --
+      it is *popelnicová pole*, the standard abbreviation, `pp` doubled for a
+      plural exactly as in `pp.` for pages (@david-spacil, 2026-09-19).
+    * `ssuti` / `ssutí` / `ssutě` are not artefacts either -- they are an old
+      spelling of `suť` (@david-spacil, 2026-09-22). So of the eight tokens the
+      guard was fitted to, FOUR are real language and four are damage, and the
+      frequency gap the threshold sat in had vocabulary on both sides of it.
+    * At full scale the table attests all eight, and zero of the 42,853 rows in
+      the witness queue carried any of them. The guard fired on nothing.
+
+    So attestation still does not by itself prove vocabulary, and a templated
+    artefact can still be wrongly exempted here. That is a recorded, accepted
+    limit with no known separating signal -- three were tried and none survived
+    the full-collection table -- rather than a gap with a patch waiting.
+
+    What this function does at full scale, measured directly rather than inferred
+    from this docstring: `Mammalia`, `Triticum`, `Lepus`, `Linum`, `Arvicola` and
+    their common epithets are all attested and exempt through this path once a
+    lexicon is configured -- the taxonomic false-positive class this issue spent
+    time on (see the corpus profile) turned out to be mostly this mechanism
+    working as designed, not a predicate gap.
+    """
+    lex = token_lexicon()
+    if not lex:
+        return False
+    lowered = token.lower()
+    return lowered in lex
+
 
 # The clause names, in report order. Canonical here rather than in the reporting
 # tool, because a second copy of this vocabulary is a second thing to drift.
-SHAPE_GARBAGE_CLAUSES: tuple[str, ...] = ("vowel_run", "triple", "initial_geminate", "low_variety")
+SHAPE_GARBAGE_CLAUSES: tuple[str, ...] = ("vowel_run", "triple", "initial_geminate", "low_variety", "no_vocabulary")
 
 
-def _has_shape_garbage_evidence(text_source: str) -> bool:
+def _vowel_run_min_for(lang: str | None) -> int:
+    """How many consecutive vowels convict, given the detected language (#30 D44).
+
+    `lang` is a FastText label (`deu_Latn`) or a bare base (`deu`); anything
+    unrecognised, including None, gets the general threshold. That default is
+    deliberate: not knowing the language must not silently exempt a line.
+    """
+    if lang and _lang_base(lang) in SHORT_GARBAGE_WITNESS_VOWEL_RUN_EXEMPT_LANGS:
+        return SHORT_GARBAGE_WITNESS_VOWEL_RUN_MIN_EXEMPT
+    return SHORT_GARBAGE_WITNESS_VOWEL_RUN_MIN
+
+
+def _has_shape_garbage_evidence(text_source: str, lang: str | None = None) -> bool:
     """Phonotactic evidence that a short line is OCR garbage, not rare vocabulary.
 
     Read only when ``SHORT_GARBAGE_WITNESS_ENABLE`` is set. See the block above
@@ -1859,10 +2716,10 @@ def _has_shape_garbage_evidence(text_source: str) -> bool:
     The verdict is ``bool()`` of the clause list, so the predicate and the
     diagnosis cannot disagree -- see ``shape_garbage_clauses()``.
     """
-    return bool(shape_garbage_clauses(text_source))
+    return bool(shape_garbage_clauses(text_source, lang))
 
 
-def shape_garbage_clauses(text_source: str) -> list[str]:
+def shape_garbage_clauses(text_source: str, lang: str | None = None) -> list[str]:
     """Which witness clauses ``text_source`` satisfies, in ``SHAPE_GARBAGE_CLAUSES`` order.
 
     THE single implementation of the witness. It exists because there used to be
@@ -1879,12 +2736,20 @@ def shape_garbage_clauses(text_source: str) -> list[str]:
     short-circuited on the first hit; this does not, because the report needs the
     full breakdown. The flag ships false, so nothing in production pays for it.
     """
-    if has_cz_diacs(text_source) or is_structured_line(text_source) or is_domain_notation(text_source):
+    # Line-level vetoes. `_RE_FUSED_GRID_REF` is the unhyphenated twin of a shape
+    # `is_domain_notation()` already accepts -- see its comment for why it lives
+    # here and how it was once lost.
+    if (
+        has_cz_diacs(text_source)
+        or is_structured_line(text_source)
+        or is_domain_notation(text_source)
+        or _RE_FUSED_GRID_REF.match(text_source.strip())
+    ):
         return []
 
     found: set[str] = set()
     for word in text_source.split():
-        for sub in _split_subtokens(word):
+        for sub in _witness_subtokens(word):
             core = sub.strip(_STRIP_CHARS)
             letters = [c for c in core if c.isalpha()]
 
@@ -1925,8 +2790,86 @@ def shape_garbage_clauses(text_source: str) -> list[str]:
             if _RE_ROMAN_TOKEN.match("".join(letters)):
                 continue
 
-            # 3+ consecutive vowels: `oueussd`, `cuxoaid`, `IDIDIDIDIDIDUOID`.
-            if _RE_FUSED_VOWEL_RUN.search(core):
+            # LATIN TAXONOMY is exempt, and like the roman-numeral exemption it
+            # sits above every clause rather than inside the one that fires
+            # today. Same reason: `-aceae` is a vowel run now, and on a longer
+            # name it is one clause away from the others.
+            #
+            # The block above this function called this class "KNOWN false
+            # positives ... a real but THIN margin, since it depends on a signal
+            # outside this predicate" -- the margin being that most such lines
+            # carry weird_ratio 0.0 and never reach the route. Measuring the
+            # class was recorded as a PRECONDITION for enabling the flag. It has
+            # now been measured against the predicate, and the predicate convicts
+            # the whole botanical family suffix, 10 of 10 (see
+            # _RE_TAXONOMIC_SUFFIX). Leaning on weird_ratio to keep taxonomy out
+            # of Trash is leaning on a signal this predicate does not control, in
+            # a corpus whose archaeobotany and osteology reports are exactly
+            # where `-aceae` lives.
+            #
+            # NOT covered here, and left to _has_vocabulary_support() on purpose:
+            # `Naiade` (aia), `Beuern` (eue), `Oueste` (Oue). Those are name-like
+            # rather than suffixed, and inventing a "legal vowel sequence" list to
+            # catch them is the same guessing that cost 12 lines the last time
+            # this predicate was widened by reading rather than by measuring.
+            if len(letters) >= _TAXONOMIC_SUFFIX_MIN_ALPHA and _RE_TAXONOMIC_SUFFIX.search("".join(letters)):
+                continue
+
+            # LISTED BY THE ARCHIVE is exempt (#30 Q5b). @david-spacil, for
+            # himself and @DanaKriv, 2026-10-01: "yes, listed means never evidence
+            # of damage". A token in setup/word_lists.txt `[allowed]` is skipped by
+            # every clause below, `no_vocabulary` included, so it can never be the
+            # reason a line is discarded -- the step the list's header used to call
+            # deliberately not taken. Still a veto only: a listed word cannot
+            # convict anything, and an unlisted word on the same line is judged as
+            # before (`ssuti vfetennl` still fires, on `vfetennl` alone if at all).
+            # Live since @david-spacil's reviewed entries landed (Q5a, PR #7).
+            if _is_allowed_token(core):
+                continue
+
+            # ATTESTED VOCABULARY is exempt (#30 D14). Inert unless
+            # SHORT_GARBAGE_LEXICON_PATH points at a built table, so this is a
+            # no-op in the shipped configuration. This is what reaches the loans
+            # the suffix rule above deliberately does not -- `Naiade`, `Beuern`,
+            # `Oueste` -- without anybody guessing at which vowel sequences a
+            # European language is allowed to contain.
+            if _has_vocabulary_support(core):
+                continue
+
+            # THE RESIDUE, and the only clause here that can ADD a conviction.
+            # `edelite` and `vfetennl k.` are spelled the way words are spelled,
+            # so no shape test reaches them; what they lack is attestation. A
+            # token absent from a document-frequency table built over the whole
+            # collection appeared in no other document, which is what OCR noise
+            # looks like and what vocabulary does not.
+            #
+            # Off by default and gated on its own key, because "unattested" is
+            # not "not a word": a genuinely rare term, a personal name, or a
+            # token the table was simply built too narrowly to contain all land
+            # here. That is a measurement, not a reading: stage 5c on gold,
+            # `Clear`-loss 42 -> 63, rejected (issue30_gold_ab_findings.md § 6).
+            if (
+                SHORT_GARBAGE_LEXICON_CONVICT
+                and token_lexicon()
+                and not _has_vocabulary_support(core)
+                and "".join(letters).isalpha()
+            ):
+                found.add("no_vocabulary")
+
+            # Consecutive vowels: `oueussd`, `cuxoaid`, `IDIDIDIDIDIDUOID`.
+            #
+            # THE LENGTH DEPENDS ON THE LANGUAGE (#30 D44). Three in a row is
+            # evidence of damage because CZECH has no triphthongs; German and
+            # French have them natively, so in those languages the same run means
+            # nothing and the clause was convicting `Dauerleihe` (*aue*) and
+            # `FEUILLETON` (*eui*), both scanned correctly. Four is required
+            # there, and four still convicts in every language -- a German line
+            # can be scanned into `oueussd` as easily as a Czech one.
+            #
+            # `lang` is None for every caller that does not know the language,
+            # and then the general threshold applies, which is the behaviour this
+            # clause had before the split.
+            if _compile_vowel_run(_vowel_run_min_for(lang)).search(core):
                 found.add("vowel_run")
 
             # The same character three times: `sektlll`, `NINNNIC`. Capped by
@@ -1934,9 +2877,12 @@ def shape_garbage_clauses(text_source: str) -> list[str]:
             if len(letters) <= SHORT_GARBAGE_WITNESS_TRIPLE_MAX_ALPHA and _RE_TRIPLE_ALPHA_RUN.search(core):
                 found.add("triple")
 
-            # A doubled CONSONANT in first position: `Tthts`, `rragment`. No
-            # European orthography opens a word that way; a bare `^(.)\1` would
-            # also take `Aachen`, which several do.
+            # A doubled CONSONANT in first position: `Tthts`, `rragment`. Rare in
+            # European orthography but NOT impossible: abbreviations and old
+            # spellings open that way -- `ppole` (*popelnicová pole*) and `ssuti`
+            # (old *suť*) are real words this clause convicts (#30 W2). An
+            # attesting table spares them, and since Q5b so does an `[allowed]`
+            # entry (the veto above). A bare `^(.)\1` would also take `Aachen`.
             if _RE_INITIAL_CONSONANT_GEMINATE.match(core):
                 found.add("initial_geminate")
 
@@ -2209,7 +3155,7 @@ def _looks_like_date_or_document_reference(text_source: str) -> bool:
 
 _RE_TOC_ENTRY = re.compile(r"^\d{1,2}[.,]\s+\S.*\s(?:\d{1,3}|\S{1,2}\s*[-–]\s*\d{1,3})$")
 
-_DOCUMENT_HEADER_LABELS = frozenset(
+_DOCUMENT_HEADER_LABELS_DEFAULT = frozenset(
     {
         "obsah",
         "úvod",
@@ -2223,6 +3169,8 @@ _DOCUMENT_HEADER_LABELS = frozenset(
         "resumé",
     }
 )
+#: Hand-editable in setup/word_lists.txt [header_labels] since 2026-09-22.
+_DOCUMENT_HEADER_LABELS = word_list("header_labels", _DOCUMENT_HEADER_LABELS_DEFAULT)
 
 
 def _looks_like_document_structure_label(text_source: str) -> bool:
@@ -2282,6 +3230,7 @@ def is_domain_notation(text_source: str) -> bool:
         or _RE_NOTATION_COUNT.match(stripped)
         or _RE_NOTATION_ABBR.match(stripped)
         or _RE_NOTATION_ABBR_SP.match(stripped)
+        or _RE_NOTATION_URL.search(stripped)
     )
 
 
@@ -2333,7 +3282,12 @@ def compute_digit_ratio(text: str) -> float:
 
 _RE_INITIALS = re.compile(r"^([A-ZÁČĎÉĚÍŇÓŘŠŤŮÚÝŽ]\.?){1,3}$")
 _RE_DOTTED_ABBREV = re.compile(r"^[A-Za-zÀ-ÖØ-öø-ſ]{1,4}(\.[A-Za-zÀ-ÖØ-öø-ſ]{1,4})*$")
-_NEUTRAL_LEXICON = frozenset({"dr", "x", "mm", "cm", "dm", "km", "g", "dkg", "kg", "ha", "hl", "ks", "m", "l"})
+#: Units and measurement abbreviations: not judged as words when the program
+#: measures how much of a line is real vocabulary. Hand-editable in
+#: setup/word_lists.txt [neutral] since 2026-09-22; the literal below is the
+#: fallback and is what shipped before the file existed.
+_NEUTRAL_LEXICON_DEFAULT = frozenset({"dr", "x", "mm", "cm", "dm", "km", "g", "dkg", "kg", "ha", "hl", "ks", "m", "l"})
+_NEUTRAL_LEXICON = word_list("neutral", _NEUTRAL_LEXICON_DEFAULT)
 _RE_ROMAN_TOKEN = re.compile(r"^[IVXLCDM]{1,7}$")
 _RE_ABBREV_NUM = re.compile(r"^[A-Za-zÀ-ÖØ-öø-ſ]{1,4}[.,]\d+[a-z]?$")
 
@@ -2408,7 +3362,7 @@ def _fold_diacritics(word: str) -> str:
 # it was the single false positive in the reviewer's 30-line sample. A closed set
 # is the same technique `_DOCUMENT_HEADER_LABELS` already uses, and it costs
 # nothing in recall because the vocabulary of these labels is genuinely small.
-_NOTATION_LABELS = frozenset(
+_NOTATION_LABELS_DEFAULT = frozenset(
     {
         "lokalisace",
         "lokalizace",
@@ -2453,6 +3407,10 @@ _NOTATION_LABELS = frozenset(
         "komponenta",
     }
 )
+#: Hand-editable in setup/word_lists.txt [notation_labels] since 2026-09-22. The
+#: closure is the point -- see the comment above -- so the file is the place to
+#: add a real label, not a reason to reopen the pattern.
+_NOTATION_LABELS = word_list("notation_labels", _NOTATION_LABELS_DEFAULT)
 _NOTATION_LABELS_FOLDED = frozenset(_fold_diacritics(w) for w in _NOTATION_LABELS)
 
 # `Lokalisace: MM-III`, `sonda: III` — a KNOWN label, then a grid reference.
@@ -2495,6 +3453,35 @@ _RE_NOTATION_ABBR_SP = re.compile(
 )
 
 _RE_NOTATION_HAS_CODE_CHAR = re.compile(r"[A-ZÁČĎÉĚÍŇÓŘŠŤŮÚÝŽ0-9]")
+
+# (#30 D33) URL / e-mail. A citation or contact string is NOTATION pointing
+# outward, not vocabulary -- and a document-frequency table can never attest a
+# citation quoted once. Measured on the stage-8 delivery: with the vocabulary
+# lexicon armed, boilerplate URLs that repeat verbatim across many documents
+# (`http://www.arub.cz`, 5,309 lines, a page footer) are ALREADY exempt via
+# `_has_vocabulary_support()` -- attested by repetition, the same mechanism
+# that exempts `ppole`. What survives is the opposite case: a UNIQUE
+# bibliographic citation, quoted once or twice, that a document-frequency
+# table can never attest by construction. 144 such lines in the stage-8
+# at-risk population, none appearing more than 3 times, 0 false positives
+# against the other 7,289 at-risk survivors and 0 against the predicate's own
+# documented garbage fixtures.
+#
+# `.search()`, not `.match()` -- unlike the four patterns above. A citation
+# sits inside a sentence ("roku 1820 (http://www.hrady.cz/...)."; "3 Zdroj
+# https://www.obec-kolicin.cz/historie-obce/"), so anchoring the whole line
+# would miss the shape this exists to catch. That is safe specifically
+# because the trigger substrings -- a URL scheme, `www.`, an `@`-address, or
+# an explicit `e-mail:` label -- essentially never occur in ordinary
+# Czech/German archival prose by accident; nothing else in this predicate
+# needed that argument, and this is the only shape that relies on it.
+# `e-mail:` is matched on the LABEL alone, without requiring a clean address
+# after it, because OCR damage sometimes costs the `@` itself
+# (`e-mail: officeauappmost.cz`) while leaving the label intact.
+_RE_NOTATION_URL = re.compile(
+    r"https?://\S+|www\.[\w-]+\.\w{2,4}\S*|\be-?mail\b\s*:|[\w.+-]+@[\w-]+\.[\w.-]+",
+    re.IGNORECASE,
+)
 
 
 _DMG_SYMBOLS = frozenset("^»«■□¤§~<>#*@$")
@@ -2552,6 +3539,40 @@ def is_clean_reference(text: str) -> bool:
     return bool(_RE_REF_MARKER.search(text) or _RE_MEASUREMENT.search(text))
 
 
+@functools.lru_cache(maxsize=1)
+def quality_word_set() -> "frozenset | None":
+    """The vocabulary `compute_valid_ratio` should score against, or None.
+
+    (#30 D26.) `compute_valid_ratio` has always taken a `word_set` and production
+    has never passed one, so it falls back to a SHAPE test -- at least 3
+    characters, at least 70% alphabetic, nothing strange -- and
+    ``compute_valid_ratio("oueussd edelite sektlll")`` returns **1.00**. That
+    value feeds `compute_quality_score`, which feeds every threshold in this
+    module, so the pipeline's primary "is this text?" signal is fooled precisely
+    by the population issue #30 is about.
+
+    Returns None unless ``QUALITY_VOCABULARY_ENABLE`` is set AND a lexicon is
+    configured, which keeps the shipped behaviour byte-identical.
+
+    KNOWN INCOMPLETE, and measured before it is extended: this is exact
+    attestation only. A damaged-but-readable line scores 0 -- ``1 fraament
+    okraie`` is "1 fragment okraje" and every token of it is unattested in its
+    damaged form -- so the armed signal punishes recoverable text as hard as
+    garbage. `tools/ocr_neighbours.recoverability` draws the distinction this
+    lacks. Stage 07b was meant to measure what the gap costs and was void -- this
+    function's own cache froze the flag, and D28 fixed the class. Its re-run,
+    08d, measured the armed flag as a decisive REJECT on gold: 212 fixes against
+    540 breaks, `Clear`-loss 40 -> 180. So the flag stays false, and no neighbour
+    index goes into production on the idea alone. Adding the complexity first
+    and checking afterwards is how this issue acquired three instrument-level
+    errors.
+    """
+    if not QUALITY_VOCABULARY_ENABLE:
+        return None
+    lex = token_lexicon()
+    return frozenset(lex) if lex else None
+
+
 def compute_valid_ratio(text: str, word_set: set | None = None) -> float:
     words = text.split()
     if not words:
@@ -2568,7 +3589,10 @@ def compute_valid_ratio(text: str, word_set: set | None = None) -> float:
                 valid += 1
         else:
             next_core = words[wi + 1].strip(_STRIP_CHARS) if wi + 1 < len(words) else ""
-            if _is_neutral_token(core, word, next_core):
+            # (#30) Non-evaluable, exactly as a unit is: the token neither helps
+            # the ratio nor hurts it. Counting it VALID would raise the score,
+            # which is more than "not debuffed".
+            if _is_allowed_token(core) or _is_neutral_token(core, word, next_core):
                 continue
             evaluable += 1
             if core.lower() in SHORT_VALID_WORDS or core in SINGLE_CHAR_ALLOWED:
@@ -2615,21 +3639,156 @@ def is_non_text(text: str) -> bool:
     return False
 
 
+#: (#30 D27, 2026-09-19) `STRIP_SYMBOL_GLYPHS` -> `_STRIP_CHARS` is a DERIVED
+#: constant: `_STRIP_CHARS` is built once at import time from the flag (see the
+#: `if STRIP_SYMBOL_GLYPHS:` line above `_STRIP_CHARS`'s declaration), the same
+#: way `ROT_GHOSTLIST` and `_LANG_DIACRITICS` are built once from their own
+#: sources -- but unlike those two, it was never added to the "not rebuilt by
+#: `override_constants()`" list, so overriding the flag alone was a silent
+#: no-op. This is exactly how `tools/ab_constant_eval.py` measured
+#: `STRIP_SYMBOL_GLYPHS` true vs false as bit-identical on every one of the
+#: 2,064 gold rows (issue #30 stage 07c): the flag moved, `_STRIP_CHARS` did
+#: not, and every `.strip(_STRIP_CHARS)` call site downstream never saw the
+#: difference. Mapping a flag name to the derived attribute it feeds lets
+#: `override_constants()` rebuild it in the same pass, restored the same way
+#: everything else here already is.
+_DERIVED_FROM_FLAG: dict[str, str] = {
+    "STRIP_SYMBOL_GLYPHS": "_STRIP_CHARS",
+}
+
+
+#: (#30 D26/D27, 2026-09-20) The SECOND form of the same bug, and the reason
+#: `_DERIVED_FROM_FLAG` above was a fix for one instance rather than for the
+#: class. A module-level constant built once at import is not the only way a
+#: flag's value gets frozen: a ZERO-ARGUMENT `functools.lru_cache` function
+#: freezes it too, on its first call, for the life of the process.
+#:
+#: `quality_word_set()` is exactly that. It reads `QUALITY_VOCABULARY_ENABLE`,
+#: takes no arguments, and is cached at `maxsize=1`. `tools/ab_constant_eval.py`
+#: runs both arms of an A/B IN ONE PROCESS, reference value first, so the
+#: `False` arm caches `None` and the `True` arm is handed the same `None` back.
+#: That is how stage 07b measured `QUALITY_VOCABULARY_ENABLE` true vs false as
+#: bit-identical on all 2,064 gold rows with 0 discordant rows -- the identical
+#: signature 07c produced, from the identical cause, written up at the time as a
+#: population-coverage result rather than as an unarmed flag.
+#:
+#: Registering the flag against the caches it feeds lets `override_constants()`
+#: clear them on the way in AND on the way out, so neither arm inherits the
+#: other's answer. `_read_token_lexicon` and `_compile_vowel_run` need no entry
+#: here: both are keyed on their arguments, so a changed threshold is a changed
+#: cache key and they were never able to go stale.
+#:
+#: Pinned by `test_no_unregistered_zero_arg_cache_reads_a_flag`, which fails if a
+#: new zero-argument cache appears in this module without an entry below.
+_CACHES_FROM_FLAG: dict[str, tuple[str, ...]] = {
+    "QUALITY_VOCABULARY_ENABLE": ("quality_word_set",),
+    # `quality_word_set()` resolves through `token_lexicon()`, so the two keys
+    # that decide WHICH table it gets have to clear it as well -- otherwise an
+    # A/B over the lexicon path or its threshold reads the first arm's table.
+    "SHORT_GARBAGE_LEXICON_PATH": ("quality_word_set",),
+    "SHORT_GARBAGE_LEXICON_MIN_DF": ("quality_word_set",),
+}
+
+
+def _clear_flag_caches(mod, name: str) -> None:
+    """Drop any cached value that was computed from ``name``'s previous value."""
+    for fn_name in _CACHES_FROM_FLAG.get(name, ()):
+        fn = getattr(mod, fn_name, None)
+        clear = getattr(fn, "cache_clear", None)
+        if clear is not None:
+            clear()
+
+
 @contextmanager
 def override_constants(values, modules=None):
     if modules is None:
         modules = (sys.modules[__name__],)
     saved: list[tuple[object, str, object]] = []
+    touched_caches: list[tuple[object, str]] = []
     try:
         for mod in modules:
             for name, value in values.items():
+                if name in _CACHES_FROM_FLAG:
+                    _clear_flag_caches(mod, name)
+                    touched_caches.append((mod, name))
                 if hasattr(mod, name):
                     saved.append((mod, name, getattr(mod, name)))
                     setattr(mod, name, value)
+                derived_name = _DERIVED_FROM_FLAG.get(name)
+                if derived_name is None or not hasattr(mod, derived_name) or not hasattr(mod, "_SYMBOL_GLYPHS"):
+                    continue
+                base = getattr(mod, derived_name)
+                glyphs = mod._SYMBOL_GLYPHS
+                extended = base.endswith(glyphs) and glyphs != ""
+                if value and not extended:
+                    saved.append((mod, derived_name, base))
+                    setattr(mod, derived_name, base + glyphs)
+                elif not value and extended:
+                    saved.append((mod, derived_name, base))
+                    setattr(mod, derived_name, base[: -len(glyphs)])
         yield
     finally:
         for mod, name, old in reversed(saved):
             setattr(mod, name, old)
+        # Clear again on the way out. Anything computed while the override was
+        # active was computed from the overridden value, and the caller is now
+        # back on the shipped one -- leaving it cached would leak the arm's
+        # answer into whatever runs next, which is the same defect one step
+        # later.
+        for mod, name in touched_caches:
+            _clear_flag_caches(mod, name)
+
+
+#: The quality-score weights; the score is divided by their sum, so it must stay positive.
+QS_WEIGHT_NAMES = (
+    "QS_WEIGHT_VALID_WORD",
+    "QS_WEIGHT_WEIRD",
+    "QS_WEIGHT_PERPLEXITY",
+    "QS_WEIGHT_LENGTH",
+    "QS_WEIGHT_GARBAGE",
+    "QS_WEIGHT_VOWEL",
+    "QS_WEIGHT_LANG",
+    "QS_WEIGHT_GIBBERISH",
+    "QS_WEIGHT_FUSED",
+)
+
+
+def constant_invariant_errors(values: Mapping[str, object] | None = None) -> list[str]:
+    """What is wrong with the constants the categoriser relies on; empty when they are sound.
+
+    Three relations must hold, or a boundary silently inverts: ``CATEG_TRASH_SCORE_MAX <
+    CATEG_NOISY_SCORE_MAX`` (the Trash band sits below the Noisy one), ``SHORT_PPL_CAP <
+    PERPLEXITY_THRESHOLD_MAX`` (a capped short line is never scored as worse than the
+    ceiling), and the quality-score weights sum to more than zero (the score is divided
+    by their sum).
+
+    With *values*, a name found there replaces the live module value, as a candidate
+    configuration in ``tools/recategorize_from_csv.py`` does; without it, the live constants
+    are read. Read at call time, not at import, so a research run that varies a constant through
+    ``ATRIUM_TEXT_UTILS_*`` can still import the module: the entry points that serve or
+    produce categories (the service start, ``classify_TEXT.main``) call this and refuse to run.
+    """
+    live = sys.modules[__name__]
+
+    def _g(name: str) -> float:
+        if values is not None and name in values:
+            return float(values[name])  # type: ignore[arg-type]
+        return float(getattr(live, name))
+
+    errors: list[str] = []
+    if _g("CATEG_TRASH_SCORE_MAX") >= _g("CATEG_NOISY_SCORE_MAX"):
+        errors.append(
+            f"CATEG_TRASH_SCORE_MAX ({_g('CATEG_TRASH_SCORE_MAX'):g}) must be < "
+            f"CATEG_NOISY_SCORE_MAX ({_g('CATEG_NOISY_SCORE_MAX'):g})"
+        )
+    if _g("SHORT_PPL_CAP") >= _g("PERPLEXITY_THRESHOLD_MAX"):
+        errors.append(
+            f"SHORT_PPL_CAP ({_g('SHORT_PPL_CAP'):g}) must be < PERPLEXITY_THRESHOLD_MAX "
+            f"({_g('PERPLEXITY_THRESHOLD_MAX'):g})"
+        )
+    if sum(_g(name) for name in QS_WEIGHT_NAMES) <= 0:
+        errors.append("the QS_WEIGHT_* constants must sum to a positive number")
+    return errors
 
 
 def compute_quality_score(
@@ -2712,3 +3871,8 @@ def compute_quality_score(
 
     final_score = max(0.0, base_score - short_penalty)
     return min(1.0, final_score)
+
+
+# Advisory, evaluated last so both the constants and uncoupled_witness_warning()
+# exist. See _warn_uncoupled_witness for the measurement behind it.
+_warn_uncoupled_witness()

@@ -1,0 +1,44 @@
+# Fast-lane + API meta-contract test deps (issue #32).
+# Heavy model deps are intentionally omitted — the API contract test
+# importorskips them, running only where the full stack exists.
+pytest>=9.1.1
+pytest-cov
+# pinned exactly, with pydantic: see service/requirements.txt (atrium-project#32 round 2)
+fastapi==0.141.1
+pydantic==2.13.5
+httpx
+python-multipart>=0.0.32
+openapi-spec-validator
+# (#37) atrium_document.schema.json conformance check for the json-keys
+# extractor's doc.json accretion output.
+jsonschema>=4.26.0
+# tests/test_env_contract.py parses docker-compose.yml to confirm the env-var
+# contract is actually delivered (atrium-project#60). Declared explicitly rather than
+# relying on openapi-spec-validator to pull it in transitively, so this guard does not
+# silently stop running the day that transitive edge disappears.
+PyYAML
+
+# atrium-project#10: make the fast lane actually SELF-CONTAINED.
+#
+# Thread G ("requirements-test.txt present & self-contained") was recorded as
+# closed for this repo, but it was not: a clean venv built from this file alone
+# — the documented Tier-2 method — aborted with **17 collection errors**
+# (13 × `No module named 'pandas'`, 4 × `numpy`), taking roughly a third of the
+# suite with it. CI never noticed because docker.yml installs
+# `setup/requirements.txt service/requirements.txt setup/requirements-test.txt`
+# together (docker.yml:44), so the runtime deps are always present there.
+#
+# The cost of that gap is silent and asymmetric: a contributor following the
+# documented method sees a third of the suite fail to collect and cannot tell an
+# environment problem from a real regression, while CI stays green. These are
+# test-time imports of first-party modules that legitimately depend on pandas
+# and numpy, so declaring them here is the fix; the pins mirror
+# setup/requirements.txt exactly so the two can never resolve differently.
+pandas>=3.0.6,<4.0
+numpy>=2.4.6
+tqdm>=4.70.1
+lxml>=6.1.3
+# (#31) the text-lines readers' optional dependencies, declared here so their tests
+# RUN in the fast lane instead of skipping; pins mirror setup/requirements.txt.
+pypdfium2>=5.13.0,<6.0
+charset-normalizer>=3.5.1,<4.0

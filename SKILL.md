@@ -1,11 +1,11 @@
 ---
-name: atrium-alto-postprocess
+name: atrium-ocr-postprocess
 description: Classifies OCR output quality line-by-line - uploads ALTO XML pages or plain-text files and returns per-line language identification (FastText), perplexity (Qwen2.5-0.5B), noise metrics, a composite quality score, and a Clear/Noisy/Trash/Non-text/Empty category, with LayoutReader reading-order reconstruction for ALTO input. Use this skill to filter and triage digitized historical documents after OCR, before NLP enrichment or translation.
 ---
 
-# ATRIUM ALTO Postprocessing Skill 🧹
+# ATRIUM ocr-postprocess Skill 🧹
 
-This skill provides agent access to the **ATRIUM ALTO Postprocessing** service -
+This skill provides agent access to the **ATRIUM ocr-postprocess** service (formerly alto-postprocess) -
 language identification and quality classification for OCR'd document lines.
 It follows a **server-client** design: a FastAPI server (in `service/`) runs the
 models (LayoutReader, FastText, Qwen2.5-0.5B perplexity), and a zero-dependency
@@ -55,7 +55,7 @@ bash scripts/server.sh --gpu    # Docker with GPU
 bash scripts/server.sh --local  # force local uvicorn (no Docker)
 ```
 
-Idempotent: exits immediately if GET /info already answers; waits for
+Idempotent: exits immediately if GET /ready already answers 200; waits for
 first-run warmup.
 
 ### 2. Classify
@@ -80,7 +80,7 @@ python3 scripts/atrium_postprocess.py --info
 ### 3. ATRIUM Document JSON accretion (optional)
 
 Accrete this tool's `pages[]`/`lines[]` fields onto an existing baseline record
-(accretion contract, `docs/document_schema.md` in the hub repo — note the API's field is
+(accretion contract, the hub's [document schema](https://github.com/ufal/atrium-project/blob/test/docs/document_schema.md) — note the API's field is
 named `document_record` on the way in and `document_json_out` on the way out):
 
 ```bash
@@ -112,8 +112,8 @@ every per-line metric, not just the summary columns).
 running server (Swagger UI at /docs).
 5. Exit code 2 (unreachable): start the server (bash scripts/server.sh)
 and retry once. Exit code 3 (server error): the client already retried
-502/503/504 three times - check GET /health?deep=true and server logs;
-do not loop.
+a 503 or 504, and a 502 that is not final, three times - check
+GET /health?deep=true and server logs; do not loop.
 6. Size limits: files over 10 MB are rejected - split multi-page ALTO
 exports into single pages first, and tell the user you did so.
 7. Do not bypass the API by importing the model code directly - the server is

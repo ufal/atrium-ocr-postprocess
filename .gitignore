@@ -3,7 +3,7 @@ __pycache__/
 .venv/
 venv/
 env/
-/venv-alto/
+/venv-ocr/
 # setup_api_server.sh / Docker build artifacts (fetched, not source)
 v3/
 models/
@@ -15,6 +15,8 @@ coverage.xml
 .cache/
 *.log
 *.zip
+# (#31 Phase 4) the ZIP-bundle sample of the text-lines inputs is committed.
+!data_samples/TEXT/*.zip
 .env
 .idea/
 ./.idea/
@@ -22,3 +24,7 @@ coverage.xml
 # under paradata/ stay tracked (gitignore does not untrack tracked files) —
 # this only stops every local pipeline run from showing up as untracked noise.
 paradata/*.json
+# ./data is the compose bind mount; the directory is committed (data/.gitkeep) so a
+# clone owns it, and everything a run writes into it stays untracked. (atrium-project#69)
+/data/*
+!/data/.gitkeep

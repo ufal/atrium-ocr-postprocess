@@ -2,17 +2,17 @@
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.10+-blue.svg" title="Python Version"></a>
   <a href="https://huggingface.co/facebook/fasttext-language-identification"><img src="https://img.shields.io/badge/%F0%9F%A4%97%20HF-fasttext--langID-yellow.svg" title="FastText Language Identification"></a>
   <a href="https://huggingface.co/Qwen/Qwen2.5-0.5B"><img src="https://img.shields.io/badge/%F0%9F%A4%97%20HF-Qwen2.5--0.5B-yellow.svg" title="Qwen2.5-0.5B Perplexity"></a>
-  <a href="https://opensource.org/license/mit/"><img src="https://img.shields.io/github/license/ufal/atrium-alto-postprocess" title="MIT License"></a>
+  <a href="https://opensource.org/license/mit/"><img src="https://img.shields.io/github/license/ufal/atrium-ocr-postprocess" title="MIT License"></a>
   <a href="https://atrium-research.eu/"><img src="https://img.shields.io/badge/funded%20by-ATRIUM-8A2BE2.svg" title="ATRIUM Project"></a>
 </p>
 
 ---
 
-# ATRIUM ALTO Postprocessing - Agent Skill 🤖🧹
+# ATRIUM ocr-postprocess - Agent Skill 🤖🧹
 
 ### Goal: let coding agents classify OCR line quality via a server-client skill
 
-This branch (`agent-skill`) packages the **ATRIUM ALTO Postprocessing API service**
+This branch (`agent-skill`) packages the **ATRIUM ocr-postprocess API service** (formerly alto-postprocess)
 together with a **Skill for coding agents** (Claude Code, Codex, Gemini/Antigravity).
 The design follows a strict server-client split:
 
@@ -25,7 +25,7 @@ The design follows a strict server-client split:
   it: quality-category semantics, routing rules, error playbooks.
 
 For the batch pipeline, statistics tooling, and full project documentation, see the
-[`test`](https://github.com/ufal/atrium-alto-postprocess/tree/test) branch - this
+[`test`](https://github.com/ufal/atrium-ocr-postprocess/tree/test) branch - this
 branch intentionally carries only what the skill needs.
 
 ### Table of contents 📑
@@ -43,8 +43,8 @@ branch intentionally carries only what the skill needs.
 ## Quick start 🚀
 
 ```bash
-git clone -b agent-skill https://github.com/ufal/atrium-alto-postprocess.git
-cd atrium-alto-postprocess
+git clone -b agent-skill https://github.com/ufal/atrium-ocr-postprocess.git
+cd atrium-ocr-postprocess
 
 bash scripts/server.sh                                                      # start the server
 python3 scripts/atrium_postprocess.py small_data_samples/CTX000000001-1.alto.xml
@@ -59,20 +59,20 @@ python3 scripts/atrium_postprocess.py small_data_samples/CTX000000001-1.alto.xml
 ### Claude Code
 
 ```bash
-git clone -b agent-skill https://github.com/ufal/atrium-alto-postprocess.git \
-    ~/.claude/skills/atrium-alto-postprocess
+git clone -b agent-skill https://github.com/ufal/atrium-ocr-postprocess.git \
+    ~/.claude/skills/atrium-ocr-postprocess
 ```
 
-Restart Claude Code - the skill is available as `/atrium-alto-postprocess` and is
+Restart Claude Code - the skill is available as `/atrium-ocr-postprocess` and is
 selected automatically for OCR quality-filtering requests. For a project-local
-install, clone into `.claude/skills/atrium-alto-postprocess` inside the target
+install, clone into `.claude/skills/atrium-ocr-postprocess` inside the target
 repository.
 
 ### Codex
 
 ```bash
-git clone -b agent-skill https://github.com/ufal/atrium-alto-postprocess.git \
-    ~/.codex/skills/atrium-alto-postprocess
+git clone -b agent-skill https://github.com/ufal/atrium-ocr-postprocess.git \
+    ~/.codex/skills/atrium-ocr-postprocess
 ```
 
 The skill is detected automatically in the next Codex session.
@@ -82,10 +82,10 @@ The skill is detected automatically in the next Codex session.
 Clone the branch into your project and point `AGENTS.md` at it:
 
 ```
-Use the ATRIUM ALTO postprocessing skill from
-`atrium-alto-postprocess/SKILL.md` for classifying OCR line quality.
-Start the server with `bash atrium-alto-postprocess/scripts/server.sh`, then run
-`python3 atrium-alto-postprocess/scripts/atrium_postprocess.py [FILES...]`.
+Use the ATRIUM ocr-postprocess skill from
+`atrium-ocr-postprocess/SKILL.md` for classifying OCR line quality.
+Start the server with `bash atrium-ocr-postprocess/scripts/server.sh`, then run
+`python3 atrium-ocr-postprocess/scripts/atrium_postprocess.py [FILES...]`.
 ```
 
 Update any install with `git pull` inside the cloned skill directory.
@@ -101,7 +101,7 @@ bash scripts/server.sh --gpu    # Docker with GPU overlay
 bash scripts/server.sh --local  # force local uvicorn via setup/setup_api_server.sh
 ```
 
-The script is idempotent and health-waits on `/info`. Port defaults to `8000`
+The script is idempotent and waits on `/ready` (readiness). Port defaults to `8000`
 (`ATRIUM_AP_PORT` to change).
 
 ## Client usage 🪶
@@ -142,7 +142,7 @@ anti-pattern checklist):
 ## Contacts 📧
 
 **For support write to:** lutsai.k@gmail.com responsible for the
-[GitHub repository](https://github.com/ufal/atrium-alto-postprocess)
+[GitHub repository](https://github.com/ufal/atrium-ocr-postprocess)
 
 ### Acknowledgements 🙏
 

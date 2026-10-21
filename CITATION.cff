@@ -1,8 +1,8 @@
 cff-version: 1.2.0
 message: "If you use this software, please cite it as below."
-title: "ATRIUM's ALTO XMLs postprocessor: a tool to extract contents, fix word splits, and categorize textlines by language & severity of OCR errors."
-version: "1.4.7-beta"
-date-released: "2026-09-09"
+title: "ATRIUM's OCR-output postprocessor: a tool to extract contents, fix word splits, and categorize textlines by language & severity of OCR errors, for ALTO XML and other OCR and text-bearing formats."
+version: "1.12.1-beta"
+date-released: "2026-10-20"
 authors:
   - family-names: "Lutsai"
     given-names: "Kateryna"
@@ -16,5 +16,27 @@ authors:
   - family-names: "Křivánková"
     given-names: "Dana"
     orcid: https://orcid.org/0000-0001-5718-9447
-repository-code: "https://github.com/ufal/atrium-alto-postprocess"
+repository-code: "https://github.com/ufal/atrium-ocr-postprocess"
 license: "MIT"
+references:
+  - type: standard
+    title: "ATRIUM document record schema (atrium_document)"
+    authors:
+      - family-names: "Lutsai"
+        given-names: "Kateryna"
+        orcid: https://orcid.org/0009-0002-4773-2797
+      - family-names: "Straňák"
+        given-names: "Pavel"
+        orcid: https://orcid.org/0000-0002-6895-8536
+      - family-names: "Novák"
+        given-names: "David"
+        orcid: https://orcid.org/0009-0005-8722-0245
+      - family-names: "Křivánková"
+        given-names: "Dana"
+        orcid: https://orcid.org/0000-0001-5718-9447
+    version: "1.0"
+    date-released: "2026-09-25"
+    repository-code: "https://github.com/ufal/atrium-project"
+    url: "https://github.com/ufal/atrium-project/releases/tag/doc-schema-v1"
+    commit: "544298bb5817fe57d8521579700332184b86d778"
+    notes: "The document record this tool reads and writes. Schema 1.0 is frozen as tag doc-schema-v1; tests/test_schema_freeze.py checks this repository's vendored atrium_document.schema.json against the frozen copy atrium_document.schema.doc-schema-v1.json, and para-drift keeps both byte-identical to hub tag v1."

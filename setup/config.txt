@@ -1,11 +1,11 @@
 [DOCUMENT]
-# atrium-project#13 (paradata pair): directory of <doc_id>.document.json records,
+# atrium-llm-enrich#13 (document-JSON contract): directory of <doc_id>.document.json records,
 # shared across every stage below. Empty = disabled (default); every stage then
 # behaves exactly as it did before this section existed. Overridable per-run via
 # the DOCUMENT_JSON_DIR env var (see document_hook.resolve_document_json_dir).
 JSON_DIR =
 # atrium-project#10 (D5): how the ORIGINAL input was acquired, written once by
-# page_split.py as `source.origin`. Since Issue #18 §1a that value is what
+# page_split.py / text_split.py as `source.origin`. Since Issue #18 §1a that value is what
 # AUTHORISES this repo to write the positional blocks (pages/content/lines/tables),
 # so it must start with an ORIGIN_ORIGINATORS prefix this repo owns — ABBYY-ALTO,
 # ocr:<engine> or vlm:<engine>; anything else makes the mixed-plane check abstain
@@ -13,7 +13,26 @@ JSON_DIR =
 # Empty = use the per-format default (ABBYY-ALTO for ALTO XML input, ocr:generic for
 # generic JSON OCR input). Set it when the engine is known, e.g. `ocr:pero`.
 # Overridable per-run via --source-origin or the DOCUMENT_SOURCE_ORIGIN env var.
+# (#31) text_split.py (--method text-lines) records a truthful per-format default
+# when this is empty: ocr:page-xml / ocr:hocr / ABBYY-ALTO / ocr:pdf-text-layer (a PDF
+# whose text is an invisible OCR layer) / ocr:generic (TXT, MD, CSV, JSON, TEI, XML)
+# for OCR output, and digital-born-<kind> for DOCX, ODT, XLSX, PPTX, EPUB, RTF, HTML
+# and visible-text PDF. A digital-born record belongs to atrium-digital-convert: this
+# path then writes only `source` into it (document_hook guard; POST /score_record adds
+# line-quality scores only); CSV outputs are unaffected. A value set HERE overrides that default for every text-lines input too.
 SOURCE_ORIGIN =
+# (#31 Phase 4) Per-kind origin for text-lines inputs (text_split.py and /process):
+# `<kind> = <origin>` pairs separated by commas, kinds as in text_formats.READERS
+# (txt, md, csv, tsv, json, jsonl, xml, tei, html, docx, xlsx, pptx, odt, ods, odp,
+# epub, rtf, eml, mbox, srt, vtt, …). Precedence: --source-origin > the
+# DOCUMENT_SOURCE_ORIGIN env var > this key > SOURCE_ORIGIN > the truthful default.
+# The use case: atrium-digital-convert reads PDF, DOCX, ODT, ODS, XLSX, RTF, DOC and XLS
+# (since its v1.1.0-beta), so a digital-born PPTX/ODP/EPUB/HTML/e-mail record ends up
+# with `source` only. When files of such a kind are really OCR or transcription exports, say so,
+# e.g. `xlsx = ocr:generic, pptx = ocr:generic`, and this repo writes their
+# pages/content/lines. Keep it truthful: `source.origin` is provenance other tools
+# read. An unknown kind or an origin no originator claims stops the run (exit 2).
+SOURCE_ORIGIN_BY_KIND =
 
 [EXTRACT]
 INPUT_CSV          = ./data_samples/test_alto_stats.csv
@@ -38,6 +57,16 @@ WORKERS_MAX_JSON   = 16
 # source page for a document into a single pages[] row. Overridable per-run via
 # the --force-single-page CLI flag, which takes precedence over this value.
 FORCE_SINGLE_PAGE_JSON = false
+# (#31) text-lines method (extract_TEXT_2_TXT.py): classify-ready page text, and the
+# per-document line tables (file,page_num,line_num,text,page_label) — keep the line
+# tables OUT of [CLASSIFY].OUTPUT_LINES_LOG (the script refuses to write there).
+OUTPUT_TXT_TEXT    = ./data_samples/PAGE_TXT_TEXT
+OUTPUT_LINES_TEXT  = ./data_samples/DOC_LINES_TEXT
+# (#31 Phase 5) The text-lines page statistics CSV: run_pipeline writes it in the stats
+# stage and passes it to extract_TEXT_2_TXT.py and classify_TEXT.py (--input-csv), so a
+# text-lines run no longer overwrites INPUT_CSV, the ALTO/JSON methods' CSV. Unset:
+# text-lines shares INPUT_CSV, as before.
+INPUT_CSV_TEXT     = ./data_samples/text_stats.csv
 
 [CLASSIFY]
 INPUT_CSV = data_samples/test_alto_stats.csv
@@ -86,9 +115,7 @@ WQX_CHARS = wqxWQX
 # (#7 Tier 1) Czech function words recognisable upright; their mirror/rotation
 # ghost images (ROT_GHOSTLIST) are derived at import time. Changing this key
 # requires re-import — override_constants() does not rebuild the ghostlist.
-ROT_WHITELIST = po,pod,do,od,on,ony,by,bez,ne,nebo,ven,den,zde,se,ve,mez,pouze,bude
 # (#7 Tier 1) Ghost images colliding with real words — never count as ghosts.
-GHOST_WORD_COLLISIONS = no,bo
 # (#7 Tier 1) Trailing filler chars stripped before headline/short-line
 # checks. Unicode-escape decoded (configparser strips leading whitespace, so
 # the leading space is written as \x20).
@@ -163,18 +190,54 @@ LANG_SCORE_REMAP_FAR        = 0.50
 # toggle rather than a code change, since this exact call has flipped twice.
 LANG_REMAP_ALWAYS           = true
 SINGLE_CHAR_ALLOWED         = aAiIuUvVzZkKsS
-SHORT_VALID_WORDS           = a,i,k,o,s,u,v,z,se,si,po,na,za,ze,do,od,ke,ku,ve,ní,mi,ti,by,je,to,co,ač,my,ty,on,ji,jí,už,až
 REPEAT_ALLOWED_CHARS        = oOuU
 REPEATED_DOUBLE_MIN         = 2
 VOWEL_RATIO_LOW             = 0.20
 VOWEL_RATIO_HIGH            = 0.70
+# ── word lists that live in setup/word_lists.txt ───────────────────────────
+# These five moved to setup/word_lists.txt on 2026-09-22, where they can be
+# edited by hand with a note beside each entry. The keys stay here, EMPTY, and
+# they still WIN if you set them: empty means "not overridden, use the file", so
+# the member list lives in one place while your ability to override it -- from
+# this file, from a LANGID_CONFIG pointed elsewhere, or from
+# ATRIUM_TEXT_UTILS_<KEY> in the environment -- is unchanged.
+#
+# Setting one here is the right move for a one-off experiment. Editing the file
+# is the right move for something this archive believes.
+SHORT_VALID_WORDS           =
+SHORT_EXCEPTION_TOKENS      =
+LDL_UNITS                   =
+ROT_WHITELIST               =
+GHOST_WORD_COLLISIONS       =
+
+# ── word lists that did NOT move to setup/word_lists.txt, and why ──────────
+# Five word lists moved there on 2026-09-22 (SHORT_VALID_WORDS,
+# SHORT_EXCEPTION_TOKENS, LDL_UNITS, ROT_WHITELIST, GHOST_WORD_COLLISIONS).
+# These three stayed, each for a concrete reason rather than for lack of time:
+#
+#   ACADEMIC_TITLES     is matched CASE-SENSITIVELY (`core.rstrip(".") in
+#                       ACADEMIC_TITLES`, no .lower()), and word_lists.txt folds
+#                       every token to lower case. Moving it would silently stop
+#                       `PhDr` matching.
+#   METADATA_MARKERS    carries TRAILING SPACES that are load-bearing -- `obr `
+#                       with a space matches the marker and not `obrázek` -- and
+#                       word_lists.txt strips whitespace per line. It is also the
+#                       one list read with _get_str().split(",") rather than
+#                       _get_csv_set(), which is how those spaces survive today.
+#   LDL_ALLOWED_FOLLOW  is PUNCTUATION, not words: . , / : % - ; ? ) =. It belongs
+#                       with the character sets above, and putting a character
+#                       class in a file called "word lists" would undo the reason
+#                       that file exists.
+#
+# Each is fixable -- a quoted form, or a per-section case flag -- but none is
+# fixable without making the file harder to edit by hand, which is the one thing
+# it is for.
+
 ACADEMIC_TITLES             = PhDr,MUDr,JUDr,MVDr,RNDr,PaedDr,CSc,DrSc,Ing,Mgr,Bc,PhD,DiS,prof,doc
 LDL_ALLOWED_FOLLOW          = .,/:%-;?)=
-LDL_UNITS                   = m,cm,mm,g,kg,km,ha,l,ml
 # (#3 2026-07-02 calibration) is_forgiven_headline: bare unit/abbreviation
 # tokens and short numbered headlines/captions get a Trash/Non-text -> Noisy
 # floor instead of falling through the ordinary valid-word-ratio scoring.
-SHORT_EXCEPTION_TOKENS       = mm,cm,m,g,kg,km,ha,l,ml,tb,neg,obr,str,č,čneg
 HEADLINE_MAX_WORDS          = 8
 # Pure-digit tokens longer than this are treated as GARBAGE, not harmless
 # structural numbering — keeps archive/stamp codes (e.g. "6694", "1920")
@@ -192,10 +255,116 @@ ISOLATED_CHAR_MIN_TOKENS    = 3
 # that reaches `oueussd` / `sektlll` / `cuxoaid` / `Tthts I` without touching
 # `malakofauna` / `diapozitiv` / `Equus caballus` / `vrstva` -- the four signals
 # `_has_strong_garbage_evidence()` misses on that whole population.
-# Do not turn this on before measuring it against annotated lines: the in-tree
-# sample corpus holds 15 lines and cannot validate it. See
-# agent_dev_logs/plans/30.plan.md.
+# Measured against the 2,064 scored rows of the human gold set
+# (tools/gold/sidecars/issue30_gold_2067.csv), 2026-09-22: WITH the document
+# smoothing it passes the adoption gate (errors 513 -> 503, Clear-loss 38 -> 38,
+# p = 0.013; 503 -> 502 / 38 -> 37 with the vowel-run language split below);
+# per line, smoothing off, it FAILS it (Clear-loss 53 -> 54). Those gold runs
+# predate the grid-guard restore (#30 D45, 2026-09-23); @david-spacil's re-score
+# of his 508 lines on `3b02959`, which has it, confirms the direction: 326 -> 336
+# agreement, one break (`Lokolieace: •VIII,`). Still off: it waits
+# on @DanaKriv's annotation of the lines it would newly discard and her agreement
+# on what `Trash` means. The in-tree sample corpus (15 lines) cannot validate it.
+# See agent_dev_logs/plans/30.plan.md and docs/issue30/README.md.
+#
+# AND DO NOT TURN IT ON WITHOUT A LEXICON. These two keys are one decision, and
+# the reason is corpus exposure, not gold. Over both full collections the witness
+# alone would newly convict 8,529 strings / 37,555 lines the pipeline currently
+# keeps (stage 08f); with the 113,100-document table it is 5,563 / 6,714 (stage
+# 9b, which also carries D33), an 82.1% drop, and what the table spares is led by
+# real words -- `ppole`, `ARCHAIA`, `Lepus europaeus`, `Triticum monococcum`.
+# Gold cannot show the difference: it labels 23 of the ~20k lines the witness
+# reaches, and there shape-only and armed score alike (round-2 5a 500 errors,
+# 5a-bis 502; the no-table 508 re-check goes 326 -> 336). No table ships in this
+# repository -- build one with tools/build_token_lexicon.py (see below).
+# (History: this block used to quote 15,217 convictions against 5,107, "1:3
+# against", scored against `categ`; 90.5% of that gap was `ppole`.)
+# text_util prints an advisory if you set this without SHORT_GARBAGE_LEXICON_PATH
+# -- advisory, not fatal, because the shape-only configuration is measured on
+# purpose (every gold A/B from stage 5a on, and the 508 re-check).
+# 2026-10-01: stage 12 scored it on @DanaKriv's lines and on the 2,064 gold,
+# lexicon armed: 12g errors 510 -> 499, Clear-loss 38 = 38, p = 0.0034; 12f
+# 648 -> 642, Clear-loss 1 = 1. The flip rule is met, and the flag is HELD so it
+# is decided together with the witness floor (#30 D47, stage 13). The text-only
+# projection (4,844 -> 1,180) is NOT the effect: gate 6 consults the witness on
+# about 3% of the lines it would convict (digest AA4).
 SHORT_GARBAGE_WITNESS_ENABLE            = false
+# (#30 D47) The witness floor: a short line (<= ISOLATED_CHAR_MIN_TOKENS words) that
+# the shape witness convicts is never `Clear` -- where the cascade would say
+# `Clear` it says `Noisy` (rule `rule_short_garbage_witness_floor`). Applied after
+# the cascade, so it never touches a `Trash`, `Noisy`, `Non-text` or `Empty`
+# verdict, and it does not need the signal half of gate 6. INDEPENDENT of
+# SHORT_GARBAGE_WITNESS_ENABLE. Boolean on purpose (Q1: convicted means damaged,
+# not necessarily illegible). Read the lexicon the same way the witness does:
+# without SHORT_GARBAGE_LEXICON_PATH it would convict real words.
+# SHIPS OFF, AND STAYS OFF (@david-spacil, 2026-10-05). Measured in stage 13
+# (13b-13e), witness off, D46 table armed: Dana's 826 lines 648 -> 346 errors
+# (303 fixes / 1 break; the 303 are 53 distinct strings, two of them 56%), the
+# 2,064 gold 510 -> 508 (2 fixes / 0 breaks). Neither sidecar holds the strings
+# the floor breaks. Over BOTH FULL COLLECTIONS with this file as shipped (no
+# table), the floor moved 25,448 lines (23,044 Clear -> Noisy, 2,322 Noisy ->
+# Trash, 82 Clear -> Trash), and a blind annotation of the change found ~3,920
+# fixed against ~13,509 broken: ARCHAIA, Latin taxa and `vodovod` (what a table
+# attests) and `PVIII`-type grid labels (what nothing exempts).
+# Clear-loss: per line the floor answers Noisy only, but it lowers its page's
+# Clear share and median score, which can fire page rule 1 in
+# apply_document_postprocessing() -- and that rule sends EVERY Noisy line on the
+# page to Trash. ~1,250 lines annotated Clear (e.g. the `IV-2` table cells)
+# reached Trash that way, invisible to the sidecars' Clear-loss. Read this rule
+# on a corpus diff (tools/corpus_change.py), not on the sidecars. Alongside the
+# witness flag the sidecars split in sign (+12 errors on Dana's lines, -9 on the
+# gold), so the witness flag is held too. Stage 16 measures the floor WITH a
+# table against the same annotation before anyone reconsiders it.
+SHORT_GARBAGE_WITNESS_FLOOR             = false
+# (#30) The hand-maintained word lists. THIS IS THE FILE FOR PEOPLE WHO KNOW THE
+# MATERIAL: units, reference labels, section headings, and -- the section that did
+# not exist before 2026-09-22 -- ordinary open-class words this archive uses that
+# the program keeps getting wrong (German museum terms, Latin species names, old
+# spellings, local abbreviations, place names).
+#
+# Why it had to exist: every word list the code carried was CLOSED-class -- Czech
+# function words, units, academic titles, catalogue markers. The open-class
+# vocabulary this issue keeps mis-convicting (`Dauerleihe`, `Kaukasus`, `ssuti`,
+# `ppole`, the taxonomy) lived only in the test suite, and the one mechanism meant
+# to cover it -- SHORT_GARBAGE_LEXICON_PATH, a corpus frequency table -- ships
+# EMPTY and no such table exists anywhere in this repository. So in the shipped
+# configuration there was no open-class protection at all. The `[allowed]` section
+# fills the gap: since 2026-10-01 it carries @david-spacil's reviewed entries
+# (Q5a, PR #7), and an entry reaches both the quality score and -- Q5b, answered
+# yes the same day -- the witness's shape tests, which skip a listed word, so it
+# can never be the reason a line is discarded.
+#
+# Every section in that file is a VETO: it can stop a conviction, never create
+# one. Relative paths resolve against text_util.py, not the working directory.
+# EMPTY = fall back to the values compiled into text_util.py, which is exactly the
+# behaviour that shipped before the file existed.
+WORD_LISTS_PATH                         = setup/word_lists.txt
+# (#30 D43) What category a recognised web or e-mail address gets.
+# @david-spacil, 2026-09-22: "`Trash` = illegible. Anything legible is `Clear`,
+# easily decipherable is `Noisy` -- regardless of how useful the line is to us."
+# `http://www.arub.cz` is scanned perfectly correctly on 5,309 lines, so by that
+# definition it is `Clear`; D33 moved it Trash -> Noisy, the right direction and
+# one step short.
+# A CATEGORY NAME rather than an on/off switch, because this line has already had
+# three answers in this issue -- Trash, then Noisy, now arguably Clear -- and a
+# fourth is defensible (Non-text, which the README says "may be checked for
+# identifiers of finds/sites"). Settling it should be a config edit and a re-score,
+# not a code change per answer.
+# EVERY address the pattern catches gets this category, not only short ones, and
+# the rule runs FIRST in the cascade -- above the hard sweep. Every signal below
+# that line measures how word-like a string is, and an address is not trying to be
+# a word: weird_ratio is 1.00 on a URL, detect_fused_words fires on the address
+# shape, an `@` halves valid_word_ratio, and perplexity on a domain name is noise.
+# KNOWN LIMIT: nothing separates a correctly scanned address from a mis-scanned
+# one, so this category applies to both. `Noisy` is the honest setting for an
+# archive that minds the difference.
+# EMPTY = off, and the cascade decides as it does today. Valid: Clear, Noisy,
+# Trash, Non-text, Empty. An unrecognised value fails at import rather than
+# silently doing nothing.
+# SET 2026-10-01 (#30 Q4): @david-spacil and @DanaKriv answered `Clear`, after
+# @DanaKriv agreed the `Trash` = illegible definition (Q1). The known limit above
+# is accepted with it: a damaged address is rated `Clear` too.
+DOMAIN_NOTATION_CATEG                   = Clear
 # Minimum ALPHABETIC characters in a sub-token before any shape test applies.
 # Also what keeps every SHORT_VALID_WORDS / _NEUTRAL_LEXICON member out by
 # construction (`se`, `po`, `mm`, `ks` are all shorter than this).
@@ -207,13 +376,145 @@ SHORT_GARBAGE_WITNESS_VARIETY_MIN_ALPHA = 7
 SHORT_GARBAGE_WITNESS_VARIETY_MAX       = 0.50
 # Triple-repeated-character clause applies only up to this many letters.
 # `sektlll` and `NINNNIC` are 7; the cap is what keeps the German compound
-# `Schifffahrt` out.
+# `Schifffahrt` out. Caveat (2026-10-05): @david-spacil annotated `sektlll`
+# (539 lines, one document) `Clear` -- a typescript `III` written with `l`,
+# read correctly. The clause's own example is a legible line.
 SHORT_GARBAGE_WITNESS_TRIPLE_MAX_ALPHA  = 8
+# Vowel-run clause length, decoupled from FUSED_VOWEL_RUN_MIN so it can be tuned
+# without moving `fused_ratio` in the quality score on every line in the corpus.
+# 3 is the shipped behaviour. The trade at 4 is measured and asymmetric: `oueussd`
+# (`oueu`) stays convicted, `cuxoaid` (`oai`) escapes with no other clause
+# catching it, and the `Naiade` / `Beuern` / `Oueste` loan false positives stop
+# firing. Settled against gold (stage 10d, 2026-09-22): a global 4 is REJECTED --
+# errors 503 = 503, Clear-loss 38 = 38, fixes 2 / breaks 2, p = 1, Trash-recall
+# 34 -> 32/180. It buys nothing and costs recall; the D44 split below is the answer.
+SHORT_GARBAGE_WITNESS_VOWEL_RUN_MIN     = 3
+# (#30 D44) The vowel-run clause is a fact about CZECH phonotactics, not about
+# scanning: Czech has no triphthongs, so three vowels in a row is good evidence of
+# damage -- in Czech. German and French have them natively, which is why the clause
+# reached `Dauerleihe` (*aue*, permanent loan) and `FEUILLETON` (*eui*), both
+# scanned perfectly correctly.
+# @david-spacil, 2026-09-22: "For Czech, 3+ vowels in a row is a good rule -- Czech
+# has no triphthongs. For German and French it does damage. So either split by
+# language, or try 4+."
+# The split, not the blunting. Raising the threshold to 4 everywhere was measured
+# and is the worse trade: it releases `J. Vysoean` (*Vysočan*), `POSTKRANIAINY
+# SKELET`, `lenaye` and `noienm k.` -- all damage -- to spare two German words,
+# giving up 3.5 lines that currently agree with `Trash` per at-risk line spared
+# (stage 10b).
+# So the rule is: 3 vowels convict in every language EXCEPT these, and 4 convict
+# everywhere INCLUDING these. Four is not "never": a German line can be scanned
+# into `oueussd` as easily as a Czech one.
+# The language read is the RAW FastText label (`original_lang`), never the stored
+# `lang` column -- that one has been through remap_lang(), which rewrites any base
+# outside EXPECTED_LANGS + TRUSTED_FOREIGN_LANGS to Czech and would therefore
+# answer a phonotactic question with a policy default, in the direction that costs
+# most. Empty EXEMPT_LANGS restores a single global threshold.
+SHORT_GARBAGE_WITNESS_VOWEL_RUN_EXEMPT_LANGS = deu,fra
+SHORT_GARBAGE_WITNESS_VOWEL_RUN_MIN_EXEMPT   = 4
+
+# ── rule_short_garbage vocabulary signal (issue #30 D14) ────────────────────
+# The lexical half of the witness, and the only thing in this module that can
+# reach the phonotactically legal residue (`edelite`, `vfetennl k.`). Built from
+# the corpus's own token/document-frequency, NOT from an external dictionary --
+# the Czech ones are CC BY-NC-SA and would change this pipeline's output-licence
+# story. Build a table with:
+#     python tools/build_token_lexicon.py <DOC_LINE_CATEG dir> -o tools/gold/token_df.tsv
+# EMPTY PATH = inert. With no table the predicate is byte-identical to the
+# shape-only version, which is the shipped state -- and, per the note on
+# SHORT_GARBAGE_WITNESS_ENABLE above, the state that must not be combined with
+# an armed witness: 37,555 kept lines at risk without a table, 6,714 with the
+# 113,100-document one. No table ships in this repository; that one was built
+# on the cluster.
+SHORT_GARBAGE_LEXICON_PATH              =
+# A token must appear in at least this many DISTINCT documents to count as
+# attested. Document frequency, not line frequency: OCR noise repeats within the
+# scan that produced it and -- WITH ONE MEASURED EXCEPTION -- rarely across scans.
+# The exception is a pre-printed form: the same misread recurs once per document
+# and accrues document frequency like a word -- and `ppole` (`KULTURA: ppole`),
+# which reaches df 35 on the thin table and 229 at full scale, is NOT an example
+# of it: it is the standard abbreviation for `popelnicová pole` (@david-spacil,
+# 2026-09-19), so attesting it is correct. Raising this threshold does not reach
+# the templated-artefact class and nothing else does either; see the accepted
+# limit recorded on `_has_vocabulary_support` (#30 D40).
+# On the 822-document table (2026-09-17) the veto's effect is flat between 2 and
+# 10, and 2 is marginally best; 3 is kept as the shipped value because the
+# threshold should be set on a table built over BOTH FULL COLLECTIONS, which that
+# one is 0.7% of. That full table exists now (113,100 documents, 2026-09-18), and
+# the gold A/B of 2 against 3 (stage 05e) differs by one row, not significant
+# (p = 1) -- so 3 stays, on the fixture evidence. At 3 on the 822-document table
+# the CONVICT clause below misjudges 5 of 31 pinned vocabulary fixtures, which is
+# why it ships false.
+SHORT_GARBAGE_LEXICON_MIN_DF            = 3
+# (#30 D40) SHORT_GARBAGE_LEXICON_GEMINATE_RATIO and _GEMINATE_MAX_DF stood here
+# until 2026-09-22. They were the de-gemination guard: a pair of thresholds that
+# let the witness convict a doubled-initial token ALTHOUGH this table attested it,
+# fitted to eight tokens on an 822-document table. Removed, and the reason is
+# worth keeping where the keys were.
+# @david-spacil approved dropping it ("if the dictionary already covers all eight,
+# it looks redundant"), and the eight turned out to be FOUR real words against
+# four errors, not one against seven: `ppole` is an abbreviation (2026-09-19) and
+# `ssuti` / `ssutí` / `ssutě` are an old spelling of `suť` (2026-09-22). So the
+# empty frequency gap the ratio sat in had real language on BOTH sides of it, and
+# the cap -- an ABSOLUTE document count -- stopped separating anything at all once
+# the table grew 138x (07a: `ppole` 229, `ssuti` 195, `jjámy` 10). At full scale
+# the guard fired on ZERO of 42,853 witness-queue rows.
+# Removing it is behaviourally identical to the RATIO=0 arm, which was A/B-ed
+# against gold on 2026-09-19 and came back identical on all 2,064 scored rows.
+# (#30 D26) Feed the corpus lexicon to compute_valid_ratio as its `word_set`.
+# That function has always taken one and production has never passed one, so it
+# falls back to a shape test -- >=3 characters, >=70% alphabetic, nothing strange
+# -- under which `oueussd edelite sektlll` scores 1.00, a perfect "all valid
+# words". The value feeds compute_quality_score and every threshold below it.
+# SHIPS FALSE: arming it moves quality_score on every line in the corpus.
+# Known incomplete while off -- exact attestation only, so a damaged-but-readable
+# line like `1 fraament okraie` ("1 fragment okraje") scores 0 alongside real
+# garbage. Stage 07b was supposed to measure whether that gap costs anything
+# before a neighbour index is built into production.
+# IT DID NOT, AND THE REPORTED FIGURE IS VOID. 07b came back bit-identical on all
+# 2,064 gold rows with 0 discordant rows -- the same signature 07c produced, from
+# the same cause. `quality_word_set()` is a ZERO-ARGUMENT lru_cache, so it froze
+# the flag's value on its first call and the A/B's second arm was handed the first
+# arm's answer. Fixed 2026-09-20 by `_CACHES_FROM_FLAG` in override_constants();
+# 07b needs re-running before this constant's effect is known either way.
+# RE-RUN as 08d (2026-09-21), with the fix in: a decisive REJECT on gold -- 212
+# fixes against 540 breaks, Clear-loss 40 -> 180 (p ~ 7.8e-34), i.e. 13.8% of
+# all gold Clear destroyed. It stays false.
+QUALITY_VOCABULARY_ENABLE               = false
+# (#30 D27) Strip bullet and marker glyphs (♦ ✓ ■ • …) alongside punctuation. The
+# built table ends in `♦zkoumaná`, `✓stopy`, `•nevelká`: a marker fused to a real
+# word, which corrupts the lexicon at build time and hides the real word at
+# lookup time. Extends _STRIP_CHARS at its definition so the builder and the
+# predicate cannot drift. SHIPS FALSE: it changes tokenisation for every line.
+# Measured on gold as 08e (2026-09-21, 07c re-run once the flag could arm): a
+# genuine null -- 5 fixes / 5 breaks, p = 1. Nothing argues for turning it on.
+STRIP_SYMBOL_GLYPHS                     = false
+# When true, absence from the table becomes EVIDENCE rather than the presence of
+# a token becoming an exemption -- i.e. an unattested token convicts. This is the
+# only clause of the witness that can ADD a conviction, so it carries its own key
+# and ships false. "Unattested" is not "not a word": rare vocabulary, personal
+# names and a table built too narrowly all land here. Measured on gold as stage
+# 5c and REJECTED: +44 Trash catches for Clear-loss 42 -> 63
+# (docs/issue30/issue30_gold_ab_findings.md § 6).
+SHORT_GARBAGE_LEXICON_CONVICT           = false
 SYM_LET_DIG_NONTEXT         = true
 MOSTLY_READABLE_VALID_MIN   = 0.85
 SHORT_NOISY_QS_PENALTY      = 0.20
 
-LOWPPL_CLEAR_MAX            = 50.0
+# (#3 stage 16, 2026-10-11) Lowered 50 -> 35, the pilot's one value change.
+# Section 8 of determine_category() (rule_lowppl_clear) settles a line of three
+# or more words below this perplexity: Clear, or Noisy when its valid-word ratio
+# is under MOSTLY_READABLE_VALID_MIN. A line in [35, 50) now meets sections 9-10
+# instead. Measured with the floor off, nothing broken on any labelled set:
+# Dana's 826 lines identical; the 2,064 gold 510 -> 507 errors, 3 fixes / 0
+# breaks (16c1); David's 2026-10-05 groups joined onto both collections, 60 fixes
+# / 0 breaks (16d1 p01: `m` / `M` of one document, sent to Trash by the page
+# rule) and identical on p02. The importance sweep's consensus value is 35.9 and
+# 15j's grid has its best cell here. The floor-off gold pin moves with it to 507
+# errors, Trash 22 / 180 (Dana's stays 648 / 108). Its corpus reach is measured
+# by stage 16 group r with a blind pack: back to 50 if that pack comes back net
+# broken or with Clear-loss.
+LOWPPL_CLEAR_MAX            = 35.0
 HARD_SWEEP_LANG_MAX        = 0.45
 HARD_SWEEP_PPL_MIN         = 1000.0
 GHOST_DOMINATED_MIN_RATIO  = 0.5
@@ -245,6 +546,62 @@ PPL_GARBAGE_ABSOLUTE        = 30000.0
 # P1 minimum ghost-token share for the broadened per-line inverted-scan route.
 GHOST_HITS_INVERTED_MIN     = 1
 
+[TEXT_INGEST]
+# (#31) Input reading for --method text-lines (text_split.py, text_stats_create.py,
+# extract_TEXT_2_TXT.py) and for /process uploads (read once at service start;
+# KEEP_BLANK_LINES and STRICT are batch-only). docs/text_inputs.md has the per-format
+# page/line rules and the reason codes these limits produce.
+# (atrium-project#53) Every cap below can also be set as the environment variable
+# ATRIUM_TEXT_INGEST_<KEY> (e.g. ATRIUM_TEXT_INGEST_MAX_PAGES), which wins over this
+# file; tool_limits.py declares them and the service's GET /info reports them.
+#
+# Hard caps — a file over any of them is refused (reason `too_large` or
+# `zip_limits_exceeded`) and the run continues with the next file.
+MAX_FILE_MB        = 256
+# ZIP containers (DOCX/XLSX/PPTX/ODF/EPUB, ZIP bundles of page files): declared sizes
+# are checked BEFORE reading anything, so a zip bomb costs nothing. RATIO applies to
+# members over 1 MiB. The same MAX_FILE_MB and RATIO bound what a gzip/bzip2/xz file
+# may decompress to; ZIP_MAX_TOTAL_MB also bounds the text a spreadsheet expands to.
+ZIP_MAX_MEMBERS    = 10000
+ZIP_MAX_TOTAL_MB   = 1024
+ZIP_MAX_MEMBER_MB  = 256
+ZIP_MAX_RATIO      = 200
+MAX_PAGES          = 20000
+# A block (sheet, JSON child, form-feed section) longer than this is continued on
+# extra pages (<label>+1, +2, …); a real page (PDF, ALTO, PAGE XML, hOCR, ABBYY,
+# DjVu, Tesseract TSV) longer than this is refused.
+MAX_LINES_PER_PAGE = 100000
+# PDFs are read in a child process; a hung or crashed PDF costs that file only.
+READER_TIMEOUT_S   = 300
+# Lines longer than this are wrapped at a word boundary before categorization (the
+# perplexity batch pads to its longest line). 0 = never wrap.
+MAX_LINE_CHARS     = 1000
+# Blank lines become `Empty` rows in classify_TEXT; by default they are dropped.
+KEEP_BLANK_LINES   = false
+# Tried in order (and offered to charset-normalizer) for plain text that is not
+# UTF-8 and has no BOM. cp1250 first: this archive's legacy Czech files.
+FALLBACK_ENCODINGS = cp1250, iso8859_2, cp1252
+# DOCX/ODT pagination: auto = explicit page/section breaks plus the page breaks
+# Word/LibreOffice rendered when the file was last saved (lastRenderedPageBreak,
+# soft-page-break); explicit = only breaks the author inserted; none = one page.
+PAGE_BREAKS        = auto
+# (#31 Phase 4) DOCX/ODT footnotes and endnotes: page = a footnote's lines end the
+# page that references it, endnotes end the document; end = every note at the end;
+# skip = not read (counted in the ingest report's notes). Headers and footers are
+# never read (counted).
+NOTES              = page
+# PDF per-page text-layer classes (pages_report.csv, text_layer): fewer than
+# MIN_TEXT_CHARS characters = no text layer; more than GARBLE_THRESHOLD of U+FFFD/
+# control/private-use characters = garbled; at least OCR_LAYER_MIN_RATIO of the text
+# objects invisible (render mode 3) = an OCR layer (origin ocr:pdf-text-layer).
+PDF_MIN_TEXT_CHARS      = 3
+PDF_GARBLE_THRESHOLD    = 0.15
+PDF_OCR_LAYER_MIN_RATIO = 0.5
+# Exit status 1 from text_split.py when any file failed or was read partially
+# (status `partial`), and from extract_TEXT_2_TXT.py when a page or a document
+# record failed (CLI: --strict / --no-strict; run_pipeline passes either through).
+STRICT             = false
+
 [PIPELINE]
 METHOD        = layoutreader
 INPUT_DIR     = data_samples/ALTO
@@ -252,6 +609,13 @@ PAGE_ALTO_DIR = data_samples/PAGE_ALTO
 # (#31) Per-page output dir for generic JSON input (--method json-keys),
 # parallel to PAGE_ALTO_DIR.
 PAGE_JSON_DIR = data_samples/PAGE_JSON
+# (#31) Per-page text dir for any other text-bearing input (--method text-lines):
+# text_split.py writes <doc_id>/<doc_id>-<n>.txt plus ingest_report.csv and
+# pages_report.csv here.
+PAGE_TEXT_DIR = data_samples/PAGE_TEXT
+# (#31 Phase 4) Input dir for --method text-lines when --input-dir is not given
+# (falls back to INPUT_DIR when this key is absent or empty).
+INPUT_DIR_TEXT = data_samples/TEXT
 PARADATA_DIR  = paradata
 # Per-stage skip flags (#6): skip a stage whose outputs already exist. CLI
 # --skip-<stage> / --start-from override these. A skipped stage's outputs must
