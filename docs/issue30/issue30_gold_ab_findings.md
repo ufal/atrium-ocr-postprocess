@@ -748,9 +748,9 @@ log was not. Read the artefact.
 
 All four runs this document specified happened, plus four more the job split out (`08a`–`08g`).
 The findings are not restated here; they were recorded in this repository's dev-log digest of
-[issue #30](https://github.com/ufal/atrium-alto-postprocess/issues/30) (`agent_dev_logs/digests/30.digest.md`, in
+[issue #30](https://github.com/ufal/atrium-alto-postprocess/issues/30) (`agent_dev_logs/digests/3.digest.md`, in
 the git history since the issue closed) § "Stage 8 read against its own delivery" as T1–T15, with the stage
-table and stage 9 in its plan (`agent_dev_logs/plans/30.plan.md`). What this document
+table and stage 9 in its plan (`agent_dev_logs/plans/3.plan.md`). What this document
 needs is only the disposition of its own §9 items and its own predictions.
 
 | this document said                               | stage 8                                                                                                                                                                                                                                                                                                                                                                                                                      |
@@ -791,7 +791,7 @@ Read the artefact — and then check which configuration the artefact was produc
 
 The 87-hour gold-scored rule sweep finished. §"What follows" above listed the
 regeneration of the rule figures as outstanding; it is done. Findings are in the dev-log digest of
-[issue #30](https://github.com/ufal/atrium-alto-postprocess/issues/30) (`agent_dev_logs/digests/30.digest.md`, in
+[issue #30](https://github.com/ufal/atrium-alto-postprocess/issues/30) (`agent_dev_logs/digests/3.digest.md`, in
 the git history) § "Stage 6 read against its own delivery" (U0–U8). What belongs here is the
 disposition of this document's own catalogue.
 
@@ -847,7 +847,7 @@ in the tool at all (**D37**, corrected in place).
 Stage 9b/9c. `08f_exposure_full` and `08g_annotation_ask` re-executed with
 `ATRIUM_TEXT_UTILS_SHORT_GARBAGE_LEXICON_PATH` set; 08a–08e were not re-run and
 are untouched. Same corpus, same 56,599,631 lines read. The full reading is in
-`agent_dev_logs/digests/30.digest.md`, § "Stage 8 f/g re-run read against its own
+`agent_dev_logs/digests/3.digest.md`, § "Stage 8 f/g re-run read against its own
 delivery" (V0–V11). What belongs here is the part about instruments.
 
 **The estimate this document carried was wrong in the direction the instrument

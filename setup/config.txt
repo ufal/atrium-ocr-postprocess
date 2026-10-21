@@ -265,7 +265,7 @@ ISOLATED_CHAR_MIN_TOKENS    = 3
 # agreement, one break (`Lokolieace: •VIII,`). Still off: it waits
 # on @DanaKriv's annotation of the lines it would newly discard and her agreement
 # on what `Trash` means. The in-tree sample corpus (15 lines) cannot validate it.
-# See agent_dev_logs/plans/30.plan.md and docs/issue30/README.md.
+# See agent_dev_logs/plans/3.plan.md and docs/issue30/README.md.
 #
 # AND DO NOT TURN IT ON WITHOUT A LEXICON. These two keys are one decision, and
 # the reason is corpus exposure, not gold. Over both full collections the witness

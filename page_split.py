@@ -309,7 +309,7 @@ def split_alto_xml(input_file_path, output_dir):
 # ── (#31) Generic JSON page splitting ───────────────────────────────────────
 #
 # Real OCR/Doc-AI engines fall into two structural families for representing
-# multi-page documents (no vendor-specific parsers — see 31.plan.md):
+# multi-page documents (no vendor-specific parsers — see atrium-alto-postprocess#31):
 #
 #   Family A — a nested "pages" array (Azure Document Intelligence, docTR,
 #   Google Document AI, most PDF-text-layer dumps): one JSON per document, a

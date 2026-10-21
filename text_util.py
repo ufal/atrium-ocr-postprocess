@@ -255,7 +255,7 @@ def _get_csv_set(section, key, default):
 WORD_LISTS_PATH = _get_str("TEXT_UTILS", "WORD_LISTS_PATH", "setup/word_lists.txt").strip()
 if WORD_LISTS_PATH and not os.path.isabs(WORD_LISTS_PATH):
     # Anchored to this module, not to the working directory -- the same fix
-    # 30.plan.md records for the config path itself, made here before it bites.
+    # 3.plan.md records for the config path itself, made here before it bites.
     WORD_LISTS_PATH = str(Path(__file__).resolve().parent / WORD_LISTS_PATH)
 
 #: The sections `setup/word_lists.txt` may define, and the in-code fallback for
@@ -2427,7 +2427,7 @@ _TAXONOMIC_SUFFIX_MIN_ALPHA: int = 5
 # config has none, which is why the guard matters. Restored on his report, and
 # now pinned by tests/test_shape_witness_vocabulary.py. The German veto was NOT
 # restored with it: the D44 language split now overlaps it, and it needs its own
-# measurement (30.plan.md D45).
+# measurement (3.plan.md D45).
 _RE_FUSED_GRID_REF: re.Pattern = re.compile(r"^[A-Za-z]{1,3}[-/][IVXLCDM]{1,7}[a-z]?$")
 
 # (#30 D46) Punctuation that joins two words without a space. `_split_subtokens`
