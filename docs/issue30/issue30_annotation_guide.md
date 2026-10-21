@@ -256,7 +256,7 @@ before you label rather than expressing it row by row.
 
 ## 7. Three questions that are not in the files — two are now answered
 
-### 7.1 A policy question about repeated text — ✅ answered, kept here for your dissent
+### 7.1 A policy question about repeated text (answered), kept here for your dissent
 
 The program has a cleaning step that works like this: if the same text appears several times in
 one document, all copies are given the **same** answer — whichever answer the majority of them

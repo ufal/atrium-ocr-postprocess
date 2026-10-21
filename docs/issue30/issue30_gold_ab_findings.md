@@ -747,10 +747,10 @@ log was not. Read the artefact.
 # Addendum — stage 8 ran (2026-09-21)
 
 All four runs this document specified happened, plus four more the job split out (`08a`–`08g`).
-The findings are not restated here; they are in
-[`agent_dev_logs/digests/30.digest.md`](../../agent_dev_logs/digests/30.digest.md)
-§ "Stage 8 read against its own delivery" as T1–T15, with the stage table and stage 9 in
-[`agent_dev_logs/plans/30.plan.md`](../../agent_dev_logs/plans/30.plan.md). What this document
+The findings are not restated here; they were recorded in this repository's dev-log digest of
+[issue #30](https://github.com/ufal/atrium-alto-postprocess/issues/30) (`agent_dev_logs/digests/30.digest.md`, in
+the git history since the issue closed) § "Stage 8 read against its own delivery" as T1–T15, with the stage
+table and stage 9 in its plan (`agent_dev_logs/plans/30.plan.md`). What this document
 needs is only the disposition of its own §9 items and its own predictions.
 
 | this document said                               | stage 8                                                                                                                                                                                                                                                                                                                                                                                                                      |
@@ -790,9 +790,9 @@ Read the artefact — and then check which configuration the artefact was produc
 # Addendum — stage 6 ran, and R3 is closed (2026-09-22)
 
 The 87-hour gold-scored rule sweep finished. §"What follows" above listed the
-regeneration of the rule figures as outstanding; it is done. Findings are in
-[`agent_dev_logs/digests/30.digest.md`](../../agent_dev_logs/digests/30.digest.md)
-§ "Stage 6 read against its own delivery" (U0–U8). What belongs here is the
+regeneration of the rule figures as outstanding; it is done. Findings are in the dev-log digest of
+[issue #30](https://github.com/ufal/atrium-alto-postprocess/issues/30) (`agent_dev_logs/digests/30.digest.md`, in
+the git history) § "Stage 6 read against its own delivery" (U0–U8). What belongs here is the
 disposition of this document's own catalogue.
 
 **R3 is closed.** All 23 rules are scored against the 2,064-row sidecar. The

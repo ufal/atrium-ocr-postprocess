@@ -1,4 +1,4 @@
-# 🤝 Contributing to the OCR Output Postprocessing Pipeline of the ATRIUM project
+# Contributing to the OCR Output Postprocessing Pipeline of the ATRIUM project
 
 
 Welcome! Thank you for your interest in contributing. This repository [^8] provides a
@@ -12,7 +12,7 @@ The next step in the pipeline: [atrium-nlp-enrich](https://github.com/ufal/atriu
 This document describes the project's capabilities, development workflow, code conventions,
 and rules for contributors.
 
-## 📦 Release History
+## Release History
 
 > [!NOTE] This repository is in its `-beta` phase: releases are tagged `v<major>.<minor>.<patch>-beta`. The first release without
 > the suffix will follow once the `run_pipeline.py` batch orchestrator and the `service/text_api.py` FastAPI wrapper are fully load-tested in production and the `atrium-project` monorepo reaches its stable milestone.
@@ -71,10 +71,10 @@ and rules for contributors.
 | **v0.2.0**       | Per-line categorization + LINDAT API calls (Text classification update, Switch to per-textline model calls, Option of a summary stats CSV with raw texts per cell is present)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | Pre-release |
 | **v0.1.0**       | Per-page categorization + KER fix + LINDAT API calls (Language identification and other text processing are called per-page, KER raw suffixes fixed, NER + UDP calls included)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | Pre-release |
 
-## 🏗️ Project Contributions & Capabilities
+## Project Contributions & Capabilities
 
 This pipeline contributes 4 major stages to the data processing lifecycle, as detailed in the
-section of the main [README 🛤️ Workflow Stages](README.md#-workflow-stages)
+section of the main [usage guide](docs/usage.md)
 
 ### 1. Granular Data Management
 The pipeline allows archives to move from document-level files to page-level management.
@@ -114,7 +114,7 @@ archival systems. It provides:
 
 ---
 
-## 🌿 Branches & Environments
+## Branches & Environments
 
 | Branch   | Environment          | Rule                                                                            |
 |----------|----------------------|---------------------------------------------------------------------------------|
@@ -128,7 +128,7 @@ master  ←  (humans only, after test stabilises)
 
 ```
 
-### 🏷️ Branch Naming
+### Branch Naming
 
 | Type             | Pattern          | Example                |
 |------------------|------------------|------------------------|
@@ -138,7 +138,7 @@ master  ←  (humans only, after test stabilises)
 
 ---
 
-## 🔁 Contributor Workflow
+## Contributor Workflow
 
 1. **Create an issue** (or find an existing one) describing the problem or feature.
 2. **Branch from `test`:**
@@ -153,7 +153,7 @@ git checkout -b feature-<name>
 
 ---
 
-## 📋 Pull Request Format
+## Pull Request Format
 
 Every PR must include:
 
@@ -173,7 +173,7 @@ maintainers' responsibility.
 
 ---
 
-## ✏️ Commit Messages
+## Commit Messages
 
 Format:
 
@@ -199,7 +199,7 @@ Allowed types:
 ---
 
 
-## 🧪 Code Conventions & Testing
+## Code Conventions & Testing
 
 ### Code Conventions & Linting
 
@@ -291,13 +291,13 @@ tests/
 
 **Per-repo targets:**
 
-| Repository                | Test file                       | Primary targets                                                                                                                                                                                                           |
-|---------------------------|---------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `atrium-keyword-extract`  | `test_keywords.py`              | `_extract_surface_text`, `_extract_lemmas`, `_extract_legacy`, `extract_keywords`, `_sort_csv_file`                                                                                                                       |
+| Repository               | Test file                       | Primary targets                                                                                                                                                                                                           |
+|--------------------------|---------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `atrium-keyword-extract` | `test_keywords.py`              | `_extract_surface_text`, `_extract_lemmas`, `_extract_legacy`, `extract_keywords`, `_sort_csv_file`                                                                                                                       |
 | `atrium-ocr-postprocess` | `test_text_util.py`             | Density/ratio helpers, detectors, `pre_filter_line`, `parse_line_splits`, `determine_category` (reason-tag coverage), `categorize_line` (ppl passed directly, no GPU), `compute_quality_score`                            |
 | `atrium-ocr-postprocess` | `test_scoring_single_source.py` | `score_line` / `row_from_signals` as the one scoring step: live→CSV→re-score round-trip parity, idempotence, trust-tier vs stored `lang_score`, `SHORT_PPL_CAP`, and guards that fail if any caller re-grows its own copy |
 | `atrium-ocr-postprocess` | `test_utils.py`                 | `directory_scraper`, `dataframe_results` (Top-1 and Top-N), `collect_images`                                                                                                                                              |
-| `atrium-translator`       | `test_utils.py`                 | `_resolve_namespaces`, `validate_xml_with_xsd`, `process_alto_xml`, `process_amcr_xml` (mock translator injected)                                                                                                         |
+| `atrium-translator`      | `test_utils.py`                 | `_resolve_namespaces`, `validate_xml_with_xsd`, `process_alto_xml`, `process_amcr_xml` (mock translator injected)                                                                                                         |
 
 **Slow tests** — any test loading a model checkpoint, calling an external API, or requiring a GPU must be decorated with `@pytest.mark.slow`. Document in the PR description which resource it requires and how to enable it locally.
 
@@ -308,7 +308,7 @@ tests/
 ---
 
 
-## 📁 Repository Documentation Management
+## Repository Documentation Management
 
 Each documentation file has one target audience and one responsibility. Rules are not repeated — cross-references are used instead.
 
@@ -329,7 +329,7 @@ still point correctly.
 
 ---
 
-## 📞 Contacts & Acknowledgements
+## Contacts & Acknowledgements
 
 For support or specific archival integration questions, contact **lutsai.k@gmail.com**.
 

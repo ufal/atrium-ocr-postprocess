@@ -1596,3 +1596,15 @@ week, ≈ 2026-10-02). Recorded in the #30 digest and plan; nothing switched on.
   the CONTRIBUTING row. Nothing else changes. Checks: 2,260 passed (fast suite), `check_version` agrees.
 * **#5:** motyc (10-19) finds its scope fulfilled, moves readability to atrium-project#79 and agrees to close it.
   Dev logs `{5}` updated.
+
+## 2026-10-21 — The documentation pilot of atrium-project#79
+* `README.md` from 1,177 lines to 127: what the tool does, inputs and outputs, a quick start with the expected
+  result, how it works, limits, a map of the documentation.
+* New pages: `docs/usage.md`, `docs/configuration.md`, `docs/development.md`, `docs/reference/` (the rules, the
+  outputs, the paradata), `docs/evaluation/categorization.md`, `docs/decisions/2026-10-categorization.md`.
+  `docs/categorization_logic.md` is now the explanation; the full rule reference moved to
+  `docs/reference/categorization_rules.md`. `service/README.md` follows the runbook outline (atrium-project#77).
+  Nothing dropped; the map is in the hub (`agent_dev_logs/plans/79.ocr_relocation_map.md`).
+* Links: 13 broken anchors repaired, 21 incoming links repointed; `tests/test_categorization_walkthrough.py` reads
+  its examples from the reference page.
+* **Checks:** 2,261 passed, 10 skipped; the hub's `docs_check.py` and `runbook_check.py` pass on this repository.

@@ -4,7 +4,7 @@ A data factory + training harness that distils the hand-crafted OCR line-quality
 engine (FastText + Qwen2.5-0.5B perplexity + the 9-signal weighted score) into a
 single small regression model. The full strategy — design decisions, model
 selection, evaluation protocol, phased plan, risks — lives in
-[`agent_dev_logs/plans/23.plan.md`](../../agent_dev_logs/plans/23.plan.md).
+[issue #23](https://github.com/ufal/atrium-alto-postprocess/issues/23).
 
 > **Core invariant (from `tools/SWEEP_NOTES.md`): there is ONE scoring engine.**
 > Every module here reuses the production `text_util` /

@@ -8,13 +8,13 @@ waiting on @DanaKriv.** Your answers are recorded in place, marked ✅.
 > ⏳ **Opened since, 2026-09-22 (evening).** Your answers, and the code that followed them, raised a
 > few questions we had written down as "for Dana and David" without ever asking. They are now asked
 > in the issue thread, after [comment 61](https://github.com/ufal/atrium-alto-postprocess/issues/30#issuecomment-5783543756),
-> and summarised in [§ 9](#9--opened-by-your-answers--open) below. One is for you alone (which
+> and summarised in [§ 9](#9-opened-by-your-answers--open) below. One is for you alone (which
 > revision to re-check your 508 lines against, § 3); three — Q4, Q5 (in two parts) and Q6 — are
 > for you and @DanaKriv together.
 >
 > ✅ **2026-09-23: yours is answered** — `master`, with the re-check itself done and the repair it
 > prompted **confirmed**: 336/508 on `3b02959` (§ 3). You are taking Q1–Q6 through with @DanaKriv
-> by e-mail. One new question is for you alone, and it is optional ([§ 10](#10--new--q8), Q8).
+> by e-mail. One new question is for you alone, and it is optional ([§ 10](#10-new--q8), Q8).
 
 > ## ✅ Answered — 2026-09-22
 >
@@ -677,7 +677,7 @@ later.
   corrected it, and all six now say *old spelling of suť*.
 
 
-## 9. ⏳ Opened by your answers — open
+## 9. Opened by your answers — open
 
 Asked in the issue thread after
 [comment 61](https://github.com/ufal/atrium-alto-postprocess/issues/30#issuecomment-5783543756),
@@ -711,7 +711,7 @@ carefully would have got there first.
 Nothing in §§ 1–8 waits on you. What remains there is @DanaKriv's agreement on § 6 and her 357
 decisions — plus the follow-up questions in § 9, which your answers made possible to ask.
 
-## 10. ⏳ New — Q8
+## 10. New — Q8
 
 **For you, asked 2026-09-23, and optional.** One line is enough, and "don't know" is an answer. It
 switches nothing on: the answer decides whether a measurement is worth running.

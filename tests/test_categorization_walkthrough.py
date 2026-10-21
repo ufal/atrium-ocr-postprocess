@@ -4,7 +4,7 @@ tests/test_categorization_walkthrough.py
 
 How a text line becomes a category, step by step, on concrete inputs (issue #5).
 
-`docs/categorization_logic.md` says what each step does; this file pins it, one line at a time, so a
+`docs/reference/categorization_rules.md` says what each step does; this file pins it, one line at a time, so a
 reader can follow an input through the program and a change that moves any step shows which one. For
 every case the model-derived values are INPUTS (FastText's label and confidence, the perplexity), exactly
 as `tools/recategorize_from_csv.py` takes them from a CSV, so nothing here loads a model.
@@ -52,7 +52,7 @@ import recategorize_from_csv as R  # noqa: E402
 
 # The shipped language configuration: EXPECTED_LANGS ces,deu,eng and TRUSTED_FOREIGN_LANGS deu,eng,fra,pol,ita,slk.
 EXPECTED, KNOWN = R._load_lang_config(str(_ROOT / "setup" / "config.txt"))
-DOC = _ROOT / "docs" / "categorization_logic.md"
+DOC = _ROOT / "docs" / "reference" / "categorization_rules.md"
 
 
 def walk(text: str, lang: str = "ces_Latn", score: float = 0.9, ppl: float = 100.0):
@@ -938,7 +938,7 @@ TABLE_END = "<!-- worked-examples:end -->"
 
 
 def worked_examples_table() -> str:
-    """The `Worked examples` table of `docs/categorization_logic.md`, built by running every case.
+    """The `Worked examples` table of `docs/reference/categorization_rules.md`, built by running every case.
 
     Regenerate it into the document (between the two markers) with::
 

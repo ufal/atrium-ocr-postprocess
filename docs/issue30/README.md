@@ -71,7 +71,7 @@ When the request went out, `census.csv` and `sample.csv` had three empty columns
 | `tools/gold/sidecars/issue30_gold_2067.csv` | The 2,067 lines that have been labelled by hand — your own work, collected into one file. Every accuracy figure quoted in issue #30 is measured against it.                                                                                                                    | It has no text column, so it is hard to read directly. `tools/gold/GOLD.md` explains what it is for                                                   |
 | `tools/gold/GOLD_CLEAR.csv`                 | Nine example lines that must always come out as `Clear`. A one-screen illustration of what a labelled row looks like.                                                                                                                                                          | Yes, as an example                                                                                                                                    |
 | `README.md` (repository root)               | Mostly installation and configuration. The useful part for you is the five-category table, roughly a third of the way down.                                                                                                                                                    | That table only                                                                                                                                       |
-| `docs/categorization_logic.md`              | The full rule-by-rule description of how a line's category is decided. Accurate and complete, but written for developers.                                                                                                                                                      | Only if you want the detail                                                                                                                           |
+| `docs/categorization_logic.md`              | How a line's category is decided, in plain words; every rule and constant is in `docs/reference/categorization_rules.md`.                                                                                                                                                      | Only if you want the detail                                                                                                                           |
 | `issue30_gold_ab_findings.md` (this folder) | Technical findings from the measurement runs.                                                                                                                                                                                                                                  | Developers only                                                                                                                                       |
 | `agent_dev_logs/digests/30.digest.md`       | The complete working record of issue #30, including every correction we have had to make to our own conclusions. Long, and written for us rather than for you — but nothing is hidden in it.                                                                                   | Only if you want the reasoning                                                                                                                        |
 
@@ -162,7 +162,7 @@ beside each (`Bauerleihe` and `beuern` are scanning damage; `naiade` and `oueste
 
 ---
 
-## ✅ 2026-10-01 — the answers are in
+## 2026-10-01 — the answers are in
 
 @david-spacil summarised what he and @DanaKriv agreed after the 30 September meeting, and the 357
 decisions came back with it. What they settle, and what is left:
@@ -194,7 +194,7 @@ decisions came back with it. What they settle, and what is left:
 * The rule is still switched off. The last check before switching it on is a re-run on the cluster
   that scores it against your labels on the real lines.
 
-## ⏳ Still open — asked in the issue thread on 2026-09-22 (Q8: 2026-09-23)
+## Still open — asked in the issue thread on 2026-09-22 (Q8: 2026-09-23)
 
 > **2026-10-01:** Q1–Q6 are answered (above), and Q5a's entries are switched on (pull request #7).
 > The table below is kept as asked.

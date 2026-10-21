@@ -6,7 +6,7 @@ each an ordered list of **lines**. Those lines become the rows of the categorize
 the input formats. [Formats and their standards](#formats-and-their-standards) says which standard
 defines each format, which tools write it and what this repo keeps of it; §1–§8 say what the readers
 in [`text_formats.py`](../text_formats.py) do. The pipeline mechanics are in the
-[README](../README.md#any-other-text-bearing-input-pdf-docx-txt--31-).
+[usage guide](usage.md#any-other-text-bearing-input).
 
 ```
 TEXT/ (any mix) ──text_split.py──▶ PAGE_TEXT/<doc>/<doc>-<n>.txt + ingest_report.csv + pages_report.csv
