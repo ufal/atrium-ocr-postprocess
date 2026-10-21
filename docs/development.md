@@ -73,4 +73,3 @@ function calls.
 **Updating it** — re-copy the two code paths from a newer upstream commit, update `UPSTREAM_COMMIT` in
 [alto_tools.py](../alto_tools.py) and the table above, then run `pytest tests/test_alto_tools.py`. Golden values
 in that file are upstream CLI output and must only change when upstream's behaviour genuinely does.
-

@@ -107,4 +107,3 @@ numbers only — no band, no threshold — and nothing in the pipeline reads it 
 What may change after the freeze, and what a new major version takes, is in the hub's
 [Freeze & conformance](https://github.com/ufal/atrium-project/blob/main/docs/document_schema.md#freeze--conformance).
 [CITATION.cff](../../CITATION.cff) carries the same reference under `references`.
-
