@@ -1645,3 +1645,12 @@ week, ≈ 2026-10-02). Recorded in the #30 digest and plan; nothing switched on.
   and AIS CR (atrium-project#79); the re-vendored `atrium_vocab.py` and shared tests (atrium-project#51); the
   scheduled smoke reports through the hub's lane notifier (atrium-project#81).
 * No release: it follows the rerun's reports. Dev logs `{8}` written.
+
+## 2026-10-22 (evening) — #8: the rerun job finds the collections from any checkout
+* Job 7271655 ran from `/lnet/work/projects/atrium/GITHUB/atrium-ocr-postprocess` and stopped on both collections
+  (`../ARUP/DOC_LINE_CATEG_1210: not found`): the job read them next to the checkout, as `alto_util` has them. Nothing
+  was written.
+* `tools/page_stats_rerun.sh`: `DATA` (default `/lnet/work/projects/atrium`) holds the collections; the checkout is
+  the folder `sbatch` runs from (`SLURM_SUBMIT_DIR`, or `REPO`); the environment is the one active at submission,
+  else `venv-ocr`, `venv-lang` or `venv` in the checkout, and a job without one stops with exit 2. Dry-run on a
+  `GITHUB/` layout: PASS on both collections; a submission from outside a checkout is refused.

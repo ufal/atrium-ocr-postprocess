@@ -25,9 +25,9 @@ Each check is PASS, WARN (reported, not a failure: an error the run logged) or F
 Exit status: 0 without a FAIL, 1 with one (the report says which), 2 when an input is
 missing. Run from the repository root, on one collection folder::
 
-    python3 tools/page_stats_check.py ../ARUP --old 1210 --new 1210r \\
+    python3 tools/page_stats_check.py /lnet/work/projects/atrium/ARUP --old 1210 --new 1210r \\
         --paradata paradata/261022-101500_ocr-postprocess.json \\
-        --config ../ARUP/page_stats_1210r.config.txt
+        --config /lnet/work/projects/atrium/ARUP/page_stats_1210r.config.txt
 
 The report goes to ``<collection>/page_stats_<new>_report.md`` unless ``--report`` says
 otherwise.
@@ -397,7 +397,7 @@ def report(found: dict, checks: Checks) -> str:
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("collection", type=Path, help="the collection folder, e.g. ../ARUP")
+    parser.add_argument("collection", type=Path, help="the collection folder, e.g. /lnet/work/projects/atrium/ARUP")
     parser.add_argument("--old", default="1210", help="the run checked against (default 1210)")
     parser.add_argument("--new", default=None, help="the rerun (default <old>r)")
     parser.add_argument("--input-dir", type=Path, default=None, help="default <collection>/DOC_LINE_CATEG_<old>")
