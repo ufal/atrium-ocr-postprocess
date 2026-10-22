@@ -123,5 +123,7 @@ The code is MIT ([LICENSE](LICENSE)). Vendored code keeps its own licence: `alto
 [setup/para_config.txt](setup/para_config.txt), and what a run records about them is in
 [docs/reference/paradata.md](docs/reference/paradata.md). Cite with [CITATION.cff](CITATION.cff).
 
-Developed by [ÚFAL](https://ufal.mff.cuni.cz/home-page), funded by [ATRIUM](https://atrium-research.eu/)
-(GA 101132163). Contact: the [issue tracker](https://github.com/ufal/atrium-ocr-postprocess/issues).
+Developed by [ÚFAL](https://ufal.mff.cuni.cz/home-page), Charles University. Funded by
+[ATRIUM](https://atrium-research.eu/) (GA 101132163), with the support of the LINDAT/CLARIAH-CZ research
+infrastructure and the AIS CR infrastructure (LM2023031). Contact: the
+[issue tracker](https://github.com/ufal/atrium-ocr-postprocess/issues).

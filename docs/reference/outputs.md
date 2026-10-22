@@ -84,6 +84,19 @@ For each page, the aggregation computes features outputted in the following stri
 
 * `num_lines` — the total number of valid lines processed on the page
 * `Clear`, `Noisy`, `Trash`, `Non-text`, `Empty` — integer count of lines in each category
+
+**Category ratios** (decimal fractions in [0, 1], rounded to 4 places; [#8](https://github.com/ufal/atrium-ocr-postprocess/issues/8)):
+
+* `clear_rat`, `noisy_rat`, `trash_ratio`, `non-text_rat` — the category's share of the page's lines that are not
+  `Empty`: `Clear / (num_lines − Empty)`, and so on. On a page with text lines the four sum to 1 (up to rounding)
+* `empty_rat` — `Empty / num_lines`, the share of all lines that are empty
+
+A ratio whose denominator is 0 is an empty cell (`NaN`), never 0 or an error: a page whose lines are all `Empty`
+has `empty_rat` 1.0 and the other four empty; a page with `num_lines` 0 has all five empty. Read the columns by
+name: they sit between `Empty` and `total_word_count`, so a consumer that reads by position must be updated.
+
+**Text size:**
+
 * `total_word_count` — total number of words across scoreable lines
 * `total_char_count` — total number of characters across scoreable lines
 

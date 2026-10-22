@@ -50,3 +50,7 @@ Directory roles mirror the real pipeline: ALTO/ (source) -> A-PAGE/, PAGE_ALTO/
 (page splits) -> PAGE_TXT*, (text extraction) -> DOC_LINE_CATEG*, DOC_LINE_STATS*
 (classification + aggregation). The *_gpt variants correspond to the distilgpt2
 perplexity model; the unsuffixed ones to Qwen2.5-0.5B.
+
+`DOC_LINE_STATS*/` are regenerated with each change to `aggregate_STAT.py` (since #8 they carry the five category
+ratios). The two `*_page_stats_SHORT.csv` excerpts are not: they come from an older run, still carry `avg_symbol`
+and have no ratio columns. Use them to see the shape of a corpus table, and `DOC_LINE_STATS*/` for today's columns.

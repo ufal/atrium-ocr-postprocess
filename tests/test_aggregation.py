@@ -157,3 +157,120 @@ def test_the_final_sort_is_byte_identical_to_the_old_one_on_the_samples():
     assert sort_page_stats(as_text).to_csv(index=False) == numeric.sort_values(by=["file", "page_num"]).to_csv(
         index=False
     )
+
+
+# ── (#8) the category ratios ──────────────────────────────────────────────────
+
+
+def _lines(rows):
+    """A DOC_LINE_CATEG frame from (page, categ) pairs, every numeric column filled."""
+    n = len(rows)
+    return pd.DataFrame(
+        {
+            "file": ["doc1"] * n,
+            "page_num": [page for page, _ in rows],
+            "categ": [categ for _, categ in rows],
+            "word_count": [3] * n,
+            "char_count": [15] * n,
+            "quality_score": [0.9] * n,
+            "word_weird": [0.0] * n,
+            "lang_score": [0.9] * n,
+            "perplex": [100.0] * n,
+            "vowel_ratio": [0.4] * n,
+            "rot_ratio": [0.0] * n,
+            "lang": ["ces"] * n,
+            "caps_header": [False] * n,
+        }
+    )
+
+
+def _ratios(res, page):
+    from aggregate_STAT import EMPTY_RATIO, RATIO_COLUMNS
+
+    row = res[res["page_num"] == page].iloc[0]
+    return {col: row[col] for col in [*RATIO_COLUMNS, EMPTY_RATIO]}
+
+
+def test_ratios_of_a_mixed_page_leave_empty_lines_out_of_the_text_shares():
+    categ = ["Clear", "Clear", "Noisy", "Trash", "Non-text", "Empty"]
+    res = _sum_metrics(_lines([(1, c) for c in categ]), STANDARD_COLS)
+    assert _ratios(res, 1) == {
+        "clear_rat": 0.4,
+        "noisy_rat": 0.2,
+        "trash_ratio": 0.2,
+        "non-text_rat": 0.2,
+        "empty_rat": 0.1667,  # 1 of 6, rounded to four places
+    }
+
+
+def test_ratios_of_a_page_without_empty_lines_are_shares_of_all_lines():
+    res = _sum_metrics(_lines([(1, "Clear"), (1, "Noisy"), (1, "Noisy")]), STANDARD_COLS)
+    ratios = _ratios(res, 1)
+    assert (ratios["clear_rat"], ratios["noisy_rat"], ratios["empty_rat"]) == (0.3333, 0.6667, 0.0)
+    assert ratios["trash_ratio"] == ratios["non-text_rat"] == 0.0
+
+
+def test_an_empty_only_page_has_empty_rat_one_and_the_other_four_undefined():
+    # page 2 is Empty only, next to a page with text (the path with averages) ...
+    res = _sum_metrics(_lines([(1, "Clear"), (2, "Empty"), (2, "Empty")]), STANDARD_COLS)
+    ratios = _ratios(res, 2)
+    assert ratios["empty_rat"] == 1.0
+    assert all(pd.isna(ratios[col]) for col in ("clear_rat", "noisy_rat", "trash_ratio", "non-text_rat"))
+    # ... and in a document with no Clear or Noisy line at all (the path without them)
+    res = _sum_metrics(_lines([(1, "Empty")]), STANDARD_COLS)
+    assert _ratios(res, 1)["empty_rat"] == 1.0 and pd.isna(_ratios(res, 1)["clear_rat"])
+
+
+def test_a_page_with_no_counted_line_has_every_ratio_undefined_never_infinite():
+    # a category outside STANDARD_COLS is not counted in num_lines
+    res = _sum_metrics(_lines([(1, "Garbage"), (2, "Clear")]), STANDARD_COLS)
+    assert res[res["page_num"] == 1].iloc[0]["num_lines"] == 0
+    ratios = _ratios(res, 1)
+    assert all(pd.isna(value) for value in ratios.values())
+    assert not res.select_dtypes("number").isin([float("inf"), float("-inf")]).any().any()
+
+
+def test_both_paths_write_the_same_columns_with_the_ratios_after_the_counts():
+    from aggregate_STAT import PAGE_STATS_COLUMNS
+
+    with_text = _sum_metrics(_lines([(1, "Clear"), (1, "Trash")]), STANDARD_COLS)
+    without_text = _sum_metrics(_lines([(1, "Trash"), (1, "Empty")]), STANDARD_COLS)
+    assert list(with_text.columns) == list(without_text.columns) == PAGE_STATS_COLUMNS
+    assert PAGE_STATS_COLUMNS[8:13] == ["clear_rat", "noisy_rat", "trash_ratio", "non-text_rat", "empty_rat"]
+    assert _ratios(without_text, 1) == {
+        "clear_rat": 0.0,
+        "noisy_rat": 0.0,
+        "trash_ratio": 1.0,
+        "non-text_rat": 0.0,
+        "empty_rat": 0.5,
+    }
+
+
+def test_ratios_are_fractions_in_zero_one_rounded_to_four_places_and_empty_when_undefined():
+    categ = ["Clear", "Noisy", "Noisy", "Trash", "Trash", "Trash", "Empty"]
+    res = _sum_metrics(_lines([(1, c) for c in categ] + [(2, "Empty")]), STANDARD_COLS)
+    from aggregate_STAT import EMPTY_RATIO, RATIO_COLUMNS
+
+    values = res[[*RATIO_COLUMNS, EMPTY_RATIO]].stack().dropna().tolist()  # NaN dropped
+    assert all(0.0 <= v <= 1.0 and round(v, 4) == v for v in values)
+    row = res.to_csv(index=False).splitlines()[2]  # page 2: Empty only
+    assert ",,,,1.0," in row, row
+
+
+def test_the_shipped_sample_stats_are_what_the_aggregation_writes():
+    """The committed DOC_LINE_STATS files carry the ratios, and every other column is what the
+    aggregation computes from the committed DOC_LINE_CATEG files (#8)."""
+    from pathlib import Path
+
+    from aggregate_STAT import process_csv_file
+
+    pairs = [("data_samples/DOC_LINE_CATEG", "data_samples/DOC_LINE_STATS")]
+    pairs.append(("data_samples/DOC_LINE_CATEG_gpt", "data_samples/DOC_LINE_STATS_gpt"))
+    checked = 0
+    for categ_dir, stats_dir in pairs:
+        for path in sorted(Path(categ_dir).glob("*.csv")):
+            committed = Path(stats_dir) / f"stats_{path.stem}.csv"
+            assert process_csv_file(path, STANDARD_COLS).to_csv(index=False) == committed.read_text(encoding="utf-8")
+            checked += 1
+    if not checked:
+        pytest.skip("no categorized samples")

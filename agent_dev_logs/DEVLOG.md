@@ -1,5 +1,5 @@
 # 📓 atrium-ocr-postprocess — agent_dev_logs/DEVLOG.md (timeline index)
-> _OCR/ALTO post-processing and line categorization; the successor of atrium-alto-postprocess since 2026-10-01 (#56 there; the open issues were transferred and renumbered). 3 open issues: #2 (calibration), #4 (fine-tuning the quality model), #5 (documentation of the categorization logic); #1 closed 2026-10-16, #3 2026-10-13 and #6 2026-10-07. `test` = `9dabbe3` (2026-10-21) · **v1.12.0-beta** (2026-10-16, `fd15701`; the production-readiness review). Latest entry: 2026-10-18. #3's parameter stages after 2026-10-09, up to `v1.11.0-beta`, are recorded in its digest and plan, not here. Entries before 2026-10-01 use atrium-alto-postprocess's issue numbers._
+> _OCR/ALTO post-processing and line categorization; the successor of atrium-alto-postprocess since 2026-10-01 (#56 there; the open issues were transferred and renumbered). 4 open issues: #2 (calibration), #4 (fine-tuning the quality model), #5 (documentation of the categorization logic), #8 (category ratios in the page statistics); #1 closed 2026-10-16, #3 2026-10-13 and #6 2026-10-07. `test` = `107e279` (2026-10-21) · **v1.12.1-beta** (2026-10-20; the images v1.12.0-beta never got). Latest entry: 2026-10-22. #3's parameter stages after 2026-10-09, up to `v1.11.0-beta`, are recorded in its digest and plan, not here. Entries before 2026-10-01 use atrium-alto-postprocess's issue numbers._
 > _Per-issue detail: `digests/{id}.digest.md` · `plans/{id}.plan.md` · `issues/` exports (source of truth). Cross-repo/hub history lives in `ufal/atrium-project/agent_dev_logs/DEVLOG.md` (deduplicated out of this file)._
 
 ## 2026-03-13
@@ -1626,3 +1626,23 @@ week, ≈ 2026-10-02). Recorded in the #30 digest and plan; nothing switched on.
 * Links: 13 broken anchors repaired, 21 incoming links repointed; `tests/test_categorization_walkthrough.py` reads
   its examples from the reference page.
 * **Checks:** 2,261 passed, 10 skipped; the hub's `docs_check.py` and `runbook_check.py` pass on this repository.
+
+## 2026-10-22 — #8: category ratios in the page statistics; the corpus rerun prepared
+* **`aggregate_STAT.py`:** `clear_rat`, `noisy_rat`, `trash_ratio`, `non-text_rat` (the category over the lines that
+  are not `Empty`) and `empty_rat` (over all lines), after `Empty`, rounded to 4 places, an empty cell where the
+  denominator is 0. One column list, `PAGE_STATS_COLUMNS`, for both paths of `_sum_metrics`. Every other column is
+  computed as before (checked on the sample line CSVs against the code of `107e279`).
+* **Tests:** 8 in `tests/test_aggregation.py`, 7 in the new `tests/test_page_stats_check.py`.
+* **Samples:** the six `DOC_LINE_STATS*/` files regenerated; they were stale against the committed line CSVs (one
+  page's counts, `avg_quality_score` on four, the `_gpt` set from the older, rounding aggregator). The
+  `*_SHORT.csv` excerpts stay, noted as an older run.
+* **Docs:** `docs/reference/outputs.md` (the columns, formulas, undefined cases); `docs/usage.md` no longer says the
+  averages are rounded (they are not); `data_samples/README.md`.
+* **The rerun, for the cluster:** `tools/page_stats_rerun.sh` (SLURM) aggregates `../{ARUP,ARUB}/DOC_LINE_CATEG_1210`
+  into `*_1210r` outputs beside the 10-12 ones; `tools/page_stats_check.py` compares them and writes
+  `page_stats_1210r_report.md`. Dry-run on a mock layout: PASS, and a second submission is refused.
+* **Also:** `pillow>=13.0.0` (carried over from the hub's E2E floor); the README acknowledgements name LINDAT/CLARIAH-CZ
+  and AIS CR (atrium-project#79); the re-vendored `atrium_vocab.py` and shared tests (atrium-project#51); the
+  scheduled smoke reports through the hub's lane notifier (atrium-project#81).
+* No release: it follows the rerun's reports. Dev logs `{8}` written.
+

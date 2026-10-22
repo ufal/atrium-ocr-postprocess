@@ -551,9 +551,16 @@ python3 aggregate_STAT.py
 
 The page-level schema is in [the output reference](reference/outputs.md#step-42-page-statistics).
 
-All numeric averages are rounded to 4 decimal places; totals are stored as integers.
+To aggregate a whole collection again from its classified line tables (#8: the 2026-10-12 run with the category
+ratios), `tools/page_stats_rerun.sh` is a SLURM job that writes next to the old outputs, never over them, and
+`tools/page_stats_check.py` compares the two and writes a report: the pages in each, every old column, the ratios,
+the per-document files and the run's skips.
+
+Totals are integers and the category ratios are rounded to 4 decimal places; the averages are written as
+computed, unrounded.
 
 * *Examples*: [arup_page_stats_SHORT.csv](../data_samples/arup_page_stats_SHORT.csv), [arub_page_stats_SHORT.csv](../data_samples/arub_page_stats_SHORT.csv)
+  (excerpts of an older run, without the category ratios; see [data_samples](../data_samples/README.md))
 
 Example of per-document aggregate CSV files: [DOC_LINE_STATS](../data_samples/DOC_LINE_STATS) by Qwen2.5-0.5B
 and [DOC_LINE_STATS_gpt](../data_samples/DOC_LINE_STATS_gpt) by distilgpt2:

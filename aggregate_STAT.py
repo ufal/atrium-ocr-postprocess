@@ -16,6 +16,8 @@ and compiles final page-level stats, including:
   - 'main_lang'         - The statistical mode (most frequent) language per page.
   - 'avg_vowel_ratio'   - Mean vowel ratio
   - 'ch_ratio'          - The ratio of caps_header lines to valid lines
+  - (#8) 'clear_rat', 'noisy_rat', 'trash_ratio', 'non-text_rat' - each category's share of the
+    lines that are not Empty; 'empty_rat' - Empty's share of all lines (RATIO_COLUMNS)
 
 This process is parallelized using concurrent.futures.
 
@@ -47,6 +49,40 @@ from atrium_paradata import ParadataLogger
 # STANDARD_COLS = ["Clear", "Noisy", "Trash", "Non-text", "Empty"]
 DEFAULT_CONFIG = "setup/config.txt"
 
+#: (#8) Each category's share of the page, as Dana named them. The four text categories are shares of
+#: the lines that are not `Empty` (`num_lines - Empty`); `empty_rat` is a share of all lines.
+RATIO_COLUMNS = {
+    "clear_rat": "Clear",
+    "noisy_rat": "Noisy",
+    "trash_ratio": "Trash",
+    "non-text_rat": "Non-text",
+}
+EMPTY_RATIO = "empty_rat"
+
+#: The page-statistics columns, in order: both paths of `_sum_metrics` write exactly these.
+PAGE_STATS_COLUMNS = [
+    "file",
+    "page_num",
+    "num_lines",
+    "Clear",
+    "Noisy",
+    "Trash",
+    "Non-text",
+    "Empty",
+    *RATIO_COLUMNS,
+    EMPTY_RATIO,
+    "total_word_count",
+    "total_char_count",
+    "avg_quality_score",
+    "avg_word_weird",
+    "avg_lang_score",
+    "avg_perplex",
+    "avg_vowel_ratio",
+    "avg_rot_ratio",
+    "ch_ratio",
+    "main_lang",
+]
+
 
 def load_config(config_path):
     """Loads configuration fields mapped to required system paths.
@@ -75,6 +111,22 @@ def load_config(config_path):
         "output_stats": config.get("AGGREGATE", "OUTPUT_STATS", fallback="samples_page_stats.csv"),
         "standard_cols": config.get("AGGREGATE", "STANDARD_COLS", fallback="Clear,Noisy,Trash,Non-text,Empty"),
     }
+
+
+def _add_category_ratios(page_df):
+    """(#8) Each category's share of the page, as decimal fractions rounded to 4 places.
+
+    `clear_rat`, `noisy_rat`, `trash_ratio` and `non-text_rat` divide by the lines that are not
+    `Empty`; `empty_rat` divides by all lines. A zero denominator leaves the ratio undefined (NaN, an
+    empty cell in the CSV), never infinite: a page of `Empty` lines only has `empty_rat` 1.0 and the
+    other four empty, and a page with no counted line has all five empty.
+    """
+    total = page_df["num_lines"].astype(float)
+    text = total - page_df["Empty"].astype(float)
+    for column, category in RATIO_COLUMNS.items():
+        page_df[column] = (page_df[category].astype(float) / text.where(text > 0)).round(4)
+    page_df[EMPTY_RATIO] = (page_df["Empty"].astype(float) / total.where(total > 0)).round(4)
+    return page_df
 
 
 def _sum_metrics(df, STANDARD_COLS):
@@ -107,27 +159,7 @@ def _sum_metrics(df, STANDARD_COLS):
 
         final_page_df = pd.merge(cat_counts, stats, on=["file", "page_num"], how="left")
         final_page_df["num_lines"] = final_page_df[STANDARD_COLS].sum(axis=1)
-        ordered_cols = [
-            "file",
-            "page_num",
-            "num_lines",
-            "Clear",
-            "Noisy",
-            "Trash",
-            "Non-text",
-            "Empty",
-            "total_word_count",
-            "total_char_count",
-            "avg_quality_score",
-            "avg_word_weird",
-            "avg_lang_score",
-            "avg_perplex",
-            "avg_vowel_ratio",
-            "avg_rot_ratio",
-            "ch_ratio",
-            "main_lang",
-        ]
-        return final_page_df[ordered_cols]
+        return _add_category_ratios(final_page_df)[PAGE_STATS_COLUMNS]
 
     if "caps_header" in valid_lines.columns:
         valid_lines["caps_header"] = (
@@ -173,28 +205,7 @@ def _sum_metrics(df, STANDARD_COLS):
             final_page_df[count_col] = final_page_df[count_col].fillna(0).astype(int)
 
     final_page_df["num_lines"] = final_page_df[STANDARD_COLS].sum(axis=1)
-
-    ordered_cols = [
-        "file",
-        "page_num",
-        "num_lines",
-        "Clear",
-        "Noisy",
-        "Trash",
-        "Non-text",
-        "Empty",
-        "total_word_count",
-        "total_char_count",
-        "avg_quality_score",
-        "avg_word_weird",
-        "avg_lang_score",
-        "avg_perplex",
-        "avg_vowel_ratio",
-        "avg_rot_ratio",
-        "ch_ratio",
-        "main_lang",
-    ]
-    return final_page_df[ordered_cols]
+    return _add_category_ratios(final_page_df)[PAGE_STATS_COLUMNS]
 
 
 def _page_records_from_stats(page_stats_df) -> list:
