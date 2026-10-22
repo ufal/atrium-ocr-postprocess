@@ -1645,4 +1645,3 @@ week, ≈ 2026-10-02). Recorded in the #30 digest and plan; nothing switched on.
   and AIS CR (atrium-project#79); the re-vendored `atrium_vocab.py` and shared tests (atrium-project#51); the
   scheduled smoke reports through the hub's lane notifier (atrium-project#81).
 * No release: it follows the rerun's reports. Dev logs `{8}` written.
-
