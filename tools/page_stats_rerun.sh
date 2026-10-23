@@ -12,7 +12,7 @@
 #
 # For each collection (default: ARUP ARUB) it reads the classified line tables the 10-12 run left,
 # $DATA/<COLL>/DOC_LINE_CATEG_1210/, and writes next to them, never over them:
-#   $DATA/<COLL>/page_stats_1210r.csv           the page table, now with clear_rat ... empty_rat
+#   $DATA/<COLL>/page_stats_1210r.csv           the page table, now with clear_ratio ... empty_ratio
 #   $DATA/<COLL>/DOC_LINE_STATS_1210r/          one stats_<doc>.csv per document
 #   $DATA/<COLL>/page_stats_1210r.config.txt    the configuration it ran with
 #   $DATA/<COLL>/page_stats_1210r_report.md     tools/page_stats_check.py's report against page_stats_1210.csv

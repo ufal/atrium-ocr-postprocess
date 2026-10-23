@@ -1654,3 +1654,16 @@ week, ≈ 2026-10-02). Recorded in the #30 digest and plan; nothing switched on.
   the folder `sbatch` runs from (`SLURM_SUBMIT_DIR`, or `REPO`); the environment is the one active at submission,
   else `venv-ocr`, `venv-lang` or `venv` in the checkout, and a job without one stops with exit 2. Dry-run on a
   `GITHUB/` layout: PASS on both collections; a submission from outside a checkout is refused.
+
+## 2026-10-23 — #8: one suffix for the ratio columns
+* David's note on the issue: the names mixed `_rat` and `_ratio`, as Dana wrote them. They are now `clear_ratio`,
+  `noisy_ratio`, `trash_ratio`, `non-text_ratio` and `empty_ratio`, the suffix the table's other ratios already
+  have (`avg_vowel_ratio`, `avg_rot_ratio`, `ch_ratio`). No release or hand-over carried the short names, so no
+  alias is kept.
+* `aggregate_STAT.py` (`RATIO_COLUMNS`, `EMPTY_RATIO`), the two test files, the six sample stats (regenerated; the
+  header line is the only difference), `docs/reference/outputs.md`, the rerun job's header. A new test holds the
+  rule: each ratio column is its category in lower case, then `_ratio`.
+* `docs/reference/outputs.md` also says that `clear_ratio` is not the Clear share the page rules of
+  `classify_TEXT.py` test (they leave `Non-text` lines out of the denominator).
+* The corpus rerun writes the new names; an output written before the rename is removed first. Dev logs `{8}`
+  updated.

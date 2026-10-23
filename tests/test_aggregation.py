@@ -195,30 +195,30 @@ def test_ratios_of_a_mixed_page_leave_empty_lines_out_of_the_text_shares():
     categ = ["Clear", "Clear", "Noisy", "Trash", "Non-text", "Empty"]
     res = _sum_metrics(_lines([(1, c) for c in categ]), STANDARD_COLS)
     assert _ratios(res, 1) == {
-        "clear_rat": 0.4,
-        "noisy_rat": 0.2,
+        "clear_ratio": 0.4,
+        "noisy_ratio": 0.2,
         "trash_ratio": 0.2,
-        "non-text_rat": 0.2,
-        "empty_rat": 0.1667,  # 1 of 6, rounded to four places
+        "non-text_ratio": 0.2,
+        "empty_ratio": 0.1667,  # 1 of 6, rounded to four places
     }
 
 
 def test_ratios_of_a_page_without_empty_lines_are_shares_of_all_lines():
     res = _sum_metrics(_lines([(1, "Clear"), (1, "Noisy"), (1, "Noisy")]), STANDARD_COLS)
     ratios = _ratios(res, 1)
-    assert (ratios["clear_rat"], ratios["noisy_rat"], ratios["empty_rat"]) == (0.3333, 0.6667, 0.0)
-    assert ratios["trash_ratio"] == ratios["non-text_rat"] == 0.0
+    assert (ratios["clear_ratio"], ratios["noisy_ratio"], ratios["empty_ratio"]) == (0.3333, 0.6667, 0.0)
+    assert ratios["trash_ratio"] == ratios["non-text_ratio"] == 0.0
 
 
-def test_an_empty_only_page_has_empty_rat_one_and_the_other_four_undefined():
+def test_an_empty_only_page_has_empty_ratio_one_and_the_other_four_undefined():
     # page 2 is Empty only, next to a page with text (the path with averages) ...
     res = _sum_metrics(_lines([(1, "Clear"), (2, "Empty"), (2, "Empty")]), STANDARD_COLS)
     ratios = _ratios(res, 2)
-    assert ratios["empty_rat"] == 1.0
-    assert all(pd.isna(ratios[col]) for col in ("clear_rat", "noisy_rat", "trash_ratio", "non-text_rat"))
+    assert ratios["empty_ratio"] == 1.0
+    assert all(pd.isna(ratios[col]) for col in ("clear_ratio", "noisy_ratio", "trash_ratio", "non-text_ratio"))
     # ... and in a document with no Clear or Noisy line at all (the path without them)
     res = _sum_metrics(_lines([(1, "Empty")]), STANDARD_COLS)
-    assert _ratios(res, 1)["empty_rat"] == 1.0 and pd.isna(_ratios(res, 1)["clear_rat"])
+    assert _ratios(res, 1)["empty_ratio"] == 1.0 and pd.isna(_ratios(res, 1)["clear_ratio"])
 
 
 def test_a_page_with_no_counted_line_has_every_ratio_undefined_never_infinite():
@@ -236,14 +236,23 @@ def test_both_paths_write_the_same_columns_with_the_ratios_after_the_counts():
     with_text = _sum_metrics(_lines([(1, "Clear"), (1, "Trash")]), STANDARD_COLS)
     without_text = _sum_metrics(_lines([(1, "Trash"), (1, "Empty")]), STANDARD_COLS)
     assert list(with_text.columns) == list(without_text.columns) == PAGE_STATS_COLUMNS
-    assert PAGE_STATS_COLUMNS[8:13] == ["clear_rat", "noisy_rat", "trash_ratio", "non-text_rat", "empty_rat"]
+    assert PAGE_STATS_COLUMNS[8:13] == ["clear_ratio", "noisy_ratio", "trash_ratio", "non-text_ratio", "empty_ratio"]
     assert _ratios(without_text, 1) == {
-        "clear_rat": 0.0,
-        "noisy_rat": 0.0,
+        "clear_ratio": 0.0,
+        "noisy_ratio": 0.0,
         "trash_ratio": 1.0,
-        "non-text_rat": 0.0,
-        "empty_rat": 0.5,
+        "non-text_ratio": 0.0,
+        "empty_ratio": 0.5,
     }
+
+
+def test_every_ratio_column_is_its_category_in_lower_case_then_ratio():
+    """One suffix for every share, as the table's other ratios have it (avg_vowel_ratio, ch_ratio)."""
+    from aggregate_STAT import EMPTY_RATIO, RATIO_COLUMNS
+
+    names = {**RATIO_COLUMNS, EMPTY_RATIO: "Empty"}
+    assert all(column == f"{category.lower()}_ratio" for column, category in names.items()), names
+    assert sorted(names.values()) == sorted(STANDARD_COLS)
 
 
 def test_ratios_are_fractions_in_zero_one_rounded_to_four_places_and_empty_when_undefined():

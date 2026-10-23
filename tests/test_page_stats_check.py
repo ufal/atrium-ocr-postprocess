@@ -77,7 +77,7 @@ def test_a_rerun_that_only_adds_the_ratios_passes_and_says_what_it_checked(colle
     assert report.splitlines()[2].startswith("**PASS**") and "0 failed" in report
     assert "| Input | " in report and "3 line tables" in report and "| Config | `cfg.txt` |" in report
     assert "| Documents | 3 | 3 |" in report and "| Pages | 7 | 7 |" in report
-    assert "added: clear_rat, noisy_rat, trash_ratio, non-text_rat, empty_rat" in report
+    assert "added: clear_ratio, noisy_ratio, trash_ratio, non-text_ratio, empty_ratio" in report
     assert "The run skipped no document." in report
 
 
@@ -96,15 +96,15 @@ def test_a_changed_old_column_fails_and_is_named_with_its_rows(collection):
 
 def test_a_ratio_that_is_not_its_counts_quotient_fails(collection):
     coll, paradata = collection
-    _edit(coll / "page_stats_1210r.csv", lambda df: df.__setitem__("clear_rat", df["clear_rat"] * 0 + 0.5))
+    _edit(coll / "page_stats_1210r.csv", lambda df: df.__setitem__("clear_ratio", df["clear_ratio"] * 0 + 0.5))
     text, failed = psc.run(coll, "1210", "1210r", paradata)
     assert failed >= 1 and "| every ratio equal to its counts' quotient" in text
-    assert "clear_rat: " in text
+    assert "clear_ratio: " in text
 
 
 def test_a_ratio_outside_zero_one_fails(collection):
     coll, paradata = collection
-    _edit(coll / "page_stats_1210r.csv", lambda df: df.__setitem__("empty_rat", df["empty_rat"] + 2))
+    _edit(coll / "page_stats_1210r.csv", lambda df: df.__setitem__("empty_ratio", df["empty_ratio"] + 2))
     text, _ = psc.run(coll, "1210", "1210r", paradata)
     assert "| every ratio in [0, 1] or empty | FAIL | 7 outside |" in text
 

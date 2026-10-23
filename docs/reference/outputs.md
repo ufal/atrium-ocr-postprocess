@@ -87,13 +87,17 @@ For each page, the aggregation computes features outputted in the following stri
 
 **Category ratios** (decimal fractions in [0, 1], rounded to 4 places; [#8](https://github.com/ufal/atrium-ocr-postprocess/issues/8)):
 
-* `clear_rat`, `noisy_rat`, `trash_ratio`, `non-text_rat` — the category's share of the page's lines that are not
-  `Empty`: `Clear / (num_lines − Empty)`, and so on. On a page with text lines the four sum to 1 (up to rounding)
-* `empty_rat` — `Empty / num_lines`, the share of all lines that are empty
+* `clear_ratio`, `noisy_ratio`, `trash_ratio`, `non-text_ratio` — the category's share of the page's lines that
+  are not `Empty`: `Clear / (num_lines − Empty)`, and so on. On a page with text lines the four sum to 1 (up to
+  rounding)
+* `empty_ratio` — `Empty / num_lines`, the share of all lines that are empty
 
 A ratio whose denominator is 0 is an empty cell (`NaN`), never 0 or an error: a page whose lines are all `Empty`
-has `empty_rat` 1.0 and the other four empty; a page with `num_lines` 0 has all five empty. Read the columns by
+has `empty_ratio` 1.0 and the other four empty; a page with `num_lines` 0 has all five empty. Read the columns by
 name: they sit between `Empty` and `total_word_count`, so a consumer that reads by position must be updated.
+
+`clear_ratio` is not the Clear share that the page rules of `classify_TEXT.py` test: those leave `Non-text` lines
+out of the denominator, this column counts them.
 
 **Text size:**
 

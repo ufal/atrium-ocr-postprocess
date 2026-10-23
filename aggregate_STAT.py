@@ -16,8 +16,8 @@ and compiles final page-level stats, including:
   - 'main_lang'         - The statistical mode (most frequent) language per page.
   - 'avg_vowel_ratio'   - Mean vowel ratio
   - 'ch_ratio'          - The ratio of caps_header lines to valid lines
-  - (#8) 'clear_rat', 'noisy_rat', 'trash_ratio', 'non-text_rat' - each category's share of the
-    lines that are not Empty; 'empty_rat' - Empty's share of all lines (RATIO_COLUMNS)
+  - (#8) 'clear_ratio', 'noisy_ratio', 'trash_ratio', 'non-text_ratio' - each category's share of
+    the lines that are not Empty; 'empty_ratio' - Empty's share of all lines (RATIO_COLUMNS)
 
 This process is parallelized using concurrent.futures.
 
@@ -49,15 +49,16 @@ from atrium_paradata import ParadataLogger
 # STANDARD_COLS = ["Clear", "Noisy", "Trash", "Non-text", "Empty"]
 DEFAULT_CONFIG = "setup/config.txt"
 
-#: (#8) Each category's share of the page, as Dana named them. The four text categories are shares of
-#: the lines that are not `Empty` (`num_lines - Empty`); `empty_rat` is a share of all lines.
+#: (#8) Each category's share of the page, named `<category in lower case>_ratio` like the table's other
+#: ratios. The four text categories are shares of the lines that are not `Empty` (`num_lines - Empty`);
+#: `empty_ratio` is a share of all lines.
 RATIO_COLUMNS = {
-    "clear_rat": "Clear",
-    "noisy_rat": "Noisy",
+    "clear_ratio": "Clear",
+    "noisy_ratio": "Noisy",
     "trash_ratio": "Trash",
-    "non-text_rat": "Non-text",
+    "non-text_ratio": "Non-text",
 }
-EMPTY_RATIO = "empty_rat"
+EMPTY_RATIO = "empty_ratio"
 
 #: The page-statistics columns, in order: both paths of `_sum_metrics` write exactly these.
 PAGE_STATS_COLUMNS = [
@@ -116,9 +117,9 @@ def load_config(config_path):
 def _add_category_ratios(page_df):
     """(#8) Each category's share of the page, as decimal fractions rounded to 4 places.
 
-    `clear_rat`, `noisy_rat`, `trash_ratio` and `non-text_rat` divide by the lines that are not
-    `Empty`; `empty_rat` divides by all lines. A zero denominator leaves the ratio undefined (NaN, an
-    empty cell in the CSV), never infinite: a page of `Empty` lines only has `empty_rat` 1.0 and the
+    `clear_ratio`, `noisy_ratio`, `trash_ratio` and `non-text_ratio` divide by the lines that are not
+    `Empty`; `empty_ratio` divides by all lines. A zero denominator leaves the ratio undefined (NaN, an
+    empty cell in the CSV), never infinite: a page of `Empty` lines only has `empty_ratio` 1.0 and the
     other four empty, and a page with no counted line has all five empty.
     """
     total = page_df["num_lines"].astype(float)
