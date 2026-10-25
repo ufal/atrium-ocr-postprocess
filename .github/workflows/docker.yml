@@ -1,14 +1,14 @@
 name: Docker Build & Publish
 
+# A version tag is built, probed, scanned and promoted by release.yml's image job, so the release
+# certifies its images (atrium-project#81); this file covers the branches and pull requests. The
+# `release: published` trigger is gone too: a release created with GITHUB_TOKEN never fired it.
 on:
   push:
     # (#21) Triggers normalized to project integration branches plus main
     branches: [master, test]
-    tags: ['v*']
   pull_request:
     branches: [master, test]
-  release:
-    types: [published]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}

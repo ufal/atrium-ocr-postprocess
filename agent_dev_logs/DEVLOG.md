@@ -1667,3 +1667,19 @@ week, ≈ 2026-10-02). Recorded in the #30 digest and plan; nothing switched on.
   `classify_TEXT.py` test (they leave `Non-text` lines out of the denominator).
 * The corpus rerun writes the new names; an output written before the rename is removed first. Dev logs `{8}`
   updated.
+
+## 2026-10-25 — The ORCID and the licence wording; the release gate (atrium-project#13, #6, #81)
+* **Shared modules (hub re-vendor, atrium-project#13, #6, #79):** `atrium_rocrate.py` writes David Novák's
+  correct ORCID (`0000-0001-6592-6291`) as a tool creator in every crate; `atrium_document.schema.json` describes
+  `provenance.license*` as calculated from the components, not the output's licence (descriptions only, no
+  `POST_FREEZE_CHANGES` entry); an `atrium_vocab.py` comment names page-classification's new categories page.
+  `service/openapi.json` regenerated: description-only, and the `x-atrium-record-schema` digest.
+* **`CITATION.cff`:** the ORCID corrected; each author's affiliation in its ROR name (Charles University;
+  Czech Academy of Sciences, Institute of Archaeology, Prague). Authors unchanged until they confirm (#13).
+* **atrium-project#81:** `release.yml` gains the `image` job (the hub's `docker-tool.reusable.yml` with this
+  repository's `docker.yml` inputs and `release-gate: true`), the `simulate-probe-failure` dispatch input, and
+  `images.json` in the release; `docker.yml` no longer runs on tags. It takes effect at the next tag, after
+  digital-convert's dispatched demonstration. No version bump.
+* **Pilot:** the runbook is on `test` only (v1.12.1-beta predates it); the hub's pilot page links it at `f7341b4`
+  until the next release, which also carries #8's `*_ratio` columns.
+* **Checks:** the suite passes (exit 0); OpenAPI check current.
