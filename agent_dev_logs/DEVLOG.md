@@ -605,6 +605,17 @@ running; stage 8 written, validated and not yet submitted.
 * **atrium-project#81:** the release gate gets one clean dry run (`release.yml` dispatched on `test`)
   before the next tag.
 
+
+## 2026-10-25 (night) — The hub's reusables by commit (atrium-project#72)
+* **Hub by commit (atrium-project#72 E.4):** every hub reusable caller (8) and hub-action step (1) runs at
+  `@18f06680dfb6…  # v1`; `para-drift` and `workflow-lint` read the hub at the same `hub-ref`, and the lint has
+  `require-sha-pins: true`, so a caller or action left at `@v1` fails it. A hub change reaches this repository only
+  through a pin move (`scripts/pin_hub_reusables.py` in the hub).
+* **The documentation check (atrium-project#79 E)** comes with this hub commit: Workflow Policy Lint now runs
+  `docs_check.py` over this repository, advisory.
+* **#8:** the issue body's nine acceptance points were ticked on 10-24, the full-corpus rerun included; the
+  plan and digest say so. The columns ship with the next release.
+
 ---
 _Timeline index refreshed 2026-09-09 against live `test`/`master` HEAD, the current release list, open-issue state
 via the GitHub API, and the refreshed `30.digest.md`/`37.digest.md`; 2026-09-20 entry appended from the stage-7
