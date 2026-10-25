@@ -592,6 +592,19 @@ running; stage 8 written, validated and not yet submitted.
 * **The agent-skill branch** carries `data_samples/` (71 files, 328 KB), which the image keeps as its configured
   defaults: the hub's `skill_ify.py` now keeps what `.dockerignore` lets into the image.
 
+
+## 2026-10-25 (evening) — CONTRIBUTING links the two checklists; the documentation check in CI (atrium-project#79, #81)
+* **CONTRIBUTING (atrium-project#79, #81):** the "Repository Documentation Management" section links the
+  hub's documentation style guide and `ci_policy.md#changing-ci`, the questions a new or changed CI check
+  answers, as the hub's CONTRIBUTING template does. Nothing else in the file changed.
+* **The documentation check in CI (atrium-project#79 E):** Workflow Policy Lint runs the hub's
+  `tools/docs_check.py` over this repository, advisory until the newcomer review, from the pin to the hub commit
+  that carries it (atrium-project#72 step B). It passes today.
+* **Quick start:** every endpoint, field, flag and sample file it shows exists at `v1.12.1-beta`, the release it
+  names (a static check; running it needs Docker and the Hugging Face Hub or LINDAT).
+* **atrium-project#81:** the release gate gets one clean dry run (`release.yml` dispatched on `test`)
+  before the next tag.
+
 ---
 _Timeline index refreshed 2026-09-09 against live `test`/`master` HEAD, the current release list, open-issue state
 via the GitHub API, and the refreshed `30.digest.md`/`37.digest.md`; 2026-09-20 entry appended from the stage-7

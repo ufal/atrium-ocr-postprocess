@@ -317,6 +317,11 @@ Each documentation file has one target audience and one responsibility. Rules ar
 | `README.md`       | GitHub visitors | Project overview, workflow stages, quick start |
 | `CONTRIBUTING.md` | Developers      | Code conventions, branches, PRs, testing       |
 
+Where each kind of information belongs, and the checklist for a documentation pull request:
+[`docs/documentation-style.md`](https://github.com/ufal/atrium-project/blob/main/docs/documentation-style.md); Workflow Policy Lint
+checks the links, anchors and headings on every push. What each CI check proves, and the checklist
+for a new one: [`docs/ci_policy.md`](https://github.com/ufal/atrium-project/blob/main/docs/ci_policy.md#changing-ci).
+
 * **Do not duplicate the line scorer:** `classify_TEXT.score_line()` is the single definition of
   how a line becomes a category. The batch pipeline, the offline re-scorer
   (`tools/recategorize_from_csv.py`) and the API (`service/text_inference.py`) all call it, and all
