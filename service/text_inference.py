@@ -55,6 +55,11 @@ from atrium_limits import LimitNotes  # noqa: E402
 from classify_TEXT import score_line  # noqa: E402
 from document_hook import parse_origin_by_kind, resolve_input_origin  # noqa: E402
 from extract_JSON_2_TXT import page_text_lines  # noqa: E402
+from page_split import json_pages  # noqa: E402
+
+# The `lang` of a line no language was identified for; declared with the record scoring, which
+# keeps it out of a record (atrium-project#72).
+from record_scoring import NO_LANG  # noqa: E402
 from service.utils import normalize_boxes, parse_alto_xml_lines, post_process_text  # noqa: E402
 
 # (#31) The text-lines readers (PDF, DOCX, ODT, XLSX, PPTX, EPUB, RTF, HTML/hOCR, PAGE
@@ -69,6 +74,7 @@ from text_formats import (  # noqa: E402
     no_text_message,
     read_document_isolated,
     shape_lines,
+    text_to_pages,
 )
 from text_util import (  # noqa: E402
     DEFAULT_EXPECTED_LANGS,
@@ -77,7 +83,7 @@ from text_util import (  # noqa: E402
     _lang_base,
     calculate_perplexity_batch,
     detect_strange_symbols,
-    parse_line_splits,
+    merge_split_words,
     pre_filter_line,
 )
 
@@ -101,11 +107,6 @@ LR_MIN_CHUNK_SIZE = tool_limits.LR_MIN_CHUNK_SIZE.get()
 # since 2026-10-15, below the batch pipeline's [CLASSIFY].BATCH_SIZE (128), so the service
 # fits a GPU it shares (tool_limits.py). This name is its value at import.
 DOCUMENT_BATCH_LINES = tool_limits.PPL_BATCH_LINES.get()
-
-#: The `lang` of a line the CPU pre-filter settled (`Empty` / `Non-text`): no language was
-#: identified for it. The batch pipeline writes the same marker in its CSV (classify_TEXT._fast_track_row)
-#: and reads it back as missing, so a record never carries it as a language.
-NO_LANG = "N/A"
 
 
 def reader_components(kind: str, flags: Optional[Iterable[str]]) -> Set[str]:
@@ -143,8 +144,12 @@ class TextModelManager:
         # Which perplexity model scores the lines (GPT2_MODEL_NAME; Qwen2.5-0.5B by default).
         self.ppl_model_name = os.getenv("GPT2_MODEL_NAME", "Qwen/Qwen2.5-0.5B")
 
-    def load_models(self) -> None:
-        """Load all models synchronously; raise RuntimeError on failure."""
+    def load_models(self, layout: bool = True) -> None:
+        """Load all models synchronously; raise RuntimeError on failure.
+
+        `layout=False` leaves LayoutReader out: only the ALTO path uses it, and score_record.py,
+        which scores a record's lines as they are, has no use for it (atrium-project#72).
+        """
         if self._models_loaded:
             return
 
@@ -163,10 +168,11 @@ class TextModelManager:
             )
 
             # 1. LayoutReader (LayoutLMv3)
-            layout_model_path = os.getenv("LAYOUT_MODEL_PATH", "hantian/layoutreader")
-            self.layout_model = LayoutLMv3ForTokenClassification.from_pretrained(layout_model_path)
-            self.layout_model.to(self.device)
-            self.layout_model.eval()
+            if layout:
+                layout_model_path = os.getenv("LAYOUT_MODEL_PATH", "hantian/layoutreader")
+                self.layout_model = LayoutLMv3ForTokenClassification.from_pretrained(layout_model_path)
+                self.layout_model.to(self.device)
+                self.layout_model.eval()
 
             # 2. FastText language identification
             self.ft_model = fasttext.load_model(str(FASTTEXT_MODEL_PATH))
@@ -321,14 +327,43 @@ class TextModelManager:
         _limits, options, _configured, _by_kind = ingest_settings()
         with open(path, "rb") as f:
             data = f.read()
-        lines: List[str] = []
+        pages: List[List[str]] = [[]]
         if data:
             text, _enc, flags = decode_bytes(data, options.fallback_encodings)
             if components is not None:
                 components.update(reader_components("txt", flags))
             _note_wrapped(text.splitlines(), options.max_line_chars, notes)
-            lines = shape_lines([text], options.max_line_chars, keep_blank=False)
-        return {"type": "plain_text", "cleaned_lines": self._classify_lines(lines, notes)}
+            # A form feed starts a page, as in the batch reader (text_formats.text_to_pages)
+            # and in pdftotext's output (atrium-project#72): the service read one page "1".
+            pages = [shape_lines(page, options.max_line_chars, keep_blank=False) for page in text_to_pages(text)]
+        return self._paged_result("plain_text", pages, notes)
+
+    def _paged_result(
+        self, kind: str, pages: List[List[str]], notes: Optional[LimitNotes], labels: Optional[List[str]] = None
+    ) -> Dict[str, Any]:
+        """`cleaned_lines` of a TXT or JSON upload, page by page.
+
+        One page: as before, the lines without a `page` (the `page` form field names it). Several
+        (form feeds, a paged JSON): each entry carries `page`, `line_num` restarts per page as on
+        the batch path, and `pages` lists them.
+        """
+        if len(pages) <= 1:
+            lines = merged_lines(pages[0] if pages else [])
+            return {"type": kind, "cleaned_lines": self._classify_lines(lines, notes)}
+        labels = labels or [str(n) for n in range(1, len(pages) + 1)]
+        cleaned: List[Dict[str, Any]] = []
+        summary: List[Dict[str, Any]] = []
+        for label, lines in zip(labels, pages, strict=True):
+            entries = self._classify_lines(merged_lines(lines), notes)
+            for entry in entries:
+                entry["page"] = label
+            cleaned.extend(entries)
+            # The fields a document upload's `pages[]` entry has; a text or JSON page has no label,
+            # text layer or OCR verdict of its own.
+            summary.append(
+                {"page": label, "page_label": None, "lines": len(entries), "text_layer": None, "needs_ocr_reason": None}
+            )
+        return {"type": kind, "pages": summary, "cleaned_lines": cleaned}
 
     def process_document(
         self,
@@ -364,7 +399,7 @@ class TextModelManager:
         batch = tool_limits.PPL_BATCH_LINES.get()
         for n, page in enumerate(doc.pages, 1):
             _note_wrapped(page.lines, options.max_line_chars, notes)
-            lines = shape_lines(page.lines, options.max_line_chars, keep_blank=False)
+            lines = merged_lines(shape_lines(page.lines, options.max_line_chars, keep_blank=False))
             entries: List[Dict[str, Any]] = []
             for start in range(0, len(lines), batch):
                 entries.extend(self._classify_lines(lines[start : start + batch], notes))
@@ -404,11 +439,19 @@ class TextModelManager:
         """
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
-        lines = page_text_lines(data)
-        return {"type": "json", "cleaned_lines": self._classify_lines(lines, notes)}
+        # Paged as the batch split pages it (page_split.json_pages, atrium-project#72): a
+        # multi-page document is no longer read as one page.
+        paged = json_pages(data)
+        return self._paged_result(
+            "json", [page_text_lines(doc) for _label, doc in paged], notes, labels=[label for label, _doc in paged]
+        )
 
     def process_alto(
-        self, path: str, notes: Optional[LimitNotes] = None, components: Optional[Set[str]] = None
+        self,
+        path: str,
+        notes: Optional[LimitNotes] = None,
+        components: Optional[Set[str]] = None,
+        reading_order: str = "layoutreader",
     ) -> Dict[str, Any]:
         """Classify an ALTO XML upload: parse -> reorder -> dehyphenate -> classify.
 
@@ -422,6 +465,9 @@ class TextModelManager:
         an error; it returns ``cleaned_lines: []``. `components`, when given, receives
         ``layoutlmv3`` when LayoutReader ordered the page (its outputs carry CC BY-NC-SA 4.0,
         as the batch method logs it), for the caller's paradata.
+
+        `reading_order="alto"` keeps the ALTO's own line order and runs no LayoutReader, as the
+        batch `--method alto-tools` does (atrium-project#72); no CC BY-NC-SA component is used then.
         """
         # strict: an upload that is not ALTO raises AltoUnreadable (the service's 422), and a page
         # that merely has no text still comes back as an empty result.
@@ -431,7 +477,7 @@ class TextModelManager:
 
         norm_boxes = normalize_boxes(boxes, page_w, page_h)
 
-        if boxes2inputs is not None and self.layout_model is not None:
+        if reading_order != "alto" and boxes2inputs is not None and self.layout_model is not None:
             if components is not None:
                 components.add("layoutlmv3")
             with self._gpu_lock:
@@ -439,8 +485,8 @@ class TextModelManager:
                     lines, norm_boxes, self.layout_model, self.device, notes=notes
                 )
         else:
-            # v3.helpers unavailable: fall back to document order rather than
-            # failing the whole request (#8; mirrors the startup warning above).
+            # The ALTO order: asked for, or v3.helpers unavailable, where it is the fallback rather
+            # than failing the whole request (#8; mirrors the startup warning above).
             ordered_lines, ordered_boxes = lines, norm_boxes
 
         full_text = post_process_text(ordered_lines, ordered_boxes)
@@ -449,22 +495,35 @@ class TextModelManager:
         # the split-suffix state across lines exactly like classify_TEXT.py's
         # per-page loop (so a word split across a line break isn't duplicated
         # or left broken).
-        raw_lines = full_text.splitlines()
-        resolved_lines: List[str] = []
-        expected_incoming_suffix = ""
-        for raw_line in raw_lines:
-            if not raw_line.strip():
-                continue
-            merged_text, _outgoing_prefix, outgoing_suffix = parse_line_splits(raw_line)
-            if expected_incoming_suffix:
-                stripped = merged_text.lstrip()
-                if stripped.startswith(expected_incoming_suffix):
-                    merged_text = merged_text.replace(expected_incoming_suffix, "", 1).strip()
-            expected_incoming_suffix = outgoing_suffix
-            if merged_text.strip():
-                resolved_lines.append(merged_text.strip())
+        raw_lines = [line for line in full_text.splitlines() if line.strip()]
+        resolved_lines = [text.strip() for text, _ws, _we in merge_split_words(raw_lines) if text.strip()]
 
         return {"type": "alto_xml", "cleaned_lines": self._classify_lines(resolved_lines, notes)}
+
+
+def upload_page_count(task_type: str, path: str) -> int:
+    """How many pages a text or JSON upload has, as `process_text_file` / `process_json` page it,
+    without any model: so a request that names one `page` for several is refused before inference.
+    An upload that does not decode or parse counts as one page; the reader then reports it."""
+    try:
+        if task_type == "json":
+            with open(path, "r", encoding="utf-8") as f:
+                return len(json_pages(json.load(f)))
+        if task_type == "text":
+            _limits, options, _configured, _by_kind = ingest_settings()
+            with open(path, "rb") as f:
+                text, _enc, _flags = decode_bytes(f.read(), options.fallback_encodings)
+            return len(text_to_pages(text))
+    except (OSError, ValueError, IngestError):
+        return 1
+    return 1
+
+
+def merged_lines(lines: List[str]) -> List[str]:
+    """The lines with the words split across their ends joined back (text_util.merge_split_words,
+    the batch pipeline's procedure), one per line: a line left empty stays, and the pre-filter
+    answers it `Empty`, as on the batch path."""
+    return [text for text, _ws, _we in merge_split_words(lines)]
 
 
 def _note_wrapped(lines, max_chars: int, notes: Optional[LimitNotes]) -> None:

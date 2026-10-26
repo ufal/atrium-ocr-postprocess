@@ -577,31 +577,67 @@ identify files that need another round of OCR or manual correction based on the 
 majority of **Clear** lines can be marked for further processing. The absence of clear lines combined with a high proportion
 of **Trash** lines may also indicate handwritten content, which can be excluded before Handwritten Text Recognition (HTR) is applied.
 
+## Scoring an existing record: `score_record.py`
+
+A record whose lines another tool wrote (digital-convert's record of a born-digital PDF or DOCX), or an OCR record
+to score again, is scored by `score_record.py`, the command line of `POST /score_record`. Both run
+[record_scoring.py](../record_scoring.py):
+
+```bash
+python3 score_record.py records/C-202000543A-DT-27.document.json    # in place, as every batch stage writes
+python3 score_record.py records/ --out-dir scored/ --scores          # a folder; scored copies and their answers
+python3 score_record.py records/ --pages i,ii                        # only these pages, by the record's own keys
+```
+
+Each line with text is scored as it is, not re-read, split or reordered. A line with digital-convert's decode
+verdict (`Garbage`, `Inverted`) is left as it is. The record gets `lines[].categ`, `quality_score` and `lang`, and
+`pages[].quality_score` and `quality_band`, on the rows it already has. `--scores` also writes `<doc>.scores.json`:
+the endpoint's answer without the record (`cleaned_lines`, `pages`, `limits_applied`). The run's paradata goes to
+`--paradata-dir` (default `paradata/`).
+
+The models are the service's, without LayoutReader; `GPT2_MODEL_NAME` picks the perplexity model. The service's
+`MAX_PAGES` and `MAX_LINES_PER_PAGE` do not apply. Exit status: 0 when every record was scored; 1 when one was
+not (a file that is not a record, a page key it lacks), with the others still scored; 2 for a path that does not
+exist.
+
+## The command line and the service
+
+The batch pipeline (`run_pipeline.py`, its stages and `score_record.py`) and the service (`service/text_api.py`)
+share their parts: the readers (`text_formats.py`, `page_split.json_pages`), the split-word merge
+(`text_util.merge_split_words`), the scorer (`classify_TEXT.score_line`), the record scoring
+(`record_scoring.py`) and the record writer (`document_hook.py`). The same input gives the same pages, lines and
+categories, except where this table says otherwise (atrium-project#72;
+[tests/test_cli_service_parity.py](../tests/test_cli_service_parity.py) checks both columns).
+
+| What                      | Command line                                                                       | Service                                                                                                       | Why they differ                                                                                                            |
+|---------------------------|------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------|
+| How much per run          | folders of documents                                                               | one page or document per request                                                                              | the service is stateless                                                                                                   |
+| ALTO XML of several pages | split into pages (`page_split.py`)                                                 | classified as one flattened page and not written into a record                                                | the service's ALTO reader keeps no page per line; post one page per request                                                |
+| ALTO reading order        | `--method layoutreader` (default), `alto-tools` or `glm`                           | `reading_order=layoutreader` (default) or `alto`                                                              | GLM needs about 48 GB of GPU memory                                                                                        |
+| Plain text                | a form feed starts a page (`text_split.py`)                                        | the same pages, since v1.13.0-beta                                                                            |                                                                                                                            |
+| OCR JSON of several pages | pages by `page_split.py`                                                           | the same pages, since v1.13.0-beta                                                                            |                                                                                                                            |
+| Other text-bearing files  | `--method text-lines`                                                              | `task_type=document`                                                                                          |                                                                                                                            |
+| The kind of a file        | the method, for the whole run                                                      | `task_type`; `auto` routes `.txt` and `.json` by name and every other file by its bytes                       | as before                                                                                                                  |
+| Blank lines               | kept as `Empty` rows, numbered with the rest                                       | dropped; `line_num` counts the lines with text                                                                | the record's `lines[].line` keys from the service follow this numbering; whether to change it is open in atrium-project#72 |
+| The document passes       | applied (identical-text vote, surrounded Trash, page context, inverted-scan sweep) | not applied: each line is answered on its own                                                                 | they need the whole document                                                                                               |
+| Line fields               | the CSV columns of [Step 4.1](reference/outputs.md#step-41-per-line-categories)    | the JSON fields of `AltoLine`: fewer, some renamed ([mapping](reference/outputs.md#the-services-line-fields)) | the JSON keeps what a client reads                                                                                         |
+| A page's `quality_score`  | the mean of its `Clear` and `Noisy` lines (`aggregate_STAT.py`)                    | the mean of its `Clear`, `Noisy` and `Trash` lines                                                            | kept as they are for the pilot; both leave `Non-text` and `Empty` out                                                      |
+| Page statistics, reports  | CSV files                                                                          | not returned                                                                                                  | batch outputs                                                                                                              |
+| The record                | `[DOCUMENT] JSON_DIR`, with a baseline there or without                            | `document_json` in and out; `include_record=true` returns a new one when none is sent                         |                                                                                                                            |
+| Scoring a record          | `score_record.py`                                                                  | `POST /score_record`                                                                                          | the service applies `MAX_PAGES` and `MAX_LINES_PER_PAGE`                                                                   |
+| Paradata                  | a file in `paradata/`                                                              | the response's `paradata`, a `CreateAction`                                                                   | atrium-project#71                                                                                                          |
+
 ## Calling the API instead
 
-In addition to the batch pipeline, this repository ships with a FastAPI wrapper (`service/text_api.py`) that exposes
-the core `text_util` quality classification engine over HTTP. The `/process` endpoint accepts ALTO XML,
-plain-text, and generic JSON uploads (`task_type` `alto` / `text` / `json`, or `auto`-detected from the file
-extension), returning the same per-line classification fields as the batch pipeline for all three formats.
-(#31) It also accepts **every text-lines format** (PDF, DOCX, ODT, XLSX, PPTX, EPUB, RTF, HTML/hOCR, PAGE XML,
-TEI, ABBYY/DjVu XML, Tesseract TSV, Markdown, CSV/TSV, JSONL, SRT/VTT, EML/MBOX, compressed files and ZIP bundles)
-as `task_type` `document`. `auto` keeps `.txt`/`.json` as before and decides `.xml` and every other upload
-**from its bytes**: an uncompressed ALTO root stays on the ALTO path, a file of a kind the service does not read is
-a 415 `unsupported_media_type` naming the reader's code (a 400 before atrium-project#32 round 2), a supported file
-that cannot be read — a document without a single text line
-included (`no_text`) — is a 422, and one over a `[TEXT_INGEST]` size or count cap is a 413 `limit_exceeded`.
-Document results carry `page`/`page_label` per line and a `pages` summary, and are read and shaped by the same
-`text_formats.py` code and the same `[TEXT_INGEST]` settings as the batch method; a `.txt` upload
-is decoded the same way (any common encoding, cp1250 first).
+The service, `service/text_api.py`, runs the same categoriser with the same `setup/config.txt` and the same
+default perplexity model (Qwen2.5-0.5B). Both run the CPU pre-filter first, so a numeric, code-like or blank line
+is answered `Non-text` or `Empty` without a model call.
 
-The batch pipeline and the API service share the same `text_util` categorization engine and `config.txt`
-settings — including the default Qwen2.5-0.5B perplexity model — to ensure zero drift between local processing
-and web uploads. Both run the CPU pre-filter first, so a numeric, code-like or blank line is answered `Non-text` or
-`Empty` without a model call, as in the batch CSV. The document passes of [Step 4.1](#step-41-classify-lines)
-(identical-text vote, surrounded Trash, page context, inverted-scan sweep) are applied by the batch pipeline only; the
-service answers each line from its own signals. `POST /score_record` scores the lines of a digital-convert record in
-place; its page figure averages the `Clear`, `Noisy` and `Trash` lines and leaves out the `Non-text` and `Empty`
-ones.
+`POST /process` takes ALTO XML, plain text, OCR JSON and every text-lines format (PDF, DOCX, ODT, XLSX, PPTX,
+EPUB, RTF, HTML/hOCR, PAGE XML, TEI, ABBYY/DjVu XML, Tesseract TSV, Markdown, CSV/TSV, JSONL, SRT/VTT, EML/MBOX,
+compressed files and ZIP bundles). A text with form feeds, a paged JSON and a document come back page by page
+(`page` on every line, a `pages` summary). A file of a kind the service does not read is a 415
+`unsupported_media_type`, a supported file that cannot be read is a 422, and one over a `[TEXT_INGEST]` cap is a
+413 `limit_exceeded`. `POST /score_record` scores the lines of a record in place.
 
-For deployment instructions, endpoint specifications (`/process`, `/score_record`, `/info`), and frontend integration details,
-please see the dedicated **[Service Documentation](../service/README.md)**.
+Endpoints, fields, errors and limits: the **[service documentation](../service/README.md)**.

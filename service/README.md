@@ -102,6 +102,13 @@ and fill it the same way with a one-off Job.
   `invalid_record`; an empty part counts as none.
 * `document_record` (optional, **deprecated**): the earlier name of `document_json`; its record comes back as
   `document_json_out`. Both names keep working; send one of them, not both (`422`).
+* `include_record` (optional, default `false`): with no record sent, `document_json` comes back anyway, a new
+  record holding this upload's `source`, `pages` and `lines`, as the batch pipeline writes one without a baseline.
+  A born-digital upload (DOCX, visible-text PDF, …) gets none: its record is digital-convert's to originate.
+  The CreateAction lists the new record as an output only.
+* `reading_order` (optional, ALTO only): `layoutreader` (default) reorders the lines with LayoutReader, as the
+  batch `--method layoutreader`; `alto` keeps the ALTO's own order, as `--method alto-tools`, and runs no
+  LayoutReader, so no CC BY-NC-SA 4.0 component is logged. Any other value is a `422`.
 
 Every response carries `limits_applied`: the limits that shaped the result without refusing it (see
 [Limits](#limits)), `[]` when none did.
@@ -121,10 +128,11 @@ curl -X POST "http://localhost:8000/process" \
   -F "task_type=auto"
 ```
 
-For a generic JSON OCR-engine export, the endpoint reads the lines exactly as the batch
-pipeline's `extract_JSON_2_TXT.py` reads one page (`page_text_lines`): the same key whitelist
-(`content`, `text`, `line`, `word`, …), the page object of a split page, and each text once at
-line granularity — a line's words and a page's whole-text field are not repeated (#31 Phase 5):
+For a generic JSON OCR-engine export, the endpoint pages the document as the batch pipeline's
+`page_split.py` does (`page_split.json_pages`: a page list, or items tagged with a page number), and reads
+each page as `extract_JSON_2_TXT.py` reads one (`page_text_lines`): the same key whitelist (`content`,
+`text`, `line`, `word`, …) and each text once at line granularity (#31 Phase 5). A plain-text upload is
+paged at form feeds, as the batch `text_split.py` pages it (atrium-project#72):
 
 ```bash
 curl -X POST "http://localhost:8000/process" \
@@ -137,7 +145,10 @@ curl -X POST "http://localhost:8000/process" \
 The top-level `type` field is `alto_xml`, `plain_text`, `json`, or `document`, matching the routed `task_type`.
 A `document` result also carries `format` (the detected kind), `origin` (the truthful `source.origin` class),
 a `pages` list (`page`, `page_label`, `lines`, PDF `text_layer` / `needs_ocr_reason`), and `page` /
-`page_label` on every line, whose `line_num` restarts per page as in the batch `DOC_LINE_CATEG`. Lines are read
+`page_label` on every line, whose `line_num` restarts per page as in the batch `DOC_LINE_CATEG`. A text upload
+with form feeds and a JSON upload of several pages come back the same way (since v1.13.0-beta; their
+`page_label`, `text_layer` and `needs_ocr_reason` are null), and each page goes into the record under its own
+key; one page comes back as before, without `page`. Lines are read
 and shaped by the same `text_formats.py` code as the batch text-lines method (blank lines dropped, lines over
 1000 characters wrapped). With a record (`document_json`), lines accrete per page — except for born-digital
 uploads (DOCX, visible-text PDF, …), whose record belongs to `digital-convert` (atrium_document
@@ -243,6 +254,11 @@ curl -X POST "http://localhost:8000/score_record" \
 atrium-digital-convert's `POST /describe` calls this endpoint when `OCR_POSTPROCESS_URL` is set (and falls back
 to `/process` page by page against an older version of this service).
 
+**On the command line:** `python3 score_record.py <record or folder> [--pages i,ii] [--out-dir DIR] [--scores]`
+runs the same code ([record_scoring.py](../record_scoring.py)) over `*.document.json` files, in place unless
+`--out-dir` is given, without the two page and line limits; `--scores` writes the answer without the record as
+`<doc>.scores.json` ([usage](../docs/usage.md#scoring-an-existing-record-score_recordpy)).
+
 ### Merging an OCR'd page into a born-digital record (W4)
 
 atrium-digital-convert#4 W4. atrium-digital-convert flags a page of a born-digital PDF `needs_ocr` when its embedded
@@ -261,8 +277,8 @@ curl -X POST "http://localhost:8000/process" \
   read as a physical position and mapped through the record's `pages[].page_index` (position 3 of a PDF labelled
   `i, ii, 1` is the page `1`; a number is never matched to a label). One ALTO page per request.
 * **Refused before any model runs (`422`):** a page the record lacks, a page it does not flag `needs_ocr`, a
-  multi-page ALTO with `page`, `page` without `document_json` or with a document upload, and `page` on a
-  born-digital record that flags nothing. A JSON or text upload names no page of its own, so on a record that flags
+  multi-page ALTO, a text with form feeds or a JSON of several pages with `page`, `page` without `document_json`
+  or with a document upload, and `page` on a born-digital record that flags nothing. A JSON or text upload names no page of its own, so on a record that flags
   pages it needs `page`; without it nothing is written.
 * **Written:** the page's `lines[]` are **replaced** by the classified lines (`text`, `categ`, `quality_score`,
   `lang`) — the converter's undecodable rows of that page go, in the record's page order. The page's `pages[]` row
@@ -327,7 +343,9 @@ The batch pipeline has the same notes in its paradata, and a text-lines input re
 - **Short lines without Czech diacritics** read `Clear` more often than they should
   ([measurements](../docs/evaluation/categorization.md)).
 - **No document passes in the service:** each line is answered on its own, so a whole document's categories can
-  differ from a batch run's, and a page's `quality_score` averages its `Clear`, `Noisy` and `Trash` lines.
+  differ from a batch run's, and a page's `quality_score` averages its `Clear`, `Noisy` and `Trash` lines. Blank
+  lines are dropped, so `line_num` counts only the lines with text. Every difference from the command line, and
+  why: [docs/usage.md](../docs/usage.md#the-command-line-and-the-service).
 - **Two models are downloaded on first start** at the Hub's current revision (see
   [Models and caches](#models-and-caches)).
 - **FastText is CC BY-NC 4.0** and runs on every request; what a run records about licences is in

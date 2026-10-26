@@ -1,8 +1,9 @@
 # Output reference
 
 The files the batch pipeline writes, column by column. How to produce them is in [usage](../usage.md); what the
-categories mean is in [How a line is categorised](../categorization_logic.md). The service returns the same per-line
-fields; its JSON is typed in [`service/openapi.json`](../../service/openapi.json).
+categories mean is in [How a line is categorised](../categorization_logic.md). The service returns fewer per-line
+fields, some under other names ([the mapping](#the-services-line-fields)); its JSON is typed in
+[`service/openapi.json`](../../service/openapi.json).
 
 ## Step 2: page statistics
 
@@ -126,6 +127,29 @@ out of the denominator, this column counts them.
 > `Trash` line carries no `quality_band` (the service path omits it too) and no `quality_score`.
 > Additional per-line diagnostic variables (e.g. `weird_wx`, `original_lang`, `original_text`) and flags added
 > and ignored for this page-level aggregation to ensure stability.
+
+## The service's line fields
+
+`POST /process` and `POST /score_record` answer each line with the fields of `AltoLine` in
+[`service/openapi.json`](../../service/openapi.json). They come from the same scorer as the CSV columns of
+[Step 4.1](#step-41-per-line-categories), and match them as follows:
+
+| CSV column (Step 4.1)                                                                                                                                                                                                                        | JSON field (`cleaned_lines[]`)                                                       |
+|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------|
+| `file`                                                                                                                                                                                                                                       | none: the response's `filename`, or `doc_id` from `/score_record`                    |
+| `page_num`                                                                                                                                                                                                                                   | `page`, on a document, a paged text or JSON upload, and `/score_record`              |
+| `line_num`                                                                                                                                                                                                                                   | `line_num`; `/score_record` adds `line`, the record's own line key                   |
+| `text`                                                                                                                                                                                                                                       | `text`                                                                               |
+| `categ`                                                                                                                                                                                                                                      | `category`                                                                           |
+| `quality_score`, `garbage_density`, `ldl_fuses`, `gibberish`, `word_weird`, `lang`, `lang_score`, `original_lang`, `orig_lang_score`                                                                                                         | the same names (the scores rounded to 4 places)                                      |
+| `perplex`                                                                                                                                                                                                                                    | `perplexity` (rounded to 2 places)                                                   |
+| `upper`                                                                                                                                                                                                                                      | `upper_count`                                                                        |
+| `repeated`                                                                                                                                                                                                                                   | `repeated_count`                                                                     |
+| none                                                                                                                                                                                                                                         | `sym_count`: tokens with characters outside the allowed set, reported and not scored |
+| `original_text`, `split_ws`, `split_we`, `word_count`, `char_count`, `fused_words`, `weird_wx`, `vowel_ratio`, `rot_ratio`, `valid_word_ratio`, `structured`, `damaged`, `perplex_raw`, `perplex_blend`, `caps_header`, the diagnostic flags | none: CSV only                                                                       |
+
+The service skips blank lines and the document passes, so its `line_num` and some of its categories differ from
+the CSV's on the same file: [The command line and the service](../usage.md#the-command-line-and-the-service).
 
 ## Step 1: the text-lines reports
 

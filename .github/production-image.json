@@ -23,6 +23,7 @@
     "document_hook.py",
     "extract_JSON_2_TXT.py",
     "page_split.py",
+    "record_scoring.py",
     "text_formats.py",
     "text_util.py",
     "tool_limits.py"

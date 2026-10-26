@@ -533,7 +533,9 @@ anything else readable, a compressed ALTO included, is a `document`. Documents a
 `read_document_isolated()` and shaped with `shape_lines()`, the same code as the batch method, and
 classified page by page in batches of `PPL_BATCH_LINES` (32) lines. Each result line carries `page`/`page_label`, and
 `line_num` restarts per page. A `.txt` upload keeps its `plain_text` response, but it is decoded and
-shaped like the batch path (any common encoding, cp1250 first).
+shaped like the batch path (any common encoding, cp1250 first), and since v1.13.0-beta a form feed starts
+a page there too; a `.json` upload is paged by `page_split.json_pages`, the batch split's own function
+(atrium-project#72).
 
 The readers use the config's `[TEXT_INGEST]` settings and `[DOCUMENT].SOURCE_ORIGIN(_BY_KIND)`, read
 from `LANGID_CONFIG` once at start-up; a malformed value fails the start. Blank lines are always

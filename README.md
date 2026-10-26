@@ -23,6 +23,18 @@ which the record contract accepts as the same writer.
 The record follows the hub's [document contract](https://ufal.github.io/atrium-project/ecosystem/document-contract/).
 Every input format, with its standard and what is kept of it: [docs/text_inputs.md](docs/text_inputs.md).
 
+The command line and the service read the same formats with the same code and write the same record:
+
+| Entry point                      | Takes                                                                   | Returns                                                                                                 |
+|----------------------------------|-------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------|
+| `run_pipeline.py` and its stages | folders of documents in any of the formats above                        | the per-page files, the per-line CSV, page statistics, the record, a paradata file                      |
+| `score_record.py`                | records (`*.document.json`), or folders of them                         | the records with this tool's scores; with `--scores`, the scored lines                                  |
+| `POST /process`                  | one page or document in any of the formats above, optionally its record | the scored lines (page by page for a document, a paged text or JSON), the record when sent or asked for |
+| `POST /score_record`             | one record                                                              | the scored lines and the record                                                                         |
+
+What only one of them does, and why (the document passes, blank lines, the GLM method, page statistics):
+[The command line and the service](docs/usage.md#the-command-line-and-the-service).
+
 ## Quick start
 
 The service, from the published image (the first start downloads two models from Hugging Face; see
@@ -87,7 +99,8 @@ Its SSH Open Marketplace record:
   `Clear`; on a line of one to three tokens without diacritics, `Clear` is less certain than it looks
   ([measurements](docs/evaluation/categorization.md)).
 - **The service and the batch pipeline differ on whole documents:** only the batch pipeline runs the document
-  passes, so a service call answers each line on its own.
+  passes, so a service call answers each line on its own; the service also drops blank lines
+  ([every difference](docs/usage.md#the-command-line-and-the-service)).
 - **The category semantics are frozen for the S2 pilot.** Accuracy has been measured on a gold set of 2,067 lines
   and on corpus diffs, not validated in full; the tests pin the rules, not their accuracy.
 - **GPU.** The batch classification and the LayoutReader method want a GPU; the GLM method needs about 48 GB of
@@ -98,6 +111,7 @@ Its SSH Open Marketplace record:
 | To                                                 | Read                                                                                 |
 |----------------------------------------------------|--------------------------------------------------------------------------------------|
 | run the pipeline, stage by stage                   | [docs/usage.md](docs/usage.md)                                                       |
+| compare the command line with the service          | [docs/usage.md](docs/usage.md#the-command-line-and-the-service)                      |
 | run and operate the service, its errors and limits | [service/README.md](service/README.md)                                               |
 | see the API contract                               | [service/openapi.json](service/openapi.json)                                         |
 | set every option                                   | [docs/configuration.md](docs/configuration.md)                                       |

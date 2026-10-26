@@ -1309,6 +1309,33 @@ def parse_line_splits(line_text: str) -> tuple[str, str, str]:
     return merged_text, last_prefix, last_suffix
 
 
+def merge_split_words(lines) -> list[tuple[str, str, str]]:
+    """Join the words an extraction split across line ends: one `(text, split_ws, split_we)` per line.
+
+    The ALTO extraction marks a hyphenated word as `prefix- {fullword}` (`parse_line_splits`);
+    the line that holds the prefix gets the whole word, and the next line loses the suffix it
+    started with. `split_ws` is the prefix a line ended with, `split_we` the suffix taken off its
+    start. One answer per line, in order, none dropped: a line left empty stays an empty line.
+
+    The one procedure of the batch pipeline (`classify_TEXT.py`, every method) and of the service
+    (`service/text_inference.py`, every upload kind), so a page's lines read the same through
+    either (atrium-project#72, the service–CLI alignment).
+    """
+    resolved: list[tuple[str, str, str]] = []
+    expected_incoming_suffix = ""
+    for line in lines:
+        merged_text, outgoing_prefix, outgoing_suffix = parse_line_splits(line)
+        split_we = ""
+        if expected_incoming_suffix:
+            stripped = merged_text.lstrip()
+            if stripped.startswith(expected_incoming_suffix):
+                merged_text = merged_text.replace(expected_incoming_suffix, "", 1).strip()
+                split_we = expected_incoming_suffix
+        expected_incoming_suffix = outgoing_suffix
+        resolved.append((merged_text, outgoing_prefix, split_we))
+    return resolved
+
+
 # ---------------------------------------------------------------------------
 # Per-Word Weirdness Scoring
 # ---------------------------------------------------------------------------

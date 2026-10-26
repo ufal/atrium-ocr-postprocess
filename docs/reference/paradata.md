@@ -99,7 +99,7 @@ version **`1.0`**. That version is frozen as the hub tag
   the current schema.
 
 Since v1.10.0-beta every write of this tool that touches `pages` or `lines` (each batch stage, `/process`,
-`/score_record`) also sets the record's `quality_summary` block (atrium-project#73): page and line totals,
+`/score_record` and, since v1.13.0-beta, `score_record.py`) also sets the record's `quality_summary` block (atrium-project#73): page and line totals,
 how many pages carry a `quality_score` with their mean, median, min and max, and the lines per `categ`
 (digital-convert's `Garbage` / `Inverted` verdicts included). It is recomputed from the record as written,
 numbers only — no band, no threshold — and nothing in the pipeline reads it to route or refuse a document.

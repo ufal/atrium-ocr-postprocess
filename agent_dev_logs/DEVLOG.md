@@ -1716,3 +1716,27 @@ week, ≈ 2026-10-02). Recorded in the #30 digest and plan; nothing switched on.
   unchanged, every ratio its counts' quotient. The reports, printed on the cluster by a helper delivered in chat, give
   the comment that closes boxes 10–11. The body's definitions table still shows the `_rat` names. Dev logs `{8}`
   updated.
+
+## 2026-10-26 — v1.13.0-beta: the command line and the service read and return alike (atrium-project#72)
+* **Shared code:** `text_util.merge_split_words` (the split-word merge of `classify_TEXT.py`, now on every
+  `/process` path), `page_split.json_pages` (the batch split's paging, in memory) and the new `record_scoring.py`
+  (the selection, mapping and write of `/score_record`, with `page_records_from_lines` moved there from
+  `service/text_api.py`, which keeps the old names as aliases). `record_scoring.py` joins
+  `.github/production-image.json`.
+* **`/process`:** a text with form feeds and a JSON of several pages come back page by page (`page` on each line, a
+  `pages` summary of `AltoPage` shape) and accrete per page; `page` with such an upload is a 422 before inference.
+  New opt-in fields: `reading_order=layoutreader|alto` (ALTO; `alto` runs no LayoutReader and logs no
+  `layoutlmv3`) and `include_record` (a new record when none is sent; none for a born-digital upload).
+* **`score_record.py`:** `POST /score_record` on the command line, over files or folders, in place or into
+  `--out-dir`, `--scores` for the answer, a paradata file; `TextModelManager.load_models(layout=False)`.
+* **Kept, documented and pinned** (`docs/usage.md` "The command line and the service",
+  `tests/test_cli_service_parity.py`): blank lines (the batch keeps `Empty` rows, the service drops them; open
+  question in #72), the page `quality_score` mean (Clear+Noisy vs Clear+Noisy+Trash), the document passes, the
+  paradata file vs `CreateAction`. `docs/reference/outputs.md` no longer says the service returns the CSV's fields:
+  a mapping table replaces the claim.
+* **Release:** v1.13.0-beta in `CITATION.cff`, `setup/para_config.txt` and the regenerated spec; the
+  `CITATION.cff` schema reference corrected to version 1.0 (2026-09-25) with the hub's authors (#13).
+* **Checks:** 2298 passed, 12 skipped (GLM, torch, korektor, optuna/SALib), 2 xfailed; the new parity test 14/14;
+  ruff clean on the changed files (two
+  earlier I001 findings in `tests/test_sweep_backends.py` and `tools/run_ablation_study.py` are untouched);
+  `check_version.py`, `docs_check.py` and `image_closure.py` OK.

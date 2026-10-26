@@ -21,7 +21,6 @@ import os
 import re
 import sys
 import tempfile
-from collections import OrderedDict
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Set, Tuple, Union
@@ -81,7 +80,7 @@ from atrium_service import (  # noqa: E402
     read_upload_bounded,
     serve_lifecycle,
 )
-from text_inference import NO_LANG, ingest_settings, text_manager  # noqa: E402
+from text_inference import ingest_settings, text_manager, upload_page_count  # noqa: E402
 
 # Bare like its siblings above, for the same reason: `utils` is service/utils.py,
 # reached through the sys.path bootstrap, so the import resolves under
@@ -99,15 +98,25 @@ from atrium_document import canonical_doc_id, resolve_originator  # noqa: E402
 from atrium_limits import LimitExceeded, LimitNotes  # noqa: E402
 from atrium_paradata import ParadataLogger  # noqa: E402
 from document_hook import (  # noqa: E402
-    DECODE_VERDICTS,
     PROGRAM_NAME,
     handoff_pages,
-    quality_band,
     record_page_key,
     resolve_input_origin,
     write_document_block,
-    write_scores,
 )
+
+# The record scoring of /score_record, shared with the score_record.py command (atrium-project#72);
+# the line and page projections of /process come from it too.
+from record_scoring import (  # noqa: E402
+    UnknownPages,
+    file_key,
+    parse_pages,
+    scored_by_model,
+    select_lines,
+)
+from record_scoring import page_records_from_lines as _page_records_from_lines  # noqa: E402
+from record_scoring import record_lang as _record_lang  # noqa: E402
+from record_scoring import score_record as score_record_lines  # noqa: E402
 
 # `service.utils`, not the bare `utils` above, on purpose: text_inference.py imports its
 # parser from the package path, and an exception is matched by class object, so this must be
@@ -265,6 +274,10 @@ def _temp_suffix(filename: str) -> str:
 #: otherwise by the bytes. Any other value is refused (422); it used to be read as `text`.
 TaskType = Literal["auto", "alto", "text", "json", "document"]
 
+#: `reading_order` of /process, for an ALTO upload: `layoutreader` (LayoutLMv3 reorders the lines,
+#: the batch `--method layoutreader`) or `alto` (the ALTO's own order, `--method alto-tools`).
+ReadingOrder = Literal["layoutreader", "alto"]
+
 
 class AltoLine(BaseModel):
     """One classified line (`cleaned_lines[]`)."""
@@ -293,12 +306,18 @@ class AltoLine(BaseModel):
     category: str = Field(
         description="`Clear`, `Noisy`, `Trash`, `Non-text` or `Empty`; written to the record as `lines[].categ`."
     )
-    page: Optional[str] = Field(None, description="Document uploads only: the page, as its 1-based index.")
+    page: Optional[str] = Field(
+        None,
+        description=(
+            "Document uploads, and text or JSON uploads of more than one page: the page (a 1-based index; a "
+            "paged JSON's own page number)."
+        ),
+    )
     page_label: Optional[str] = Field(None, description="Document uploads only: the source's own page label.")
 
 
 class AltoPage(BaseModel):
-    """One page of a document upload (`pages[]`)."""
+    """One page of a document upload, or of a text or JSON upload of more than one page (`pages[]`)."""
 
     model_config = ConfigDict(extra="allow")
 
@@ -329,13 +348,22 @@ class ProcessResponse(BaseModel):
     format: Optional[str] = Field(None, description="Document uploads only: the reader's kind (`pdf`, `docx`, ...).")
     media_type: Optional[str] = Field(None, description="Document uploads only: the media type of that kind.")
     origin: Optional[str] = Field(None, description="Document uploads only: the `source.origin` the record gets.")
-    pages: Optional[List[AltoPage]] = Field(None, description="Document uploads only: one entry per page.")
+    pages: Optional[List[AltoPage]] = Field(
+        None,
+        description=(
+            "One entry per page: document uploads, and text uploads with form feeds or JSON uploads of several "
+            "pages (paged as the batch pipeline pages them)."
+        ),
+    )
     document_json: Optional[AtriumDocument] = Field(
         None,
         description=(
-            "Only when the record was sent as `document_json`: the record with ocr-postprocess's `pages` and "
+            "When the record was sent as `document_json`: the record with ocr-postprocess's `pages` and "
             "`lines` fields merged in. A born-digital record (atrium_document §1a) comes back as it was sent, "
-            "except a page it flags `needs_ocr`, which an ALTO upload of that page re-acquires (see `ocr_handoff`)."
+            "except a page it flags `needs_ocr`, which an ALTO upload of that page re-acquires (see `ocr_handoff`). "
+            "With `include_record=true` and no record sent: a new record holding this upload's `source`, `pages` "
+            "and `lines`, as the batch pipeline writes one; absent for a born-digital upload, which is "
+            "digital-convert's to originate."
         ),
     )
     ocr_handoff: Optional[OcrHandoff] = Field(
@@ -607,63 +635,13 @@ def _lines_records_from_result(result: Dict[str, Any], page: str = SERVICE_PAGE_
     return records
 
 
-#: The categories the CPU pre-filter assigns on its own: no language, no model, quality score 0.0.
-PREFILTER_CATEGORIES = ("Empty", "Non-text")
-
-
 def _model_components(cleaned_lines: Any) -> Set[str]:
     """The licensed model component a request exercised: the perplexity model, when at least one
     line was scored by it (a line the CPU pre-filter answered on its own used no model). Logged
     like `classify_TEXT.py` logs it, so an API run's paradata names what a batch run's does."""
-    if any(
-        isinstance(entry, dict) and entry.get("category") not in PREFILTER_CATEGORIES for entry in cleaned_lines or []
-    ):
+    if scored_by_model(cleaned_lines):
         return {text_manager.ppl_component()}
     return set()
-
-
-def _record_lang(entry: Dict[str, Any]) -> Optional[str]:
-    """The `lang` a line contributes to the record: none for a line no language was identified for
-    (`NO_LANG`), as the batch path omits it (its CSV's "N/A" reads back as missing)."""
-    lang = entry.get("lang")
-    return None if lang in (None, NO_LANG) else lang
-
-
-def _page_records_from_lines(line_records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Real `pages[]` rows for the lines this request just classified.
-
-    One row per page label actually present in `line_records`, with
-    `quality_score` as the mean of that page's own line scores and `quality_band`
-    reduced from its own Clear/Noisy/Trash counts by the same plurality vote
-    aggregate_STAT.py applies to the batch path (document_hook.quality_band).
-
-    `quality_band` is omitted when none of the three bands is represented (an
-    all-`Empty`/all-`Non-text` page): the vote's tie-break favours "Clear", so
-    counting zeros would report a pristine page for one with no text on it.
-    """
-    by_page: "OrderedDict[str, List[Dict[str, Any]]]" = OrderedDict()
-    for record in line_records:
-        by_page.setdefault(record["page"], []).append(record)
-
-    pages: List[Dict[str, Any]] = []
-    for page, rows in by_page.items():
-        record: Dict[str, Any] = {"page": page}
-        # The mean of the lines a quality model judged. A line the CPU pre-filter answered
-        # (`Empty` / `Non-text`) carries a 0.0 placeholder, as in the batch CSV, and is no evidence
-        # of low quality: counting it would pull a page of clean prose with a few page numbers down.
-        scores = [
-            r["quality_score"]
-            for r in rows
-            if isinstance(r.get("quality_score"), (int, float)) and r.get("categ") not in PREFILTER_CATEGORIES
-        ]
-        if scores:
-            record["quality_score"] = round(sum(scores) / len(scores), 4)
-        categs = [r.get("categ") for r in rows]
-        clear, noisy, trash = categs.count("Clear"), categs.count("Noisy"), categs.count("Trash")
-        if clear or noisy or trash:
-            record["quality_band"] = quality_band(clear, noisy, trash)
-        pages.append(record)
-    return pages
 
 
 def _record_page_count(record: Optional[Dict[str, Any]]) -> int:
@@ -725,6 +703,12 @@ def _accretion_records(
         )
         return [], []
 
+    if task_type in ("json", "text") and len(result.get("pages") or []) > 1:
+        # A text upload with form feeds or a paged JSON (atrium-project#72): every line carries its
+        # page, as on the batch path, whose split writes the same keys. (`page` was refused for it.)
+        lines = _lines_records_from_result(result)
+        return _page_records_from_lines(lines), lines
+
     if page is None and task_type in ("json", "text") and _record_page_count(record) > 1:
         # A JSON or text upload says nothing about which page it is, and the record has several:
         # writing it under the default page "1" would silently replace that page's lines.
@@ -771,6 +755,13 @@ def _ocr_handoff_target(
             if count > 1:
                 raise HTTPException(
                     status_code=422, detail=f"page: one ALTO page per request; this upload has {count} pages."
+                )
+        if task_type in ("json", "text"):
+            count = upload_page_count(task_type, upload_path)
+            if count > 1:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"page: names one page; this {task_type} upload has {count} (form feeds or a paged JSON).",
                 )
     if record is None or task_type == "document":
         return page, False
@@ -911,7 +902,24 @@ async def process_document(
             "(digital-convert's), it names the page flagged `needs_ocr` that this ALTO re-acquires (the OCR "
             "hand-off): that page's lines are replaced, every other page is left as it is. Without it, an ALTO "
             "page's `PHYSICAL_IMG_NR` is mapped through the record's `page_index`. A page the record does not "
-            "have, or does not flag, is refused (422), as is a multi-page ALTO or a document upload with `page`."
+            "have, or does not flag, is refused (422), as is a multi-page ALTO, text or JSON upload, or a document "
+            "upload, with `page`."
+        ),
+    ),
+    reading_order: ReadingOrder = Form(
+        "layoutreader",
+        description=(
+            "ALTO uploads only: `layoutreader` reorders the lines with LayoutReader (LayoutLMv3, whose outputs "
+            "carry CC BY-NC-SA 4.0), as the batch `--method layoutreader`; `alto` keeps the ALTO's own order and "
+            "runs no LayoutReader, as `--method alto-tools`."
+        ),
+    ),
+    include_record: bool = Form(
+        False,
+        description=(
+            "Return a record even when none was sent: `document_json` then holds a new record with this upload's "
+            "`source`, `pages` and `lines`, as the batch pipeline writes one into `[DOCUMENT] JSON_DIR` without a "
+            "baseline. Ignored when a record is sent (it always comes back)."
         ),
     ),
 ) -> JSONResponse:
@@ -923,7 +931,12 @@ async def process_document(
     keeps `.txt` → text and `.json` → json; `.xml` and every other extension are
     decided from the bytes (an uncompressed ALTO root → alto, anything readable →
     document). Document results carry `page`/`page_label` per line and a `pages`
-    summary. The readers use the config's [TEXT_INGEST] settings.
+    summary; so do text uploads with form feeds and JSON uploads of several pages, paged as
+    the batch pipeline pages them. The readers use the config's [TEXT_INGEST] settings.
+
+    `reading_order=alto` keeps an ALTO's own line order (no LayoutReader), and
+    `include_record=true` returns a new record when none was sent (atrium-project#72, the
+    service–CLI alignment).
 
     Errors name the reader's code at the start of `detail` and, but for a named limit, as
     `cause`: 415 `unsupported_media_type` for a file of a kind this service does not read
@@ -1004,7 +1017,12 @@ async def process_document(
     # directory, which used to collect one paradata/ file per request; the run goes back as the
     # response's `paradata`, and its run_id / run_uuid stamp the record.
     para_logger = ParadataLogger(
-        config={"endpoint": "/process", "task_type": task_type},
+        config={
+            "endpoint": "/process",
+            "task_type": task_type,
+            "reading_order": reading_order,
+            "include_record": include_record,
+        },
         program=PROGRAM_NAME,
         paradata_dir=None,
         config_dir=str(Path(PARA_CONFIG_PATH).parent),
@@ -1082,7 +1100,11 @@ async def process_document(
             # reads as a blank page.
             try:
                 result = await asyncio.to_thread(
-                    text_manager.process_alto, tmp_path, notes=notes, components=components
+                    text_manager.process_alto,
+                    tmp_path,
+                    notes=notes,
+                    components=components,
+                    reading_order=reading_order,
                 )
             except AltoUnreadable as exc:
                 raise AtriumHTTPError(
@@ -1122,13 +1144,16 @@ async def process_document(
         components |= _model_components(result.get("cleaned_lines"))
 
         # --- Paradata Pair Accretion Hook ---
-        if record_bytes is not None:
+        # With no record sent, `include_record` asks for a new one (atrium-project#72): the hook
+        # writes it from nothing (rule 3), as the batch path does without a baseline.
+        if record_bytes is not None or include_record:
             with tempfile.TemporaryDirectory() as doc_tmp_dir:
                 baseline_path = os.path.join(doc_tmp_dir, f"{doc_id}.document.json")
 
                 # Save the uploaded baseline JSON as it was sent (read and opened above).
-                with open(baseline_path, "wb") as bf:
-                    bf.write(record_bytes)
+                if record_bytes is not None:
+                    with open(baseline_path, "wb") as bf:
+                        bf.write(record_bytes)
 
                 # (#10 J1) Real lines + real per-page rows, both derived from this
                 # request — see _accretion_records for what was fabricated before.
@@ -1185,11 +1210,13 @@ async def process_document(
 
                 # Read back the record from the path the hook wrote (atrium-project#68), not
                 # from a name re-derived here. With nothing written (a foreign-origin record,
-                # say) the uploaded baseline goes back unchanged.
+                # say) the uploaded baseline goes back unchanged; with no baseline either (a
+                # born-digital upload and `include_record`), there is no record to return.
                 # utf-8-sig: a baseline returned unchanged may start with the BOM
                 # parse_record_part accepted.
-                with open(record_path or baseline_path, "r", encoding="utf-8-sig") as bf:
-                    result[record_key] = json.load(bf)
+                if record_path or record_bytes is not None:
+                    with open(record_path or baseline_path, "r", encoding="utf-8-sig") as bf:
+                        result[record_key] = json.load(bf)
         # ------------------------------------
 
         for name in sorted(components):
@@ -1197,7 +1224,9 @@ async def process_document(
         para_logger.note_limits(notes)
         para_logger.log_document_success()
         para_logger.finalize()
-        result["paradata"] = _run_action(para_logger, upload_entity, result, record_key, doc_id)
+        result["paradata"] = _run_action(
+            para_logger, upload_entity, result, record_key, doc_id, record_sent=record_bytes is not None
+        )
         return JSONResponse(content=result)
 
     except (HTTPException, LimitExceeded):
@@ -1218,10 +1247,6 @@ _SCORE_RECORD_HELP = (
     "(digital-convert's) gets the scoring fields only, an OCR record is re-scored. One that cannot be "
     "opened, or has no `doc_id`, is refused (422 `invalid_record`)."
 )
-
-#: Characters a record's doc_id may keep in the temporary file name it is written under; the
-#: record itself keeps its doc_id (DocumentRecord inherits the baseline's).
-_UNSAFE_FILE_KEY = re.compile(r"[^A-Za-z0-9._-]")
 
 
 @app.post(
@@ -1275,30 +1300,11 @@ async def score_record(
     if not doc_id:
         raise AtriumHTTPError(422, "The record has no doc_id.", reason="invalid_record")
 
-    wanted = {key.strip() for key in (pages or "").split(",") if key.strip()} or None
-    record_pages = [str(row.get("page")) for row in record.get("pages") or [] if isinstance(row, dict)]
-    by_page: "OrderedDict[str, List[tuple]]" = OrderedDict()
-    skipped_verdict: Dict[str, int] = {}
-    skipped_empty: Dict[str, int] = {}
-    for row in record.get("lines") or []:
-        if not isinstance(row, dict) or row.get("page") is None or not isinstance(row.get("line"), int):
-            continue
-        page = str(row["page"])
-        if wanted is not None and page not in wanted:
-            continue
-        by_page.setdefault(page, [])
-        if row.get("categ") in DECODE_VERDICTS:
-            skipped_verdict[page] = skipped_verdict.get(page, 0) + 1
-            continue
-        text = row.get("text")
-        if not isinstance(text, str) or not text.strip():
-            skipped_empty[page] = skipped_empty.get(page, 0) + 1
-            continue
-        by_page[page].append((row["line"], text.strip()))
-    if wanted is not None:
-        unknown = sorted(wanted - set(by_page) - set(record_pages))
-        if unknown:
-            raise HTTPException(status_code=422, detail=f"pages: the record has no page {', '.join(unknown)}.")
+    try:
+        selection = select_lines(record, parse_pages(pages))
+    except UnknownPages as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    by_page = selection.by_page
 
     # The limits as /info reports them: the environment and the config file, not the default alone.
     max_pages, max_lines = LIMITS.get("max_pages"), LIMITS.get("max_lines_per_page")
@@ -1313,81 +1319,33 @@ async def score_record(
         )
 
     notes = LimitNotes()
-    texts = [text for rows in by_page.values() for _line, text in rows]
     try:
         # Off the event loop (issue #55): synchronous perplexity + fastText.
-        entries = await asyncio.to_thread(text_manager.classify_line_texts, texts, notes) if texts else []
-        if len(entries) != len(texts):
-            raise RuntimeError(f"the classifier answered {len(entries)} lines for {len(texts)}")
-
-        cleaned: List[Dict[str, Any]] = []
-        answers = iter(entries)
-        for page, rows in by_page.items():
-            for position, (line_key, _text) in enumerate(rows, start=1):
-                entry = dict(next(answers))
-                entry.update(line_num=position, page=page, line=line_key)
-                cleaned.append(entry)
-
-        line_records = [
-            {"page": e["page"], "line": e["line"]}
-            | {
-                field: value
-                for field, value in (
-                    ("categ", e.get("category")),
-                    ("quality_score", e.get("quality_score")),
-                    ("lang", _record_lang(e)),
-                )
-                if value is not None
-            }
-            for e in cleaned
-        ]
-        page_records = [row for row in _page_records_from_lines(line_records) if len(row) > 1]
-        page_summary = {row["page"]: row for row in page_records}
-        counts: Dict[str, int] = {}
-        for e in cleaned:
-            counts[e["page"]] = counts.get(e["page"], 0) + 1
-
-        returned = record
-        with tempfile.TemporaryDirectory() as work:
-            file_key = _UNSAFE_FILE_KEY.sub("_", doc_id)[:120] or "record"
-            Path(work, f"{file_key}.document.json").write_bytes(raw)
-            written = write_scores(
-                work,
-                file_key,
-                para_logger.run_id,
-                para_logger.paradata_ref,
-                pages=page_records,
-                lines=line_records,
-                run_uuid=para_logger.run_uuid,
-            )
-            if written:
-                with open(written, "r", encoding="utf-8-sig") as fh:
-                    returned = json.load(fh)
-
+        scored = await asyncio.to_thread(
+            score_record_lines,
+            record,
+            raw,
+            selection,
+            lambda texts: text_manager.classify_line_texts(texts, notes),
+            run_id=para_logger.run_id,
+            paradata_ref=para_logger.paradata_ref,
+            run_uuid=para_logger.run_uuid,
+        )
+        cleaned = scored["cleaned_lines"]
         result: Dict[str, Any] = {
-            "type": "record",
+            "type": scored["type"],
             "doc_id": doc_id,
             "cleaned_lines": cleaned,
-            "pages": [
-                {
-                    "page": page,
-                    "lines_scored": counts.get(page, 0),
-                    "skipped_decode_verdict": skipped_verdict.get(page, 0),
-                    "skipped_empty": skipped_empty.get(page, 0),
-                    "quality_score": (page_summary.get(page) or {}).get("quality_score"),
-                    "quality_band": (page_summary.get(page) or {}).get("quality_band"),
-                }
-                for page in by_page
-            ],
+            "pages": scored["pages"],
             "limits_applied": notes.as_list(),
-            "document_json": returned,
+            "document_json": scored["document_json"],
         }
         for name in sorted(_model_components(cleaned)):
             para_logger.log_component(name)
         para_logger.note_limits(notes)
         para_logger.log_document_success()
         para_logger.finalize()
-        upload = atrium_rocrate.file_entity(f"{file_key}.document.json", raw, media_type="application/json")
+        upload = atrium_rocrate.file_entity(f"{file_key(doc_id)}.document.json", raw, media_type="application/json")
         result["paradata"] = _run_action(para_logger, upload, result, "document_json", doc_id)
         return JSONResponse(content=result)
     except (HTTPException, LimitExceeded):
@@ -1426,16 +1384,22 @@ def _upload_source(task_type: str, result: Dict[str, Any], filename: str, sha256
 
 
 def _run_action(
-    run: ParadataLogger, upload: Dict[str, Any], result: Dict[str, Any], record_key: str, doc_id: str
+    run: ParadataLogger,
+    upload: Dict[str, Any],
+    result: Dict[str, Any],
+    record_key: str,
+    doc_id: str,
+    record_sent: bool = True,
 ) -> Dict[str, Any]:
     """The call's CreateAction (atrium-project#71): what it read and what it wrote.
 
     `object` is the upload and, when one was sent, the record; `result` is the record's blocks
-    this call stamped and the classified lines it answers with.
+    this call stamped and the classified lines it answers with. A record made from nothing
+    (`include_record`) is an output only.
     """
     record = result.get(record_key)
     inputs = [upload]
-    if record is not None:
+    if record is not None and record_sent:
         inputs.append(atrium_rocrate.record_entity(str(record.get("doc_id") or doc_id)))
     outputs = atrium_rocrate.block_entities(atrium_rocrate.blocks_written(record, run.run_uuid))
     lines = json.dumps(result.get("cleaned_lines") or [], ensure_ascii=False, sort_keys=True).encode("utf-8")

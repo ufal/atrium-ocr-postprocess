@@ -101,7 +101,7 @@ from text_util import (
     has_cz_diacs,
     is_all_caps_line,
     is_structured_line,
-    parse_line_splits,
+    merge_split_words,
     pre_filter_line,
     quality_word_set,
     remap_lang,
@@ -1097,20 +1097,10 @@ def process_document(task):
             with open(txt_path, "r", encoding="utf-8") as f:
                 lines = f.readlines()
 
-            expected_incoming_suffix = ""
+            # The shared split-word merge (text_util.merge_split_words), as the service runs it.
+            resolved = merge_split_words(lines)
 
-            for i, line in enumerate(lines, 1):
-                merged_text, outgoing_prefix, outgoing_suffix = parse_line_splits(line)
-                current_split_ws = outgoing_prefix
-                current_split_we = ""
-
-                if expected_incoming_suffix:
-                    stripped = merged_text.lstrip()
-                    if stripped.startswith(expected_incoming_suffix):
-                        merged_text = merged_text.replace(expected_incoming_suffix, "", 1).strip()
-                        current_split_we = expected_incoming_suffix
-
-                expected_incoming_suffix = outgoing_suffix
+            for i, (merged_text, current_split_ws, current_split_we) in enumerate(resolved, 1):
                 # merged_text is the pre-repair line (post split-merge); clean_merged
                 # is what pre_filter_line cleaned. We keep BOTH: original_text records
                 # merged_text, text records clean_merged (#3).

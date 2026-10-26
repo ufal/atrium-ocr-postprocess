@@ -32,7 +32,7 @@ import json
 import os
 import sys
 import xml.etree.ElementTree as ET  # For parsing and creating XML
-from typing import Iterable, Optional, Tuple
+from typing import Any, Iterable, List, Optional, Tuple
 
 import document_hook
 from atrium_document import canonical_doc_id, resolve_originator
@@ -458,14 +458,42 @@ def _write_json_page(page_output_dir, base_name, page_number, doc) -> str:
     return output_filename
 
 
-def split_json_document(input_file_path, output_dir):
-    """
-    Splits a single JSON OCR/Doc-AI document into single-page JSON files.
+def json_pages(data) -> List[Tuple[str, Any]]:
+    """The pages of a parsed JSON OCR/Doc-AI document, as `(page number, one-page document)`.
 
     Detection order:
       1. Family A — a nested page-list container (D1-D3, D5).
       2. Family B — a flat list tagged with a per-item page field (D6).
-      3. Family C — neither pattern found: fallback to today's behaviour.
+      3. Family C — neither pattern found: the whole document is page "1".
+
+    In memory, so `split_json_document` (the batch split) and the service's JSON upload
+    (`service/text_inference.py`) page a document the same way (atrium-project#72).
+    """
+    # 1. Family A (Azure, docTR, Google Doc AI)
+    family_a = _find_family_a(data)
+    if family_a is not None:
+        parent, key, page_list = family_a
+        pages = []
+        for i, page_obj in enumerate(page_list, 1):
+            page_number = _get_field_ci(page_obj, PAGE_NUMBER_FIELD_KEYS)
+            page_number = str(page_number) if page_number is not None else str(i)
+            pages.append((page_number, _replace_container_value(data, parent, key, page_obj)))
+        return pages
+    # 2. Family B (AWS Textract)
+    family_b = _find_family_b(data)
+    if family_b is not None:
+        parent, key, _lst, _tag_field, groups = family_b
+        return [
+            (str(page_number), _replace_container_value(data, parent, key, items))
+            for page_number, items in groups.items()
+        ]
+    # 3. Family C fallback (pero-ocr, OCR.space)
+    return [("1", data)]
+
+
+def split_json_document(input_file_path, output_dir):
+    """
+    Splits a single JSON OCR/Doc-AI document into single-page JSON files (`json_pages`).
     """
     with open(input_file_path, "r", encoding="utf-8") as f:
         data = json.load(f)
@@ -473,28 +501,7 @@ def split_json_document(input_file_path, output_dir):
     base_name = _doc_id_from_filename(os.path.basename(input_file_path))  # (#10 D3)
     page_output_dir = os.path.join(output_dir, base_name)
     os.makedirs(page_output_dir, exist_ok=True)
-    written = []
-
-    # 1. Family A (Azure, docTR, Google Doc AI)
-    family_a = _find_family_a(data)
-    if family_a is not None:
-        parent, key, page_list = family_a
-        for i, page_obj in enumerate(page_list, 1):
-            page_number = _get_field_ci(page_obj, PAGE_NUMBER_FIELD_KEYS)
-            page_number = str(page_number) if page_number is not None else str(i)
-            doc = _replace_container_value(data, parent, key, page_obj)
-            written.append(_write_json_page(page_output_dir, base_name, page_number, doc))
-    else:
-        # 2. Family B (AWS Textract)
-        family_b = _find_family_b(data)
-        if family_b is not None:
-            parent, key, _lst, _tag_field, groups = family_b
-            for page_number, items in groups.items():
-                doc = _replace_container_value(data, parent, key, items)
-                written.append(_write_json_page(page_output_dir, base_name, str(page_number), doc))
-        else:
-            # 3. Family C fallback (pero-ocr, OCR.space)
-            written.append(_write_json_page(page_output_dir, base_name, "1", data))
+    written = [_write_json_page(page_output_dir, base_name, page_number, doc) for page_number, doc in json_pages(data)]
 
     remove_stale_pages(page_output_dir, base_name, JSON_PAGE_SUFFIX, keep=written)
     return len(written)
