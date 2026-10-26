@@ -1711,6 +1711,8 @@ week, ≈ 2026-10-02). Recorded in the #30 digest and plan; nothing switched on.
 ## 2026-10-26 — Triage (atrium-project): the README's SSHOMP record; #8's open boxes
 * **README** ("Where it fits in ATRIUM"): links the SSH Open Marketplace record `YParYU`, as the nlp-enrich,
   page-classification and translator READMEs already do (atrium-project#4).
-* **#8:** boxes 10–11 wait for the rerun's two reports, which the 10-22 comment promised and nobody posted; the body's
-  definitions table still shows the `_rat` names. A cluster helper (delivered in chat) prints the reports or
-  submits `tools/page_stats_rerun.sh` for a collection without one. Dev logs `{8}` updated.
+* **#8:** the corpus rerun ran on 10-23 and passed `tools/page_stats_check.py` in both collections (ARUP 65,423
+  documents, 623,953 pages, one empty CSV skipped; ARUB 47,677 documents, 602,396 pages): the old columns and pages
+  unchanged, every ratio its counts' quotient. The reports, printed on the cluster by a helper delivered in chat, give
+  the comment that closes boxes 10–11. The body's definitions table still shows the `_rat` names. Dev logs `{8}`
+  updated.
