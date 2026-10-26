@@ -75,6 +75,8 @@ It reads what OCR produced for the pages page-classification sent to text recogn
 nlp-enrich (morphology, named entities, TEITOK) and keyword-extract. For born-digital documents, digital-convert
 writes the record and this service scores its lines (`POST /score_record`) and re-reads pages the converter
 flags for OCR. The whole chain: the [hub's workflow page](https://ufal.github.io/atrium-project/workflows/ocr-postprocess/).
+Its SSH Open Marketplace record:
+[OCR output post-processing and quality control (text-line categorization) - ATRIUM](https://marketplace.sshopencloud.eu/tool-or-service/YParYU).
 
 ## Limits and maturity
 

@@ -1,5 +1,5 @@
 # 📓 atrium-ocr-postprocess — agent_dev_logs/DEVLOG.md (timeline index)
-> _OCR/ALTO post-processing and line categorization; the successor of atrium-alto-postprocess since 2026-10-01 (#56 there; the open issues were transferred and renumbered). 4 open issues: #2 (calibration), #4 (fine-tuning the quality model), #5 (documentation of the categorization logic), #8 (category ratios in the page statistics); #1 closed 2026-10-16, #3 2026-10-13 and #6 2026-10-07. `test` = `107e279` (2026-10-21) · **v1.12.1-beta** (2026-10-20; the images v1.12.0-beta never got). Latest entry: 2026-10-22. #3's parameter stages after 2026-10-09, up to `v1.11.0-beta`, are recorded in its digest and plan, not here. Entries before 2026-10-01 use atrium-alto-postprocess's issue numbers._
+> _OCR/ALTO post-processing and line categorization; the successor of atrium-alto-postprocess since 2026-10-01 (#56 there; the open issues were transferred and renumbered). 4 open issues: #2 (calibration), #4 (fine-tuning the quality model), #5 (documentation of the categorization logic), #8 (category ratios in the page statistics); #1 closed 2026-10-16, #3 2026-10-13 and #6 2026-10-07. `test` = `107e279` (2026-10-21) · **v1.12.1-beta** (2026-10-20; the images v1.12.0-beta never got). Latest entry: 2026-10-26. #3's parameter stages after 2026-10-09, up to `v1.11.0-beta`, are recorded in its digest and plan, not here. Entries before 2026-10-01 use atrium-alto-postprocess's issue numbers._
 > _Per-issue detail: `digests/{id}.digest.md` · `plans/{id}.plan.md` · `issues/` exports (source of truth). Cross-repo/hub history lives in `ufal/atrium-project/agent_dev_logs/DEVLOG.md` (deduplicated out of this file)._
 
 ## 2026-03-13
@@ -1707,3 +1707,10 @@ week, ≈ 2026-10-02). Recorded in the #30 digest and plan; nothing switched on.
 * **Pilot:** the runbook is on `test` only (v1.12.1-beta predates it); the hub's pilot page links it at `f7341b4`
   until the next release, which also carries #8's `*_ratio` columns.
 * **Checks:** the suite passes (exit 0); OpenAPI check current.
+
+## 2026-10-26 — Triage (atrium-project): the README's SSHOMP record; #8's open boxes
+* **README** ("Where it fits in ATRIUM"): links the SSH Open Marketplace record `YParYU`, as the nlp-enrich,
+  page-classification and translator READMEs already do (atrium-project#4).
+* **#8:** boxes 10–11 wait for the rerun's two reports, which the 10-22 comment promised and nobody posted; the body's
+  definitions table still shows the `_rat` names. A cluster helper (delivered in chat) prints the reports or
+  submits `tools/page_stats_rerun.sh` for a collection without one. Dev logs `{8}` updated.
