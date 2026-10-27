@@ -1740,3 +1740,18 @@ week, ≈ 2026-10-02). Recorded in the #30 digest and plan; nothing switched on.
   ruff clean on the changed files (two
   earlier I001 findings in `tests/test_sweep_backends.py` and `tools/run_ablation_study.py` are untouched);
   `check_version.py`, `docs_check.py` and `image_closure.py` OK.
+
+## 2026-10-27 — v1.13.1-beta: the release v1.13.0-beta did not get (atrium-project#72, #81)
+* **Why no release:** the v1.13.0-beta tag pushed both images, but "Verify bundle is self-contained" failed:
+  `record_scoring.py` (imported by `service/text_api.py` and `service/text_inference.py` since v1.13.0) was not in
+  `release.yml`'s `cp` list. The follow-up commit `3406663` added `score_record.py` (the command line) to
+  `.github/production-image.json` instead, which the service does not reach, so Workflow Policy Lint failed on
+  `test` ("declared in `core` but `service/text_api.py` no longer reaches it").
+* **Fixed:** `record_scoring.py` in the bundle, `score_record.py` out of the production image list.
+  `tests/test_release_bundle.py` (the same file as page-classification's) applies the release's closure rule on
+  every push; without the fix it fails with the release's own message. A local replay of the packaging and the
+  check passes; `image_closure.py` passes.
+* **Release:** v1.13.1-beta in `CITATION.cff` (dated 2026-10-27), `setup/para_config.txt` and the regenerated spec
+  (version only). Docs reviewed against the code: no change needed (`docs_check` OK).
+* **Checks:** 2300 passed, 12 skipped (GLM, torch, korektor, optuna/SALib), 2 xfailed; ruff clean on the new file;
+  `check_version.py` OK.

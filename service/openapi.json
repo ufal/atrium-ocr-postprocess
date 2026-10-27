@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "ATRIUM Text Processor",
-    "version": "1.13.0-beta",
+    "version": "1.13.1-beta",
     "x-atrium-service": "atrium-ocr-postprocess",
     "x-atrium-service-previous": "atrium-alto-postprocess"
   },

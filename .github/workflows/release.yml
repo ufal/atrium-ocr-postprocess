@@ -149,6 +149,10 @@ jobs:
           # (atrium-project#32 round 2); the closure check below finds that import too.
           # atrium_rocrate.py: the service builds each call's CreateAction, returned as the
           # response's `paradata` (atrium-project#71).
+          # record_scoring.py: service/text_api.py and service/text_inference.py import it since
+          # v1.13.0-beta (/score_record, shared with score_record.py, atrium-project#72). v1.13.0-beta
+          # published its images but no release because this list did not name it;
+          # tests/test_release_bundle.py now runs this step's closure check on every push.
           cp atrium_document.py \
              atrium_document.schema.json \
              atrium_openapi.py \
@@ -163,6 +167,7 @@ jobs:
              document_hook.py \
              extract_JSON_2_TXT.py \
              page_split.py \
+             record_scoring.py \
              text_formats.py \
              text_util.py \
              atrium-service/
