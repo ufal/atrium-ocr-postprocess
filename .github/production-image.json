@@ -19,6 +19,7 @@
     "service/text_api.py",
     "service/text_inference.py",
     "service/utils.py",
+    "score_record.py",
     "classify_TEXT.py",
     "document_hook.py",
     "extract_JSON_2_TXT.py",
