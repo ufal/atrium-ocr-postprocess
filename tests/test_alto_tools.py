@@ -185,13 +185,14 @@ def test_alto_tools_is_no_longer_a_declared_dependency():
 
 
 def test_extract_single_page_writes_dehyphenated_cli_text(tmp_path):
-    from extract_ALTO_2_TXT import _dehyphenate, extract_single_page
+    from extract_ALTO_2_TXT import extract_single_page
+    from text_util import join_hyphenated_lines
 
     xml_path = _FIXTURES / "readingorder.alto.xml"
     assert extract_single_page(("DOC1", "1", str(xml_path), str(tmp_path))) is True
 
     written = (tmp_path / "DOC1" / "DOC1-1.txt").read_text(encoding="utf-8")
-    assert written == _dehyphenate(CLI_TEXT_READINGORDER)
+    assert written == join_hyphenated_lines(CLI_TEXT_READINGORDER)
     # The hyphenated word is rejoined across the line break, as before #50.
     assert "block" in written and "blo-" not in written
 
@@ -229,7 +230,8 @@ def test_extract_single_page_redoes_a_page_whose_alto_is_newer(tmp_path):
     """(#31 Phase 5) Resume used to keep any existing text; a re-split page is newer."""
     import os
 
-    from extract_ALTO_2_TXT import _dehyphenate, extract_single_page
+    from extract_ALTO_2_TXT import extract_single_page
+    from text_util import join_hyphenated_lines
 
     xml_path = _FIXTURES / "readingorder.alto.xml"
     txt = tmp_path / "DOC1" / "DOC1-1.txt"
@@ -239,7 +241,7 @@ def test_extract_single_page_redoes_a_page_whose_alto_is_newer(tmp_path):
     os.utime(txt, ns=(old, old))
 
     assert extract_single_page(("DOC1", "1", str(xml_path), str(tmp_path))) is True
-    assert txt.read_text(encoding="utf-8") == _dehyphenate(CLI_TEXT_READINGORDER)
+    assert txt.read_text(encoding="utf-8") == join_hyphenated_lines(CLI_TEXT_READINGORDER)
 
     txt.write_text("kept", encoding="utf-8")  # now newer than the ALTO: resumed
     assert extract_single_page(("DOC1", "1", str(xml_path), str(tmp_path))) is True

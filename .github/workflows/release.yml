@@ -153,7 +153,12 @@ jobs:
           # v1.13.0-beta (/score_record, shared with score_record.py, atrium-project#72). v1.13.0-beta
           # published its images but no release because this list did not name it;
           # tests/test_release_bundle.py now runs this step's closure check on every push.
-          cp atrium_document.py \
+          # alto_tools.py: service/text_inference.py reads `reading_order=alto` with it since
+          # v1.14.0-beta, as `--method alto-tools` (atrium-project#72); its Apache-2.0 licence rides along.
+          mkdir -p atrium-service/LICENSES
+          cp LICENSES/alto-tools-Apache-2.0.txt atrium-service/LICENSES/
+          cp alto_tools.py \
+             atrium_document.py \
              atrium_document.schema.json \
              atrium_openapi.py \
              atrium_paradata.py \

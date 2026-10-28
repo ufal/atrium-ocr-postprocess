@@ -34,36 +34,11 @@ from tqdm import tqdm
 import alto_tools
 import document_hook
 from atrium_paradata import ParadataLogger
+from text_util import join_hyphenated_lines
 
 _SCRIPT_NAME = "extract_alto2txt"
 
 CONFIG_PATH = os.getenv("LANGID_CONFIG", "setup/config.txt")
-
-# Common hyphen variations found in OCR/typesetting at a line break.
-HYPHEN_VARIATIONS = ("-", "\xad", "\u2013", "\u2014")
-
-
-def _dehyphenate(text: str) -> str:
-    """Join words split by a trailing hyphen at a line break into their full form.
-
-    A line whose last non-space character is one of HYPHEN_VARIATIONS is merged
-    with the following line: the hyphen is dropped and the two fragments are
-    concatenated with no space. Lines without a trailing hyphen keep their break.
-    """
-    raw_lines = text.splitlines()
-    out_lines: list[str] = []
-    carry = ""
-    for line in raw_lines:
-        stripped = line.rstrip()
-        if stripped and stripped[-1] in HYPHEN_VARIATIONS:
-            # Drop the hyphen and hold the fragment to fuse with the next line.
-            carry += stripped[:-1]
-            continue
-        out_lines.append(carry + line)
-        carry = ""
-    if carry:
-        out_lines.append(carry)
-    return "\n".join(out_lines).strip() + "\n"
 
 
 def _load_extract_config(config_path: str = CONFIG_PATH) -> dict:
@@ -116,7 +91,8 @@ def extract_single_page(args: tuple) -> bool:
         return False
 
     # (#1) Persist the result — previously the output was discarded.
-    page_text = _dehyphenate(extracted or "")
+    # The service's reading_order=alto joins them the same way (atrium-project#72).
+    page_text = join_hyphenated_lines(extracted or "")
     try:
         document_hook.write_text_if_changed(txt_path, page_text)  # unchanged text keeps its time (resume)
     except OSError:

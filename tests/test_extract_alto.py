@@ -1,10 +1,10 @@
 """
-Tests for extract_ALTO_2_TXT.py pure-logic helpers.
+Tests for extract_ALTO_2_TXT.py pure-logic helpers (its hyphen join is text_util's since atrium-project#72).
 """
 
 import document_hook
 from atrium_document import DocumentRecord, load_document
-from extract_ALTO_2_TXT import _dehyphenate
+from text_util import join_hyphenated_lines as _dehyphenate
 
 
 def test_dehyphenate_standard_hyphen():

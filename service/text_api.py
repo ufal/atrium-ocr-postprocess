@@ -408,7 +408,10 @@ class ScoredPage(BaseModel):
         description="Lines left as they were: digital-convert's decode verdict (`Garbage`, `Inverted`) stands."
     )
     skipped_empty: int = Field(description="Lines with no text, not scored.")
-    quality_score: Optional[float] = Field(description="The mean score of the scored lines; null when none was.")
+    quality_score: Optional[float] = Field(
+        description="The mean score of the page's `Clear` and `Noisy` lines, as the batch's `avg_quality_score`; "
+        "null when it has none."
+    )
     quality_band: Optional[str] = Field(
         description="`Clear`, `Noisy` or `Trash` by plurality of the scored lines; null when none of the three occurs."
     )
@@ -910,8 +913,9 @@ async def process_document(
         "layoutreader",
         description=(
             "ALTO uploads only: `layoutreader` reorders the lines with LayoutReader (LayoutLMv3, whose outputs "
-            "carry CC BY-NC-SA 4.0), as the batch `--method layoutreader`; `alto` keeps the ALTO's own order and "
-            "runs no LayoutReader, as `--method alto-tools`."
+            "carry CC BY-NC-SA 4.0), as the batch `--method layoutreader`; `alto` reads the page with alto-tools "
+            "and runs no LayoutReader, as `--method alto-tools`: the ALTO's own order, a blank line before each "
+            "text block, a hyphenated line joined to the next."
         ),
     ),
     include_record: bool = Form(

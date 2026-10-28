@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "ATRIUM Text Processor",
-    "version": "1.13.1-beta",
+    "version": "1.14.0-beta",
     "x-atrium-service": "atrium-ocr-postprocess",
     "x-atrium-service-previous": "atrium-alto-postprocess"
   },
@@ -1978,7 +1978,7 @@
               "alto"
             ],
             "title": "Reading Order",
-            "description": "ALTO uploads only: `layoutreader` reorders the lines with LayoutReader (LayoutLMv3, whose outputs carry CC BY-NC-SA 4.0), as the batch `--method layoutreader`; `alto` keeps the ALTO's own order and runs no LayoutReader, as `--method alto-tools`.",
+            "description": "ALTO uploads only: `layoutreader` reorders the lines with LayoutReader (LayoutLMv3, whose outputs carry CC BY-NC-SA 4.0), as the batch `--method layoutreader`; `alto` reads the page with alto-tools and runs no LayoutReader, as `--method alto-tools`: the ALTO's own order, a blank line before each text block, a hyphenated line joined to the next.",
             "default": "layoutreader"
           },
           "include_record": {
@@ -2946,7 +2946,7 @@
               }
             ],
             "title": "Quality Score",
-            "description": "The mean score of the scored lines; null when none was."
+            "description": "The mean score of the page's `Clear` and `Noisy` lines, as the batch's `avg_quality_score`; null when it has none."
           },
           "quality_band": {
             "anyOf": [

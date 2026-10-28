@@ -123,8 +123,9 @@ out of the denominator, this column counts them.
 > `avg_*` columns and `main_lang` will be `NaN` / `None` for pages with no `Clear` or `Noisy` line, i.e. pages
 > whose only lines are `Trash`, `Empty` or `Non-text`.
 > `avg_quality_score` leaves `Trash` lines out, so a page made mostly of `Trash` lines can still score ≥ 0.80:
-> read it together with the page's `Trash` count. In a document record, a page with no `Clear`, `Noisy` or
-> `Trash` line carries no `quality_band` (the service path omits it too) and no `quality_score`.
+> read it together with the page's `Trash` count. The service's and `score_record.py`'s `pages[].quality_score`
+> is the same mean. In a document record, a page with no `Clear`, `Noisy` or `Trash` line carries no
+> `quality_band` (the service path omits it too) and no `quality_score`.
 > Additional per-line diagnostic variables (e.g. `weird_wx`, `original_lang`, `original_text`) and flags added
 > and ignored for this page-level aggregation to ensure stability.
 
@@ -148,8 +149,8 @@ out of the denominator, this column counts them.
 | none                                                                                                                                                                                                                                         | `sym_count`: tokens with characters outside the allowed set, reported and not scored |
 | `original_text`, `split_ws`, `split_we`, `word_count`, `char_count`, `fused_words`, `weird_wx`, `vowel_ratio`, `rot_ratio`, `valid_word_ratio`, `structured`, `damaged`, `perplex_raw`, `perplex_blend`, `caps_header`, the diagnostic flags | none: CSV only                                                                       |
 
-The service skips blank lines and the document passes, so its `line_num` and some of its categories differ from
-the CSV's on the same file: [The command line and the service](../usage.md#the-command-line-and-the-service).
+The service runs no document passes, so some of its categories differ from the CSV's on the same file; its
+`line_num` is the CSV's: [The command line and the service](../usage.md#the-command-line-and-the-service).
 
 ## Step 1: the text-lines reports
 

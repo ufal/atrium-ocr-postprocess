@@ -40,7 +40,7 @@ Only the code reachable from ``alto-tools -t`` and ``alto-tools -s``:
 Deliberately **not** vendored, because nothing in this repository calls it:
 ``alto_confidence`` (``-c``), ``alto_illustrations`` (``-i``), ``alto_graphics``
 (``-g``), the ``--dehyphenate`` / ``--detect-hyphens`` branches of ``alto_text``
-(this repo does its own de-hyphenation in ``extract_ALTO_2_TXT._dehyphenate``),
+(this repo does its own de-hyphenation in ``text_util.join_hyphenated_lines``),
 the ``argparse`` CLI, stdin input, directory walking and the ``-x/--xml-encoding``
 sniffing path.
 
@@ -187,7 +187,7 @@ def alto_text(xml: ET.ElementTree, xmlns: str, pb: str = "\n", lb: str = "\n") -
     every ``<TextBlock>``, ``lb`` before every ``<TextLine>``, ``<String>``
     @CONTENT values joined with single spaces, and a plain ASCII hyphen-minus
     appended when the line ends in a ``<HYP>`` element. There is no trailing
-    newline — ``extract_ALTO_2_TXT._dehyphenate`` adds one.
+    newline — ``text_util.join_hyphenated_lines`` adds one.
 
     VENDORED: returns the text instead of writing it to ``sys.stdout`` (and so
     drops upstream's ``codecs.getwriter("utf-8")`` stdout re-wrapping, which only

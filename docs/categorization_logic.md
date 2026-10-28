@@ -91,8 +91,8 @@ it:
   existing CSVs without a GPU (`tests/test_scoring_single_source.py`; `tests/test_service_hardening.py` pins the
   service against the batch path line by line).
 - The document passes need a whole document, so the service answers each line as the scorer gave it: for a
-  whole document its categories can differ from a batch run's. Its `pages[].quality_score` is the mean over the
-  lines a model judged (`Clear`, `Noisy`, `Trash`); the batch `avg_quality_score` averages `Clear` and `Noisy`.
+  whole document its categories can differ from a batch run's. Its `pages[].quality_score` is the batch
+  `avg_quality_score`: the mean of the page's `Clear` and `Noisy` lines.
 - `/score_record` scores the lines of a record another tool wrote (a born-digital record,
   atrium-digital-convert#4) with the same categories and constants, without reading, splitting or reordering
   them. A line carrying the converter's decode verdict (`Garbage`, `Inverted`) is left as it is, and `text` is

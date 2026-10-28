@@ -50,6 +50,7 @@ except ImportError:
 # the ALTO parsing below, which is deliberately mirrored (#8) to avoid pulling
 # extract_LytRdr_ALTO_2_TXT's eager torch/transformers/pandas imports into a
 # module that must stay importable without ML libraries installed.
+import alto_tools  # noqa: E402
 import tool_limits  # noqa: E402
 from atrium_limits import LimitNotes  # noqa: E402
 from classify_TEXT import score_line  # noqa: E402
@@ -60,7 +61,13 @@ from page_split import json_pages  # noqa: E402
 # The `lang` of a line no language was identified for; declared with the record scoring, which
 # keeps it out of a record (atrium-project#72).
 from record_scoring import NO_LANG  # noqa: E402
-from service.utils import normalize_boxes, parse_alto_xml_lines, post_process_text  # noqa: E402
+from service.utils import (  # noqa: E402
+    AltoUnreadable,
+    normalize_boxes,
+    parse_alto_tree,
+    parse_alto_xml_lines,
+    post_process_text,
+)
 
 # (#31) The text-lines readers (PDF, DOCX, ODT, XLSX, PPTX, EPUB, RTF, HTML/hOCR, PAGE
 # XML, TEI, CSV, Markdown, ...). Stdlib + lxml at import; pypdfium2/charset-normalizer
@@ -83,6 +90,7 @@ from text_util import (  # noqa: E402
     _lang_base,
     calculate_perplexity_batch,
     detect_strange_symbols,
+    join_hyphenated_lines,
     merge_split_words,
     pre_filter_line,
 )
@@ -315,10 +323,11 @@ class TextModelManager:
     def process_text_file(
         self, path: str, notes: Optional[LimitNotes] = None, components: Optional[Set[str]] = None
     ) -> Dict[str, Any]:
-        """Classify a plain-text upload, one line per non-empty line.
+        """Classify a plain-text upload, one entry per line.
 
         (#31 Phase 4) Decoded and shaped like the batch text-lines path: any common
-        encoding (cp1250 first), lines normalized and wrapped at MAX_LINE_CHARS. It
+        encoding (cp1250 first), lines normalized and wrapped at MAX_LINE_CHARS, blank
+        lines kept or dropped by [TEXT_INGEST].KEEP_BLANK_LINES (:func:`shaped_page`). It
         used to be read as UTF-8 only, so a legacy-encoded upload failed with a 500.
         Raises text_formats.IngestError for bytes that are not text. `components`, when
         given, receives the licensed reader components the file needed (see
@@ -335,7 +344,7 @@ class TextModelManager:
             _note_wrapped(text.splitlines(), options.max_line_chars, notes)
             # A form feed starts a page, as in the batch reader (text_formats.text_to_pages)
             # and in pdftotext's output (atrium-project#72): the service read one page "1".
-            pages = [shape_lines(page, options.max_line_chars, keep_blank=False) for page in text_to_pages(text)]
+            pages = [shaped_page(page, options) for page in text_to_pages(text)]
         return self._paged_result("plain_text", pages, notes)
 
     def _paged_result(
@@ -375,15 +384,15 @@ class TextModelManager:
         """Classify any other text-bearing upload (#31): PDF, DOCX, ODT, XLSX, PPTX, ...
 
         Reads the file with the same text_formats readers and the same line shaping
-        (shape_lines: blank lines dropped, long lines wrapped) as the text-lines batch
+        (shaped_page: blank lines by the config, long lines wrapped) as the text-lines batch
         method, so one file yields the same lines through either path. Pages are kept:
         every entry carries `page` (1-based index, the batch path's page id) and
         `page_label` (the source's own label), and `line_num` restarts per page like
         DOC_LINE_CATEG's. Raises text_formats.IngestError for unreadable input, and
         `no_text` for a document without a single text line (a scan with no text layer).
         The [TEXT_INGEST] settings and the origin keys come from the config
-        (ingest_settings); blank lines are always dropped here, since this path has no
-        `Empty` fast track and each one would go through the perplexity model.
+        (ingest_settings), KEEP_BLANK_LINES included: a kept blank line is an `Empty` entry,
+        numbered with the rest, as on the batch path.
         `components`, when given, receives the licensed reader components the document
         needed (:func:`reader_components`), for the caller's paradata.
         """
@@ -399,7 +408,7 @@ class TextModelManager:
         batch = tool_limits.PPL_BATCH_LINES.get()
         for n, page in enumerate(doc.pages, 1):
             _note_wrapped(page.lines, options.max_line_chars, notes)
-            lines = merged_lines(shape_lines(page.lines, options.max_line_chars, keep_blank=False))
+            lines = merged_lines(shaped_page(page.lines, options))
             entries: List[Dict[str, Any]] = []
             for start in range(0, len(lines), batch):
                 entries.extend(self._classify_lines(lines[start : start + batch], notes))
@@ -466,8 +475,10 @@ class TextModelManager:
         ``layoutlmv3`` when LayoutReader ordered the page (its outputs carry CC BY-NC-SA 4.0,
         as the batch method logs it), for the caller's paradata.
 
-        `reading_order="alto"` keeps the ALTO's own line order and runs no LayoutReader, as the
-        batch `--method alto-tools` does (atrium-project#72); no CC BY-NC-SA component is used then.
+        `reading_order="alto"` reads the page as the batch `--method alto-tools` does
+        (atrium-project#72): the ALTO's own reading order, a blank line before each `<TextBlock>`,
+        a hyphenated line joined to the next (:func:`alto_tools_text`), and no LayoutReader, so no
+        CC BY-NC-SA component is used.
         """
         # strict: an upload that is not ALTO raises AltoUnreadable (the service's 422), and a page
         # that merely has no text still comes back as an empty result.
@@ -475,9 +486,13 @@ class TextModelManager:
         if not lines:
             return {"type": "alto_xml", "cleaned_lines": []}
 
+        if reading_order == "alto":
+            lines = alto_tools_text(path).splitlines()
+            return {"type": "alto_xml", "cleaned_lines": self._classify_lines(merged_lines(lines), notes)}
+
         norm_boxes = normalize_boxes(boxes, page_w, page_h)
 
-        if reading_order != "alto" and boxes2inputs is not None and self.layout_model is not None:
+        if boxes2inputs is not None and self.layout_model is not None:
             if components is not None:
                 components.add("layoutlmv3")
             with self._gpu_lock:
@@ -485,8 +500,8 @@ class TextModelManager:
                     lines, norm_boxes, self.layout_model, self.device, notes=notes
                 )
         else:
-            # The ALTO order: asked for, or v3.helpers unavailable, where it is the fallback rather
-            # than failing the whole request (#8; mirrors the startup warning above).
+            # The ALTO order when v3.helpers is unavailable: the fallback rather than failing the
+            # whole request (#8; mirrors the startup warning above).
             ordered_lines, ordered_boxes = lines, norm_boxes
 
         full_text = post_process_text(ordered_lines, ordered_boxes)
@@ -494,9 +509,10 @@ class TextModelManager:
         # Reconstruct hyphen-split words and classify line by line, carrying
         # the split-suffix state across lines exactly like classify_TEXT.py's
         # per-page loop (so a word split across a line break isn't duplicated
-        # or left broken).
-        raw_lines = [line for line in full_text.splitlines() if line.strip()]
-        resolved_lines = [text.strip() for text, _ws, _we in merge_split_words(raw_lines) if text.strip()]
+        # or left broken). The blank lines post_process_text put at a paragraph
+        # break stay, as in the page text the batch classifies: each is an `Empty`
+        # entry and counts in `line_num` (atrium-project#72).
+        resolved_lines = [text.strip() for text in merged_lines(full_text.splitlines())]
 
         return {"type": "alto_xml", "cleaned_lines": self._classify_lines(resolved_lines, notes)}
 
@@ -517,6 +533,33 @@ def upload_page_count(task_type: str, path: str) -> int:
     except (OSError, ValueError, IngestError):
         return 1
     return 1
+
+
+def alto_tools_text(path: str) -> str:
+    """The page text `--method alto-tools` writes for classify_TEXT.py (extract_ALTO_2_TXT.py): the
+    vendored alto-tools extraction, over the tree of the service's hardened parser, its hyphenated
+    lines joined (text_util.join_hyphenated_lines). Raises AltoUnreadable where the batch skips the
+    page: an ALTO namespace alto-tools does not know, or a reading order it cannot follow."""
+    tree = parse_alto_tree(path)
+    tag = tree.getroot().tag
+    xmlns = tag[1:].split("}")[0] if tag.startswith("{") else ""
+    if xmlns not in alto_tools.ALTO_NAMESPACES.values():
+        raise AltoUnreadable(f"alto-tools does not read its namespace ({xmlns or 'none'})")
+    try:
+        text = alto_tools.alto_text(tree, xmlns)
+    except Exception as e:  # AltoToolsError, or an element upstream fails on too
+        raise AltoUnreadable(f"alto-tools cannot read it ({e})") from e
+    return join_hyphenated_lines(text)
+
+
+def shaped_page(lines: Iterable[str], options) -> List[str]:
+    """One page's lines as extract_TEXT_2_TXT.py writes them for classify_TEXT.py: normalized, wrapped
+    at MAX_LINE_CHARS, blank lines kept only with KEEP_BLANK_LINES (text_formats.shape_lines), and none
+    at the end, where the batch page file cannot hold one (atrium-project#72)."""
+    lines = shape_lines(lines, options.max_line_chars, keep_blank=options.keep_blank_lines)
+    while lines and not lines[-1]:
+        lines.pop()
+    return lines
 
 
 def merged_lines(lines: List[str]) -> List[str]:

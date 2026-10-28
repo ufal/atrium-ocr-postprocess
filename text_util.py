@@ -1309,6 +1309,37 @@ def parse_line_splits(line_text: str) -> tuple[str, str, str]:
     return merged_text, last_prefix, last_suffix
 
 
+#: The hyphens an alto-tools line can end with, a word split there (join_hyphenated_lines).
+HYPHEN_VARIATIONS = ("-", "\xad", "\u2013", "\u2014")
+
+
+def join_hyphenated_lines(text: str) -> str:
+    """Join words split by a trailing hyphen at a line break into their full form.
+
+    A line whose last non-space character is one of HYPHEN_VARIATIONS is merged
+    with the following line: the hyphen is dropped and the two fragments are
+    concatenated with no space. Lines without a trailing hyphen keep their break.
+
+    The page text of `--method alto-tools` (extract_ALTO_2_TXT.py) and of the service's
+    `reading_order=alto` (service/text_inference.py), both from the vendored alto-tools
+    extraction (atrium-project#72).
+    """
+    raw_lines = text.splitlines()
+    out_lines: list[str] = []
+    carry = ""
+    for line in raw_lines:
+        stripped = line.rstrip()
+        if stripped and stripped[-1] in HYPHEN_VARIATIONS:
+            # Drop the hyphen and hold the fragment to fuse with the next line.
+            carry += stripped[:-1]
+            continue
+        out_lines.append(carry + line)
+        carry = ""
+    if carry:
+        out_lines.append(carry)
+    return "\n".join(out_lines).strip() + "\n"
+
+
 def merge_split_words(lines) -> list[tuple[str, str, str]]:
     """Join the words an extraction split across line ends: one `(text, split_ws, split_we)` per line.
 

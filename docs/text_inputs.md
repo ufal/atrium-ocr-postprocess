@@ -296,7 +296,7 @@ footers are not read; the parts that hold text are counted (`headers_footers_not
 
 `extract_TEXT_2_TXT.py`, and the service, then apply `shape_lines()`:
 * blank lines are dropped (`KEEP_BLANK_LINES = false`), because `classify_TEXT` would score each one
-  as an `Empty` row.
+  as an `Empty` row; with `true`, each is kept as one, numbered with the rest, on both paths.
 * lines over `MAX_LINE_CHARS` (1000) are wrapped at a word boundary, and hard-split when there is
   none. The perplexity batch pads every line to the longest one in the batch, so one 30,000-character
   paragraph would cost the whole batch.
@@ -538,9 +538,9 @@ a page there too; a `.json` upload is paged by `page_split.json_pages`, the batc
 (atrium-project#72).
 
 The readers use the config's `[TEXT_INGEST]` settings and `[DOCUMENT].SOURCE_ORIGIN(_BY_KIND)`, read
-from `LANGID_CONFIG` once at start-up; a malformed value fails the start. Blank lines are always
-dropped here (`KEEP_BLANK_LINES` and `STRICT` are batch-only), and the `DOCUMENT_SOURCE_ORIGIN` env
-var is not read. Errors name the reason code: `415` `unsupported_media_type` for a file of a kind this
+from `LANGID_CONFIG` once at start-up; a malformed value fails the start. `KEEP_BLANK_LINES` applies
+here as on the batch path (since v1.14.0-beta; blank lines used to be dropped always), `STRICT` is
+batch-only, and the `DOCUMENT_SOURCE_ORIGIN` env var is not read. Errors name the reason code: `415` `unsupported_media_type` for a file of a kind this
 service does not read (a `400` before atrium-project#32 round 2), `422` for a supported kind that cannot
 be read, a document without a single text line included (`no_text`), and `501` when a reader's optional
 dependency is not installed; the HTTP column of §4 lists them. Born-digital uploads do not accrete into

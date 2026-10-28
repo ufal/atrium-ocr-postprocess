@@ -12,18 +12,30 @@ Since v1.13.0-beta:
 * `include_record=true` gives a record without a baseline, as the batch path writes one;
 * `reading_order=alto` keeps an ALTO's own order, as `--method alto-tools`.
 
+Since v1.14.0-beta:
+
+* `reading_order=alto` reads the page with alto-tools, as `--method alto-tools`: the same lines and
+  line breaks, a hyphenated line joined to the next;
+
+* a blank line is an `Empty` entry numbered with the rest wherever the batch keeps one: the
+  paragraph breaks of an ALTO page, and the blank lines of a text-lines input with
+  `[TEXT_INGEST] KEEP_BLANK_LINES = true` (both drop them without it), so `line_num` is the batch's;
+* a page's `quality_score` is the mean of its `Clear` and `Noisy` lines on both sides.
+
 What differs on purpose is pinned here too, with the table of docs/usage.md
-("The command line and the service") that explains it: blank lines, the page quality mean, and
-the paradata (a file on the command line, a `CreateAction` in the response, hub #71).
+("The command line and the service") that explains it: the paradata (a file on the command line,
+a `CreateAction` in the response, hub #71).
 
 No model runs: the line classifier is replaced by one that answers every line from its text.
 """
 
 from __future__ import annotations
 
+import ast
 import json
 import os
 import sys
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from unittest.mock import patch
 
@@ -32,18 +44,24 @@ import pytest
 pytest.importorskip("fastapi")
 from fastapi.testclient import TestClient  # noqa: E402
 
+import alto_tools  # noqa: E402
 import atrium_openapi  # noqa: E402
+import extract_ALTO_2_TXT  # noqa: E402
+import extract_TEXT_2_TXT  # noqa: E402
 import page_split  # noqa: E402
 import score_record as score_record_cli  # noqa: E402
 import text_split  # noqa: E402
+import text_stats_create  # noqa: E402
 from atrium_document import DocumentRecord, validate_document  # noqa: E402
 from extract_JSON_2_TXT import process_json_to_txt  # noqa: E402
 from record_scoring import page_records_from_lines  # noqa: E402
 from service import text_api  # noqa: E402
-from text_util import merge_split_words  # noqa: E402
+from service.utils import AltoUnreadable  # noqa: E402
+from text_util import join_hyphenated_lines, merge_split_words  # noqa: E402
 
+ROOT = Path(__file__).resolve().parent.parent
 client = TestClient(text_api.app)
-_SPEC = atrium_openapi.load(Path(__file__).resolve().parent.parent / "service" / "openapi.json")
+_SPEC = atrium_openapi.load(ROOT / "service" / "openapi.json")
 
 #: Two pages; a word split across a line end in the ALTO extraction's notation (`prefix- {word}`) on
 #: each; a blank line inside page 1 and at the top of page 2.
@@ -112,15 +130,54 @@ def workdir(tmp_path, monkeypatch):
 
 
 def _batch_lines(page_dir: Path, suffix: str = ".txt") -> list:
-    """`(page, text)` of each line as classify_TEXT.py reads a document's page files: the lines of
-    each file, the split words joined (`merge_split_words`)."""
+    """`(page, line_num, text)` of each line as classify_TEXT.py reads a document's page files: the
+    lines of each file (`readlines()`), the split words joined (`merge_split_words`), numbered from 1
+    per page, a blank line included."""
     rows = []
     files = sorted(page_dir.glob(f"*{suffix}"), key=lambda p: int(p.stem.rsplit("-", 1)[1]))
     for page_file in files:
         page = page_file.stem.rsplit("-", 1)[1]
-        lines = page_file.read_text(encoding="utf-8").splitlines(keepends=True)
-        rows.extend((page, text.strip()) for text, _ws, _we in merge_split_words(lines))
+        with open(page_file, encoding="utf-8") as fh:
+            lines = fh.readlines()
+        rows.extend((page, n, text.strip()) for n, (text, _ws, _we) in enumerate(merge_split_words(lines), 1))
     return rows
+
+
+def _service_lines(body: dict) -> list:
+    return [(e.get("page", "1"), e["line_num"], e["text"]) for e in body["cleaned_lines"]]
+
+
+@pytest.fixture
+def ingest(workdir, monkeypatch):
+    """Both sides read one config: the batch stages and the service (LANGID_CONFIG)."""
+    ti = sys.modules[type(text_api.text_manager).__module__]
+
+    def write(keep_blank: bool) -> Path:
+        config = workdir / "config.txt"
+        config.write_text(
+            "[DOCUMENT]\nJSON_DIR =\nSOURCE_ORIGIN =\n\n"
+            f"[EXTRACT]\nINPUT_CSV = {workdir / 'stats.csv'}\nOUTPUT_TXT_TEXT = {workdir / 'txt'}\n"
+            f"OUTPUT_LINES_TEXT = {workdir / 'lines'}\n\n"
+            f"[TEXT_INGEST]\nKEEP_BLANK_LINES = {str(keep_blank).lower()}\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(extract_TEXT_2_TXT, "CONFIG_PATH", str(config))
+        monkeypatch.setenv("LANGID_CONFIG", str(config))
+        ti.ingest_settings.cache_clear()
+        return config
+
+    yield write
+    ti.ingest_settings.cache_clear()
+
+
+def _text_lines_batch(workdir: Path) -> list:
+    """The batch text-lines method up to classify_TEXT.py: text_split.py, text_stats_create.py,
+    extract_TEXT_2_TXT.py, then the page files read as classify reads them."""
+    pytest.importorskip("pandas")  # extract_TEXT_2_TXT reads the statistics CSV with it
+    assert text_split.main([str(workdir / "in"), str(workdir / "out")]) == 0
+    assert text_stats_create.main([str(workdir / "out"), "-o", str(workdir / "stats.csv")]) == 0
+    assert extract_TEXT_2_TXT.main([]) == 0
+    return _batch_lines(workdir / "txt" / "DOC1")
 
 
 def _process(name: str, data: bytes, media_type: str = "text/plain", **form) -> dict:
@@ -132,25 +189,25 @@ def _process(name: str, data: bytes, media_type: str = "text/plain", **form) -> 
 # ── reading ──────────────────────────────────────────────────────────────────────────────────
 
 
-def test_a_text_with_form_feeds_is_paged_the_same_on_both_sides(workdir, echo):
+@pytest.mark.parametrize("keep_blank", [False, True], ids=["blank-lines-dropped", "blank-lines-kept"])
+def test_a_text_with_form_feeds_is_paged_and_numbered_the_same_on_both_sides(workdir, ingest, echo, keep_blank):
+    ingest(keep_blank)
     (workdir / "in").mkdir()
     (workdir / "in" / "DOC1.txt").write_text(TXT, encoding="utf-8")
-    assert text_split.main([str(workdir / "in"), str(workdir / "out")]) == 0
-    batch = _batch_lines(workdir / "out" / "DOC1")
+    batch = _text_lines_batch(workdir)
 
     body = _process("DOC1.txt", TXT.encode("utf-8"))
     atrium_openapi.validate_response(_SPEC, "/process", "post", 200, body)
-    service = [(e["page"], e["text"]) for e in body["cleaned_lines"]]
+    service = _service_lines(body)
 
-    # The same pages and the same lines, the split words joined the same way ...
-    assert service == [row for row in batch if row[1]]
-    assert service[:2] == [("1", "Zpráva o archeologickém výzkumu"), ("1", "na lokalitě Hradiště.")]
-    assert ("2", "konec.") in service
+    # The same pages, lines and line numbers, the split words joined the same way ...
+    assert service == batch
+    assert service[:2] == [("1", 1, "Zpráva o archeologickém výzkumu"), ("1", 2, "na lokalitě Hradiště.")]
     assert [p["page"] for p in body["pages"]] == ["1", "2"]
-    # ... but the batch keeps a blank line as an `Empty` row and the service drops it, so the line
-    # numbers differ by the blank lines (docs/usage.md, "The command line and the service").
-    assert [row for row in batch if not row[1]] == [("1", ""), ("2", "")]
-    assert [e["line_num"] for e in body["cleaned_lines"] if e["page"] == "2"] == [1, 2]
+    # ... and a blank line on both sides or on neither: an `Empty` entry that counts in `line_num`.
+    blank = [(page, n) for page, n, text in service if not text]
+    assert blank == ([("1", 3), ("2", 1)] if keep_blank else [])
+    assert {e["category"] for e in body["cleaned_lines"] if not e["text"]} <= {"Empty"}
 
 
 def test_a_text_without_form_feeds_answers_as_before(echo):
@@ -170,7 +227,7 @@ def test_a_paged_json_is_paged_the_same_on_both_sides(workdir, echo):
     batch = _batch_lines(txt_dir)
 
     body = _process("DOC2.json", src.read_bytes(), "application/json")
-    assert [(e["page"], e["text"]) for e in body["cleaned_lines"]] == batch
+    assert _service_lines(body) == batch
     assert [(p["page"], p["lines"]) for p in body["pages"]] == [("1", 2), ("2", 1), ("3", 2)]
 
 
@@ -250,10 +307,104 @@ def reversing_layout_reader(monkeypatch):
 def test_reading_order_alto_keeps_the_alto_order_and_runs_no_layoutreader(echo, reversing_layout_reader):
     default = _process("p.alto.xml", ALTO, "application/xml")
     alto = _process("p.alto.xml", ALTO, "application/xml", reading_order="alto")
-    assert [e["text"] for e in default["cleaned_lines"]] == ["Third line", "Second line", "First line"]
+    # (Read upwards, every line starts a new paragraph: the blank lines between are left out here.)
+    assert [e["text"] for e in default["cleaned_lines"] if e["text"]] == ["Third line", "Second line", "First line"]
     assert [e["text"] for e in alto["cleaned_lines"]] == ["First line", "Second line", "Third line"]
     assert "layoutlmv3" in json.dumps(default["paradata"])
     assert "layoutlmv3" not in json.dumps(alto["paradata"])
+
+
+#: Two paragraphs: the third line starts well below the second, so the line joiner puts a blank line
+#: before it.
+ALTO_PARAGRAPHS = ALTO.replace(b'VPOS="70"', b'VPOS="200"')
+
+
+def _batch_function(path: Path, name: str, **namespace):
+    """A top-level function of a batch script, run without importing the script (the LayoutReader
+    extraction imports torch and LayoutReader at load time; these functions need neither)."""
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    (node,) = [n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == name]
+    exec(compile(ast.Module(body=[node], type_ignores=[]), str(path), "exec"), namespace)
+    return namespace[name]
+
+
+@pytest.fixture
+def keeping_layout_reader(monkeypatch):
+    """A LayoutReader that keeps the ALTO's order."""
+    inference = sys.modules[type(text_api.text_manager).__module__]
+    monkeypatch.setattr(inference, "boxes2inputs", object())
+    monkeypatch.setattr(text_api.text_manager, "layout_model", object())
+    monkeypatch.setattr(inference, "_run_layout_reader", lambda lines, boxes, *_args, **_kw: (lines, boxes))
+
+
+def test_an_alto_paragraph_break_is_an_empty_line_on_both_sides(tmp_path, echo, keeping_layout_reader):
+    """The page text extract_LytRdr_ALTO_2_TXT.py writes for classify_TEXT.py, and the service's lines
+    for the same ALTO in the same order: the blank line of the paragraph break is in both, numbered."""
+    np = pytest.importorskip("numpy")
+    script = ROOT / "extract_LytRdr_ALTO_2_TXT.py"
+    parse = _batch_function(script, "parse_alto_xml", ET=ET)
+    normalize = _batch_function(script, "normalize_boxes")
+    join = _batch_function(script, "post_process_text", np=np)
+    alto = tmp_path / "DOC4-1.alto.xml"
+    alto.write_bytes(ALTO_PARAGRAPHS)
+    lines, boxes, (width, height) = parse(str(alto))
+    page_dir = tmp_path / "txt"
+    page_dir.mkdir()
+    (page_dir / "DOC4-1.txt").write_text(join(lines, normalize(boxes, width, height)), encoding="utf-8")
+    batch = _batch_lines(page_dir)
+
+    body = _process("DOC4-1.alto.xml", ALTO_PARAGRAPHS, "application/xml")
+    assert batch == [("1", 1, "First line"), ("1", 2, "Second line"), ("1", 3, ""), ("1", 4, "Third line")]
+    assert _service_lines(body) == batch
+    assert body["cleaned_lines"][2]["category"] == "Empty"
+
+
+#: Two text blocks, the first with a word hyphenated across its two lines.
+ALTO_BLOCKS = """<?xml version="1.0" encoding="UTF-8"?>
+<alto xmlns="http://www.loc.gov/standards/alto/ns-v4#">
+  <Layout><Page ID="p1" WIDTH="1000" HEIGHT="1000"><PrintSpace>
+    <TextBlock ID="b1">
+      <TextLine ID="l1" HPOS="10" VPOS="10" WIDTH="500" HEIGHT="20"><String CONTENT="Zpráva" HPOS="10" VPOS="10" WIDTH="100" HEIGHT="20"/><SP/><String CONTENT="o" HPOS="120" VPOS="10" WIDTH="10" HEIGHT="20"/><SP/><String CONTENT="vý" SUBS_TYPE="HypPart1" SUBS_CONTENT="výzkumu" HPOS="140" VPOS="10" WIDTH="30" HEIGHT="20"/><HYP CONTENT="-"/></TextLine>
+      <TextLine ID="l2" HPOS="10" VPOS="40" WIDTH="500" HEIGHT="20"><String CONTENT="zkumu" SUBS_TYPE="HypPart2" SUBS_CONTENT="výzkumu" HPOS="10" VPOS="40" WIDTH="100" HEIGHT="20"/><SP/><String CONTENT="na" HPOS="120" VPOS="40" WIDTH="30" HEIGHT="20"/><SP/><String CONTENT="lokalitě" HPOS="160" VPOS="40" WIDTH="100" HEIGHT="20"/></TextLine>
+    </TextBlock>
+    <TextBlock ID="b2">
+      <TextLine ID="l3" HPOS="10" VPOS="70" WIDTH="500" HEIGHT="20"><String CONTENT="Druhý" HPOS="10" VPOS="70" WIDTH="100" HEIGHT="20"/><SP/><String CONTENT="blok" HPOS="120" VPOS="70" WIDTH="100" HEIGHT="20"/></TextLine>
+    </TextBlock>
+  </PrintSpace></Page></Layout>
+</alto>
+""".encode("utf-8")
+
+
+def test_reading_order_alto_gives_the_lines_of_the_alto_tools_method(tmp_path, echo):
+    """extract_ALTO_2_TXT.py's page text, read as classify_TEXT.py reads it, and the service's lines with
+    `reading_order=alto`: a blank line before the second block, the hyphenated line joined to the next."""
+    alto = tmp_path / "DOC5-1.alto.xml"
+    alto.write_bytes(ALTO_BLOCKS)
+    assert extract_ALTO_2_TXT.extract_single_page(("DOC5", "1", str(alto), str(tmp_path / "txt")))
+    batch = _batch_lines(tmp_path / "txt" / "DOC5")
+
+    body = _process("DOC5-1.alto.xml", ALTO_BLOCKS, "application/xml", reading_order="alto")
+    assert batch == [("1", 1, "Zpráva o výzkumu na lokalitě"), ("1", 2, ""), ("1", 3, "Druhý blok")]
+    assert _service_lines(body) == batch
+
+
+@pytest.mark.parametrize("name", ["idnext.alto.xml", "readingorder.alto.xml"])
+def test_the_service_runs_alto_tools_over_its_hardened_parse_with_the_same_text(name):
+    """alto-tools' own parse (the batch) and the service's hardened one give alto-tools the same tree:
+    the `<ReadingOrder>` and `@IDNEXT` orders of tests/fixtures/alto included."""
+    inference = sys.modules[type(text_api.text_manager).__module__]
+    path = ROOT / "tests" / "fixtures" / "alto" / name
+    assert inference.alto_tools_text(str(path)) == join_hyphenated_lines(alto_tools.text_from_file(path))
+
+
+def test_an_alto_namespace_alto_tools_does_not_read_is_refused_with_reading_order_alto(tmp_path):
+    inference = sys.modules[type(text_api.text_manager).__module__]
+    path = tmp_path / "p.alto.xml"
+    path.write_bytes(ALTO.replace(b"http://www.loc.gov/standards/alto/ns-v4#", b"urn:example:alto"))
+    with pytest.raises(alto_tools.AltoToolsError):  # the batch skips the page
+        alto_tools.text_from_file(path)
+    with pytest.raises(AltoUnreadable, match="namespace"):
+        inference.alto_tools_text(str(path))
 
 
 def test_a_reading_order_other_than_the_two_is_refused():
@@ -346,13 +497,13 @@ def test_a_missing_path_is_a_usage_error(tmp_path):
     assert score_record_cli.main([str(tmp_path / "nothing.document.json")], classify=_classify) == 2
 
 
-# ── kept apart, and pinned ───────────────────────────────────────────────────────────────────
+# ── the page score ───────────────────────────────────────────────────────────────────────────
 
 
-def test_the_page_quality_mean_differs_by_design():
-    """A page's `quality_score`: the service (and score_record) average the Clear, Noisy and Trash
-    lines; the batch aggregation (aggregate_STAT.py) averages the Clear and Noisy lines only.
-    docs/usage.md, "The command line and the service", names the difference; nothing changes it."""
+def test_a_page_quality_score_is_the_mean_of_its_clear_and_noisy_lines_on_both_sides():
+    """A page's `quality_score`: the service and score_record (record_scoring.py) and the batch
+    aggregation (aggregate_STAT.py) all average the page's Clear and Noisy lines; Trash counts in
+    the band only, Empty and Non-text in neither (atrium-project#72)."""
     pd = pytest.importorskip("pandas")
     import aggregate_STAT
 
@@ -363,7 +514,7 @@ def test_the_page_quality_mean_differs_by_design():
         {"page": "1", "line": 4, "categ": "Empty", "quality_score": 0.0},
     ]
     (service,) = page_records_from_lines(rows)
-    assert service["quality_score"] == 0.5
+    assert service["quality_score"] == pytest.approx(0.7)
 
     frame = pd.DataFrame(
         [
@@ -385,7 +536,21 @@ def test_the_page_quality_mean_differs_by_design():
         ]
     )
     stats = aggregate_STAT._sum_metrics(frame, ["Clear", "Noisy", "Trash", "Non-text", "Empty"])
-    assert stats["avg_quality_score"].iloc[0] == pytest.approx(0.7)
+    assert stats["avg_quality_score"].iloc[0] == pytest.approx(service["quality_score"])
+    assert service["quality_band"] == aggregate_STAT._page_records_from_stats(stats)[0]["quality_band"]
+
+
+def test_a_page_of_trash_alone_has_a_band_and_no_score_on_both_sides():
+    pd = pytest.importorskip("pandas")
+    import aggregate_STAT
+
+    (service,) = page_records_from_lines([{"page": "1", "line": 1, "categ": "Trash", "quality_score": 0.1}])
+    frame = pd.DataFrame(
+        [{"file": "DOC", "page_num": 1, "categ": "Trash", "quality_score": 0.1, "word_count": 1, "char_count": 1}]
+    )
+    stats = aggregate_STAT._sum_metrics(frame, ["Clear", "Noisy", "Trash", "Non-text", "Empty"])
+    (batch,) = aggregate_STAT._page_records_from_stats(stats)
+    assert service == batch == {"page": "1", "quality_band": "Trash"}
 
 
 if __name__ == "__main__":  # pragma: no cover

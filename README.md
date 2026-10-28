@@ -32,7 +32,7 @@ The command line and the service read the same formats with the same code and wr
 | `POST /process`                  | one page or document in any of the formats above, optionally its record | the scored lines (page by page for a document, a paged text or JSON), the record when sent or asked for |
 | `POST /score_record`             | one record                                                              | the scored lines and the record                                                                         |
 
-What only one of them does, and why (the document passes, blank lines, the GLM method, page statistics):
+What only one of them does, and why (the document passes, the GLM method, page statistics):
 [The command line and the service](docs/usage.md#the-command-line-and-the-service).
 
 ## Quick start
@@ -99,7 +99,7 @@ Its SSH Open Marketplace record:
   `Clear`; on a line of one to three tokens without diacritics, `Clear` is less certain than it looks
   ([measurements](docs/evaluation/categorization.md)).
 - **The service and the batch pipeline differ on whole documents:** only the batch pipeline runs the document
-  passes, so a service call answers each line on its own; the service also drops blank lines
+  passes, so a service call answers each line on its own
   ([every difference](docs/usage.md#the-command-line-and-the-service)).
 - **The category semantics are frozen for the S2 pilot.** Accuracy has been measured on a gold set of 2,067 lines
   and on corpus diffs, not validated in full; the tests pin the rules, not their accuracy.

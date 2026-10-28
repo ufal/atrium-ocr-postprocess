@@ -377,8 +377,9 @@ def test_process_accretes_real_lines_and_pages_onto_a_baseline(mock_process, tmp
     # old row named a page this document does not have, so it APPENDED a fourth.
     assert [page["page"] for page in record["pages"]] == ["7", "8", "9"]
     page7 = next(page for page in record["pages"] if page["page"] == "7")
-    # Real metrics, computed from the real lines — mean of 0.9 and 0.1, never 1.0.
-    assert page7["quality_score"] == 0.5
+    # Real metrics, computed from the real lines: the mean of the Clear and Noisy lines (the one Clear
+    # line here; the 0.1 `Garbage` line is not one), as the batch aggregation takes it, never 1.0.
+    assert page7["quality_score"] == 0.9
     assert page7["quality_band"] == "Clear"  # 1 Clear vs 0 Noisy / 0 Trash
     assert all("quality_score" not in page for page in record["pages"] if page["page"] != "7")
 
@@ -534,7 +535,7 @@ def test_process_accretes_onto_a_seed_keyed_unlike_the_upload(mock_process, tmp_
     assert [line["text"] for line in record["lines"]] == [entry["text"] for entry in _CLASSIFIED_LINES]
     assert record["assembled"]["blocks"]["lines"]["program"] == "ocr-postprocess"
     page7 = record["pages"][0]
-    assert page7["quality_score"] == 0.5
+    assert page7["quality_score"] == 0.9
     assert page7["category"] == "Text"  # the seed's own field on the same row
 
 

@@ -155,8 +155,21 @@ def parse_alto_software(xml_path: str) -> List[str]:
 
 class AltoUnreadable(ValueError):
     """An upload that cannot be read as ALTO: not well-formed XML, no ``<Page>``, or a
-    ``<Page>`` whose size is not a number. Raised by ``parse_alto_xml_lines(strict=True)``;
-    ``/process`` answers it with 422 ``malformed`` instead of an empty 200."""
+    ``<Page>`` whose size is not a number. Raised by ``parse_alto_xml_lines(strict=True)``
+    and ``parse_alto_tree`` (and by the alto-tools reading of ``reading_order=alto``, for a page
+    it cannot read); ``/process`` answers it with 422 ``malformed`` instead of an empty 200."""
+
+
+def parse_alto_tree(xml_path: str) -> "ET._ElementTree":
+    """An ALTO upload's tree, parsed with the hardened parser (no entities, no DTD, no network).
+
+    For a reader that walks the tree itself (the vendored alto-tools extraction of
+    ``reading_order=alto``). Raises :class:`AltoUnreadable` for XML that is not well-formed.
+    """
+    try:
+        return ET.parse(xml_path, parser=_SAFE_PARSER)
+    except Exception as e:
+        raise AltoUnreadable(f"it is not well-formed XML ({e})") from e
 
 
 def parse_alto_xml_lines(xml_path: str, *, strict: bool = False) -> Tuple[List[str], List[List[int]], Tuple[int, int]]:

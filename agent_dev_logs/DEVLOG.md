@@ -1,5 +1,5 @@
 # 📓 atrium-ocr-postprocess — agent_dev_logs/DEVLOG.md (timeline index)
-> _OCR/ALTO post-processing and line categorization; the successor of atrium-alto-postprocess since 2026-10-01 (#56 there; the open issues were transferred and renumbered). 4 open issues: #2 (calibration), #4 (fine-tuning the quality model), #5 (documentation of the categorization logic), #8 (category ratios in the page statistics); #1 closed 2026-10-16, #3 2026-10-13 and #6 2026-10-07. `test` = `107e279` (2026-10-21) · **v1.12.1-beta** (2026-10-20; the images v1.12.0-beta never got). Latest entry: 2026-10-26. #3's parameter stages after 2026-10-09, up to `v1.11.0-beta`, are recorded in its digest and plan, not here. Entries before 2026-10-01 use atrium-alto-postprocess's issue numbers._
+> _OCR/ALTO post-processing and line categorization; the successor of atrium-alto-postprocess since 2026-10-01 (#56 there; the open issues were transferred and renumbered). 4 open issues: #2 (calibration), #4 (fine-tuning the quality model), #5 (documentation of the categorization logic), #8 (category ratios in the page statistics); #1 closed 2026-10-16, #3 2026-10-13 and #6 2026-10-07. `test` = `5d853b9` (2026-10-28) · **v1.13.1-beta** (2026-10-27); v1.14.0-beta prepared on 2026-10-28. Latest entry: 2026-10-28. #3's parameter stages after 2026-10-09, up to `v1.11.0-beta`, are recorded in its digest and plan, not here. Entries before 2026-10-01 use atrium-alto-postprocess's issue numbers._
 > _Per-issue detail: `digests/{id}.digest.md` · `plans/{id}.plan.md` · `issues/` exports (source of truth). Cross-repo/hub history lives in `ufal/atrium-project/agent_dev_logs/DEVLOG.md` (deduplicated out of this file)._
 
 ## 2026-03-13
@@ -1766,3 +1766,34 @@ week, ≈ 2026-10-02). Recorded in the #30 digest and plan; nothing switched on.
   "Answered" marker in `docs/decisions/2026-10-categorization.md`, the "Superseded" markers in `tools/SWEEP_NOTES.md`,
   the "drafted" status column in `tools/quality_model/README.md`, the © of the footer. Two tables re-padded.
 * No release (documentation only); it rides the next tag. `docs_check.py` and `runbook_check.py` OK.
+
+## 2026-10-28 (round 2) — v1.14.0-beta: the same lines and page score on both sides (atrium-project#72)
+
+* **The decision:** David (atrium-project#72, 28 October) asked for one behaviour and slightly preferred keeping the
+  blank lines. Both sides now keep them wherever the batch does, and number them.
+* **ALTO, `reading_order=layoutreader`:** `process_alto` keeps the blank lines `post_process_text` puts at a
+  paragraph break (a gap of more than 1.5 line heights, or a jump up the page); each is an `Empty` entry and counts in
+  `line_num`, as in the page text `classify_TEXT.py` reads.
+* **ALTO, `reading_order=alto`:** it kept the ALTO order but joined the lines as the LayoutReader path does; the
+  batch `--method alto-tools` puts a blank line before each `<TextBlock>` and joins a hyphenated line to the next, so
+  the lines differed. The service now runs the vendored alto-tools extraction over its hardened lxml parse
+  (`alto_tools_text`), and `extract_ALTO_2_TXT._dehyphenate` moved to `text_util.join_hyphenated_lines` for both.
+  An ALTO namespace alto-tools does not register is a 422 there (the batch skips the page). `alto_tools.py` joins
+  `.github/production-image.json` and the release bundle, with `LICENSES/alto-tools-Apache-2.0.txt`.
+* **Text-lines inputs** (plain text, documents): both drop blank lines by default; the service now reads
+  `[TEXT_INGEST] KEEP_BLANK_LINES` too (it always dropped them, on the stale ground that a blank line would reach the
+  perplexity model; the pre-filter answers it `Empty`), and drops a page's trailing blank lines as
+  `extract_TEXT_2_TXT.py` does (`shaped_page`).
+* **A page's `quality_score`:** `record_scoring.page_records_from_lines` (`/process`, `/score_record`,
+  `score_record.py`) averages the `Clear` and `Noisy` lines, as `aggregate_STAT.py` does for the collections; it
+  averaged `Trash` too. A page of `Trash` alone has a band and no score on both sides.
+* **Tests:** `tests/test_cli_service_parity.py` runs the batch stages themselves (text_split → text_stats_create →
+  extract_TEXT_2_TXT with and without `KEEP_BLANK_LINES`; `extract_ALTO_2_TXT.extract_single_page`; the LayoutReader
+  script's own `parse_alto_xml`/`post_process_text`, loaded without torch) and compares `(page, line_num, text)`
+  with the service; the two pinned differences are gone. Six of its tests fail on the previous code.
+* **Docs:** `docs/usage.md` (the table, and what a blank line is), `service/README.md`, `README.md`,
+  `docs/reference/outputs.md`, `docs/categorization_logic.md`, `docs/text_inputs.md`, the `[TEXT_INGEST]` comment of
+  `setup/config.txt`; the regenerated spec (version and two descriptions).
+* **Checks:** 2307 passed, 12 skipped (GLM, torch, korektor, optuna/SALib), 2 xfailed; ruff and ruff format clean on
+  the changed files; `check_version.py --tag v1.14.0-beta`, `docs_check.py`, `runbook_check.py`, `image_closure.py`
+  and the bundle test OK.

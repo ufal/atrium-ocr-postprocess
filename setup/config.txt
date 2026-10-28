@@ -549,7 +549,7 @@ GHOST_HITS_INVERTED_MIN     = 1
 [TEXT_INGEST]
 # (#31) Input reading for --method text-lines (text_split.py, text_stats_create.py,
 # extract_TEXT_2_TXT.py) and for /process uploads (read once at service start;
-# KEEP_BLANK_LINES and STRICT are batch-only). docs/text_inputs.md has the per-format
+# STRICT is batch-only). docs/text_inputs.md has the per-format
 # page/line rules and the reason codes these limits produce.
 # (atrium-project#53) Every cap below can also be set as the environment variable
 # ATRIUM_TEXT_INGEST_<KEY> (e.g. ATRIUM_TEXT_INGEST_MAX_PAGES), which wins over this
@@ -576,7 +576,7 @@ READER_TIMEOUT_S   = 300
 # Lines longer than this are wrapped at a word boundary before categorization (the
 # perplexity batch pads to its longest line). 0 = never wrap.
 MAX_LINE_CHARS     = 1000
-# Blank lines become `Empty` rows in classify_TEXT; by default they are dropped.
+# Blank lines become `Empty` rows in classify_TEXT and in /process; by default they are dropped.
 KEEP_BLANK_LINES   = false
 # Tried in order (and offered to charset-normalizer) for plain text that is not
 # UTF-8 and has no BOM. cp1250 first: this archive's legacy Czech files.

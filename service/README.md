@@ -107,8 +107,10 @@ and fill it the same way with a one-off Job.
   A born-digital upload (DOCX, visible-text PDF, …) gets none: its record is digital-convert's to originate.
   The CreateAction lists the new record as an output only.
 * `reading_order` (optional, ALTO only): `layoutreader` (default) reorders the lines with LayoutReader, as the
-  batch `--method layoutreader`; `alto` keeps the ALTO's own order, as `--method alto-tools`, and runs no
-  LayoutReader, so no CC BY-NC-SA 4.0 component is logged. Any other value is a `422`.
+  batch `--method layoutreader`; `alto` reads the page with alto-tools, as `--method alto-tools` (the ALTO's own
+  order, a blank line before each text block, a hyphenated line joined to the next), and runs no LayoutReader, so
+  no CC BY-NC-SA 4.0 component is logged. Any other value is a `422`. Either way a blank line of the page text is
+  an `Empty` line and counts in `line_num`, as in the batch output.
 
 Every response carries `limits_applied`: the limits that shaped the result without refusing it (see
 [Limits](#limits)), `[]` when none did.
@@ -149,8 +151,8 @@ a `pages` list (`page`, `page_label`, `lines`, PDF `text_layer` / `needs_ocr_rea
 with form feeds and a JSON upload of several pages come back the same way (since v1.13.0-beta; their
 `page_label`, `text_layer` and `needs_ocr_reason` are null), and each page goes into the record under its own
 key; one page comes back as before, without `page`. Lines are read
-and shaped by the same `text_formats.py` code as the batch text-lines method (blank lines dropped, lines over
-1000 characters wrapped). With a record (`document_json`), lines accrete per page — except for born-digital
+and shaped by the same `text_formats.py` code as the batch text-lines method (blank lines dropped unless
+`[TEXT_INGEST] KEEP_BLANK_LINES`, lines over 1000 characters wrapped). With a record (`document_json`), lines accrete per page — except for born-digital
 uploads (DOCX, visible-text PDF, …), whose record belongs to `digital-convert` (atrium_document
 §1a) and comes back as it was sent, and except a born-digital record's `needs_ocr` pages, which an ALTO of
 that page re-acquires ([the OCR hand-off](#merging-an-ocrd-page-into-a-born-digital-record-w4)). Each item in `cleaned_lines` carries the fields used by the
@@ -343,9 +345,8 @@ The batch pipeline has the same notes in its paradata, and a text-lines input re
 - **Short lines without Czech diacritics** read `Clear` more often than they should
   ([measurements](../docs/evaluation/categorization.md)).
 - **No document passes in the service:** each line is answered on its own, so a whole document's categories can
-  differ from a batch run's, and a page's `quality_score` averages its `Clear`, `Noisy` and `Trash` lines. Blank
-  lines are dropped, so `line_num` counts only the lines with text. Every difference from the command line, and
-  why: [docs/usage.md](../docs/usage.md#the-command-line-and-the-service).
+  differ from a batch run's. Every difference from the command line, and why:
+  [docs/usage.md](../docs/usage.md#the-command-line-and-the-service).
 - **Two models are downloaded on first start** at the Hub's current revision (see
   [Models and caches](#models-and-caches)).
 - **FastText is CC BY-NC 4.0** and runs on every request; what a run records about licences is in

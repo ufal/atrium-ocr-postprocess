@@ -35,6 +35,9 @@ NO_LANG = "N/A"
 #: The categories the CPU pre-filter assigns on its own: no language, no model, quality score 0.0.
 PREFILTER_CATEGORIES = ("Empty", "Non-text")
 
+#: The lines a page's `quality_score` averages: its text, as aggregate_STAT.py's `avg_quality_score`.
+PAGE_SCORE_CATEGORIES = ("Clear", "Noisy")
+
 #: Characters a record's doc_id may keep in the temporary file name it is written under; the
 #: record itself keeps its doc_id (DocumentRecord inherits the baseline's).
 _UNSAFE_FILE_KEY = re.compile(r"[^A-Za-z0-9._-]")
@@ -64,9 +67,11 @@ def page_records_from_lines(line_records: List[Dict[str, Any]]) -> List[Dict[str
     """Real `pages[]` rows for the lines just classified.
 
     One row per page label actually present in `line_records`, with
-    `quality_score` as the mean of that page's own line scores and `quality_band`
-    reduced from its own Clear/Noisy/Trash counts by the same plurality vote
-    aggregate_STAT.py applies to the batch path (document_hook.quality_band).
+    `quality_score` as the mean of that page's `Clear` and `Noisy` line scores and
+    `quality_band` reduced from its own Clear/Noisy/Trash counts by the same plurality
+    vote, both as aggregate_STAT.py computes them on the batch path
+    (document_hook.quality_band). A page with no `Clear` or `Noisy` line has no
+    `quality_score`, as the batch's mean over no lines is missing.
 
     `quality_band` is omitted when none of the three bands is represented (an
     all-`Empty`/all-`Non-text` page): the vote's tie-break favours "Clear", so
@@ -79,13 +84,13 @@ def page_records_from_lines(line_records: List[Dict[str, Any]]) -> List[Dict[str
     pages: List[Dict[str, Any]] = []
     for page, rows in by_page.items():
         record: Dict[str, Any] = {"page": page}
-        # The mean of the lines a quality model judged. A line the CPU pre-filter answered
-        # (`Empty` / `Non-text`) carries a 0.0 placeholder, as in the batch CSV, and is no evidence
-        # of low quality: counting it would pull a page of clean prose with a few page numbers down.
+        # The mean over the page's text, as the batch aggregation takes it (atrium-project#72). A line
+        # the CPU pre-filter answered (`Empty` / `Non-text`) carries a 0.0 placeholder and is no evidence
+        # of low quality; `Trash` is what the band counts, and the mean is of what a reader keeps.
         scores = [
             r["quality_score"]
             for r in rows
-            if isinstance(r.get("quality_score"), (int, float)) and r.get("categ") not in PREFILTER_CATEGORIES
+            if isinstance(r.get("quality_score"), (int, float)) and r.get("categ") in PAGE_SCORE_CATEGORIES
         ]
         if scores:
             record["quality_score"] = round(sum(scores) / len(scores), 4)
