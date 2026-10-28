@@ -1755,3 +1755,14 @@ week, ≈ 2026-10-02). Recorded in the #30 digest and plan; nothing switched on.
   (version only). Docs reviewed against the code: no change needed (`docs_check` OK).
 * **Checks:** 2300 passed, 12 skipped (GLM, torch, korektor, optuna/SALib), 2 xfailed; ruff clean on the new file;
   `check_version.py` OK.
+
+## 2026-10-28 — Documentation review: the licence label, no decorative emoji (atrium-project#79, #6)
+
+* `docs/reference/paradata.md`: "Output licensing" becomes "The licence label of a run", with the wording agreed on
+  22 October in atrium-project#6 (the computed `license` summarises the components a run used; it is not the licence
+  of the outputs, whose rights AMČR states for the pilot). The "under review" callout is replaced by that statement;
+  the mechanism and the component table are unchanged. The one link to the old anchor is updated.
+* No decorative emoji (hub `docs/documentation-style.md` rule 3): the quality categories in CONTRIBUTING, the
+  "Answered" marker in `docs/decisions/2026-10-categorization.md`, the "Superseded" markers in `tools/SWEEP_NOTES.md`,
+  the "drafted" status column in `tools/quality_model/README.md`, the © of the footer. Two tables re-padded.
+* No release (documentation only); it rides the next tag. `docs_check.py` and `runbook_check.py` OK.

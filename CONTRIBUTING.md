@@ -102,11 +102,11 @@ Every text line is categorized using **FastText** [^2] for language identificati
 and **Qwen2.5-0.5B** [^6] for perplexity scoring (or `distilgpt2` for English-only collections).
 
 **Data Quality Categories:**
-* ✅ **Clear:** High-quality, fluent text ready for research.
-* ⚠️ **Noisy (Rough):** Contains minor OCR errors; usable but imperfect.
-* 🗑️ **Trash:** Unintelligible OCR or non-prose content.
-* 🔣 **Non-text:** Mostly digits or symbols.
-* 🫙 **Empty:** Whitespace only.
+* **Clear:** High-quality, fluent text ready for research.
+* **Noisy (Rough):** Contains minor OCR errors; usable but imperfect.
+* **Trash:** Unintelligible OCR or non-prose content.
+* **Non-text:** Mostly digits or symbols.
+* **Empty:** Whitespace only.
 
 ### 4. Lightweight API & Testing Interface
 The project includes a **FastAPI** service that allows for easy integration into existing
@@ -350,7 +350,7 @@ For support or specific archival integration questions, contact **lutsai.k@gmail
   * GLM-4v-9b [^10]
   * LayoutLMv3 [^9]
 
-**©️ 2026 UFAL & ATRIUM**
+**© 2026 UFAL & ATRIUM**
 
 
 [^1]: https://github.com/cneud/alto-tools

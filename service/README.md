@@ -356,7 +356,7 @@ The batch pipeline has the same notes in its paradata, and a text-lines input re
 | Variable              | Default   | Meaning                                                                       |
 |-----------------------|-----------|-------------------------------------------------------------------------------|
 | `PORT`                | `8000`    | port the service **binds**, and the one `service/healthcheck.py` probes       |
-| `HOST`                | `0.0.0.0` | bind address. see the warning below                                           |
+| `HOST`                | `0.0.0.0` | bind address; see the warning below                                           |
 | `GRACEFUL_SHUTDOWN_S` | `20`      | seconds uvicorn waits for in-flight requests before closing them              |
 | `RELOAD`              | `false`   | filesystem auto-reload — development only, never in a deployment              |
 | `LOG_LEVEL`           | `INFO`    | root logger level for the `python service/text_api.py` start path (issue #61) |

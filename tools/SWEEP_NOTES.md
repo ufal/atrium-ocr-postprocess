@@ -38,7 +38,7 @@ The easiest way to execute the full parameter optimization suite (Coverage, RF, 
 
 ## Current figures — rule coverage regenerated 2026-09-09
 
-> 🛑 **Superseded 2026-09-22 by stage 6** (#30): the 87-hour sweep scored all 23 rules on the
+> **Superseded 2026-09-22 by stage 6** (#30): the 87-hour sweep scored all 23 rules on the
 > 822-document corpus against the 2,064-row gold sidecar. Its delivered summary read two rules
 > DEAD — `rule_mid_uppercase` and `rule_short_garbage_witness` — and the second is switched off,
 > not dead, so it now classifies INERT (D35). Readings in `agent_dev_logs/digests/3.digest.md`
@@ -100,7 +100,7 @@ worth recording because every driver in `tools/` reads flips as damage.
 | `rule_zero_alpha`            |          1 |    0.0007 |        1 |          0 | LOAD-BEARING   |
 
 **Summary: 16 LOAD-BEARING · 3 REDUNDANT-HERE · 3 DEAD** (n_lines=2,171, n_scored=1,471, 22 rules)
-🛑 *Superseded by stage 6 (above): on the 822-document corpus only `rule_mid_uppercase` reads DEAD.*
+*Superseded by stage 6 (above): on the 822-document corpus only `rule_mid_uppercase` reads DEAD.*
 
 DEAD: `rule_bigram_run`, `rule_mid_uppercase`, `rule_vowelless`
 REDUNDANT-HERE: `rule_domain_notation`, `rule_fragment_tokens`, `rule_inverted`

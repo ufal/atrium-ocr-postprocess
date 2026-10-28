@@ -91,7 +91,7 @@ Notes that stood in the rules until 2026-10-20, about mechanisms earlier revisio
 > design, replaced by the category-name route above before it landed on `master`.)*
 >
 > The second is not changed and is not described here as a defect: the short-garbage route's
-> target category is a decision with an owner. ✅ **Answered 2026-10-01 (Q6): `Trash` stays.**
+> target category is a decision with an owner. **Answered 2026-10-01 (Q6): `Trash` stays.**
 > The owners asked for the annotation to decide and for `Trash` if it could not. @DanaKriv's 357
 > decisions put about a third of what the shape witness convicts at `Noisy`, but no signal the
 > route can read separates those lines: a clean companion word on the line moves the census head
