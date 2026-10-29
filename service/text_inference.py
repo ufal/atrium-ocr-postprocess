@@ -133,6 +133,21 @@ def reader_components(kind: str, flags: Optional[Iterable[str]]) -> Set[str]:
     return used
 
 
+def ppl_model_name() -> str:
+    """The perplexity model: ``GPT2_MODEL_NAME``, else ``[CLASSIFY] MODEL_NAME`` of the config the batch's
+    ``classify_TEXT.py`` reads (``LANGID_CONFIG``, else ``setup/config.txt``), else Qwen/Qwen2.5-0.5B.
+
+    The service read the environment only, so a model set in config.txt reached the batch and not the
+    service, and the two scored the same lines with different models (atrium-project#72).
+    """
+    configured = os.getenv("GPT2_MODEL_NAME", "").strip()
+    if configured:
+        return configured
+    cfg = configparser.ConfigParser(inline_comment_prefixes=None)
+    cfg.read(os.getenv("LANGID_CONFIG", str(project_root / "setup" / "config.txt")), encoding="utf-8")
+    return cfg.get("CLASSIFY", "MODEL_NAME", fallback="").strip() or "Qwen/Qwen2.5-0.5B"
+
+
 class TextModelManager:
     def __init__(self) -> None:
         self.device = "cpu"  # Initialized here, updated properly in load_models
@@ -149,8 +164,9 @@ class TextModelManager:
         # The same lock covers the perplexity tokenizer, whose fast backend is not safe to
         # call from two threads with different padding settings (_note_perplexity).
         self._gpu_lock = threading.Lock()
-        # Which perplexity model scores the lines (GPT2_MODEL_NAME; Qwen2.5-0.5B by default).
-        self.ppl_model_name = os.getenv("GPT2_MODEL_NAME", "Qwen/Qwen2.5-0.5B")
+        # Which perplexity model scores the lines (ppl_model_name: GPT2_MODEL_NAME, else the config's
+        # [CLASSIFY] MODEL_NAME, as the batch reads it; Qwen2.5-0.5B by default).
+        self.ppl_model_name = ppl_model_name()
 
     def load_models(self, layout: bool = True) -> None:
         """Load all models synchronously; raise RuntimeError on failure.
@@ -185,11 +201,11 @@ class TextModelManager:
             # 2. FastText language identification
             self.ft_model = fasttext.load_model(str(FASTTEXT_MODEL_PATH))
 
-            # 3. Perplexity model (Qwen2.5-0.5B by default; override with GPT2_MODEL_NAME,
-            #    e.g. distilgpt2 for English-only collections).
+            # 3. Perplexity model (ppl_model_name: GPT2_MODEL_NAME, else [CLASSIFY] MODEL_NAME, else
+            #    Qwen2.5-0.5B; e.g. distilgpt2 for English-only collections).
             #    Loaded in full precision and moved explicitly to a single device (no 4-bit
             #    bitsandbytes / device_map="auto", which placed layers non-deterministically).
-            gpt2_path = os.getenv("GPT2_MODEL_NAME", "Qwen/Qwen2.5-0.5B")
+            gpt2_path = ppl_model_name()
             self.ppl_model_name = gpt2_path
             self.ppl_tokenizer = AutoTokenizer.from_pretrained(gpt2_path)
             self.ppl_tokenizer.pad_token = self.ppl_tokenizer.eos_token

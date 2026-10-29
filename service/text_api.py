@@ -284,7 +284,12 @@ class AltoLine(BaseModel):
 
     model_config = ConfigDict(extra="allow")
 
-    line_num: int = Field(description="1-based position after layout reordering; per page for a document.")
+    line_num: int = Field(
+        description=(
+            "1-based position in reading order (LayoutReader's, or the ALTO's own with `reading_order=alto`); per "
+            "page of a paged upload. A blank line the page text keeps counts, as in the batch's page text."
+        )
+    )
     text: str = Field(
         description="The cleaned text: split-word merges and the pre-filter's OCR repairs applied (the line as the CSV's `text`)."
     )
@@ -294,7 +299,12 @@ class AltoLine(BaseModel):
     lang_score: float = Field(description="Its confidence, from 0 to 1.")
     original_lang: str = Field(description="FastText's own prediction, before the remap.")
     orig_lang_score: float = Field(description="FastText's own confidence, from 0 to 1.")
-    perplexity: float = Field(description="Qwen2.5-0.5B perplexity; 99999 when the line's batch could not be scored.")
+    perplexity: float = Field(
+        description=(
+            "The perplexity model's (Qwen2.5-0.5B by default; `GPT2_MODEL_NAME`, else the config's "
+            "`[CLASSIFY] MODEL_NAME`): 0 for a pre-filtered line, 99999 when the line's batch could not be scored."
+        )
+    )
     garbage_density: float = Field(description="The share of non-alphanumeric noise characters.")
     sym_count: int = Field(description="Tokens with strange or unexpected symbols.")
     upper_count: int = Field(description="Tokens with mid-word uppercase artefacts.")
@@ -557,15 +567,13 @@ PARA_CONFIG_PATH = str(Path(__file__).resolve().parent.parent / "setup" / "para_
 # ---------------------------------------------------------------------------
 # Accretion mapping (atrium-project#10 J1)
 # ---------------------------------------------------------------------------
-# One request describes exactly ONE page, and that is a property of the inference
-# layer rather than a simplification made here:
-#   * alto  — service/utils.parse_alto_xml_lines() takes its geometry from
-#             `root.find(".//Page")`, i.e. the FIRST <Page> only, and
-#             post_process_text() then reads the whole upload's lines back in that
-#             one page's coordinate space;
-#   * json  — process_json() is "one JSON file = one page" by the batch pipeline's
-#             own convention (see its docstring);
-#   * text  — a .txt upload carries no page concept at all.
+# Which pages a request describes:
+#   * alto  — ONE: service/utils.parse_alto_xml_lines() takes its geometry from the FIRST
+#             <Page> only, so an upload with several is not accreted (split it first,
+#             page_split.py, as the batch does);
+#   * json, text — their pages since atrium-project#72: a paged JSON as page_split pages it,
+#             a text with form feeds one page per form feed; a single-page one is page "1";
+#   * document — the reader's pages, each line with `page` and `page_label`.
 #
 # `page_metrics` used to be a hardcoded
 # `[{"page": "1", "quality_score": result.get("doc_quality", 1.0)}]`, and
@@ -849,6 +857,8 @@ async def info() -> Dict[str, Any]:
             "text",
             "lang",
             "lang_score",
+            "original_lang",
+            "orig_lang_score",
             "perplexity",
             "garbage_density",
             "sym_count",
@@ -859,6 +869,8 @@ async def info() -> Dict[str, Any]:
             "word_weird",
             "quality_score",
             "category",
+            "page",
+            "page_label",
         ],
     )
 
@@ -964,23 +976,13 @@ async def process_document(
     `page_index`; one that the record lacks or does not flag is a 422, checked before any model
     runs. The record's `source` stays the original's.
 
-    Returns a list of classified lines.  Each entry carries:
-
-      line_num        (int)   – 1-based position after layout reordering
-      text            (str)   – cleaned text with split-word merges applied
-      lang            (str)   – ISO language code predicted by FastText
-      lang_score      (float) – FastText confidence [0, 1]
-      perplexity      (float) – Qwen2.5-0.5B perplexity; 0 for pre-filtered lines
-      garbage_density (float) – ratio of non-alphanumeric noise characters
-      sym_count       (int)   – tokens with strange/unexpected symbols
-      upper_count     (int)   – tokens with mid-word uppercase artefacts
-      repeated_count  (int)   – tokens with non-standard char repetition (>=40%)
-      ldl_fuses       (int)   – tokens with letter-digit-letter fusions
-      gibberish       (int)   – tokens lacking vowels or highly irregular ratios
-      word_weird      (float) – mean per-word weirdness score [0, 1]
-      quality_score   (float) – composite continuous quality score [0, 1]
-      category        (str)   – Clear | Noisy | Trash | Non-text | Empty
-                                Assigned dynamically using the unified penalty system.
+    Returns the classified lines (`ProcessLine`): `line_num` (1-based, in reading order, per page
+    of a paged upload; a blank line counts), `text`, `lang` and `lang_score` (after the
+    expected-language remap), `original_lang` and `orig_lang_score` (FastText's own), `perplexity`
+    (the perplexity model's: 0 for a pre-filtered line, 99999 for a batch that could not be
+    scored), the signals (`garbage_density`, `sym_count`, `upper_count`, `repeated_count`,
+    `ldl_fuses`, `gibberish`, `word_weird`), `quality_score`, `category` (`Clear`, `Noisy`,
+    `Trash`, `Non-text`, `Empty`), and on a paged upload `page` and, for a document, `page_label`.
     """
     if not file.filename:
         raise HTTPException(status_code=422, detail="Filename is missing from the upload.")

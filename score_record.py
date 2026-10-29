@@ -21,8 +21,8 @@ Where the outputs go:
   * the run's paradata: a file in `--paradata-dir` (the service returns it as `paradata`).
 
 The service's MAX_PAGES and MAX_LINES_PER_PAGE do not apply here: the command line is the batch
-path. The models are the service's (`service/text_inference.py`; GPT2_MODEL_NAME picks the
-perplexity model), without LayoutReader.
+path. The models are the service's (`service/text_inference.py`; GPT2_MODEL_NAME, else the config's
+[CLASSIFY] MODEL_NAME, picks the perplexity model), without LayoutReader.
 """
 
 from __future__ import annotations

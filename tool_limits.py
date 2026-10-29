@@ -136,7 +136,8 @@ def set_ppl_max_tokens(tokens: Optional[int]) -> None:
 
 def ppl_max_tokens() -> Optional[int]:
     """Tokens of one line the perplexity model reads (its context window, from
-    ``GPT2_MODEL_NAME``); a longer line is scored on its first N → ``trimmed`` note.
+    ``GPT2_MODEL_NAME``, else ``[CLASSIFY] MODEL_NAME``); a longer line is scored on its first N →
+    ``trimmed`` note.
     ``None`` until the model is loaded."""
     return _PPL_WINDOW["tokens"]
 

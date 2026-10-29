@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "ATRIUM Text Processor",
-    "version": "1.14.0-beta",
+    "version": "1.15.0-beta",
     "x-atrium-service": "atrium-ocr-postprocess",
     "x-atrium-service-previous": "atrium-alto-postprocess"
   },
@@ -162,7 +162,7 @@
     "/process": {
       "post": {
         "summary": "Process Document",
-        "description": "Upload an ALTO XML, plain-text or generic JSON file — or (#31) any other text-bearing\ndocument: PDF, DOCX, ODT, XLSX/ODS, PPTX/ODP, EPUB, RTF, HTML/hOCR, PAGE XML, TEI,\nMarkdown, CSV/TSV, JSON Lines, ABBYY/DjVu XML, Tesseract TSV, SRT/VTT, EML/MBOX,\ngzip/bz2/xz-compressed files and ZIP bundles of page files. `task_type=\"auto\"`\nkeeps `.txt` → text and `.json` → json; `.xml` and every other extension are\ndecided from the bytes (an uncompressed ALTO root → alto, anything readable →\ndocument). Document results carry `page`/`page_label` per line and a `pages`\nsummary; so do text uploads with form feeds and JSON uploads of several pages, paged as\nthe batch pipeline pages them. The readers use the config's [TEXT_INGEST] settings.\n\n`reading_order=alto` keeps an ALTO's own line order (no LayoutReader), and\n`include_record=true` returns a new record when none was sent (atrium-project#72, the\nservice–CLI alignment).\n\nErrors name the reader's code at the start of `detail` and, but for a named limit, as\n`cause`: 415 `unsupported_media_type` for a file of a kind this service does not read\n(binary_content, legacy_office_unsupported, image_needs_ocr, archive_unsupported), with\nthe readable extensions as `accepted`; 413 `limit_exceeded` for a file over a size or\ncount limit (too_large, zip_limits_exceeded; 422 for the reader's time limit, timeout);\n422 for a supported kind that cannot be read (corrupt, encrypted, malformed, no_text,\n...); 501 when this deployment lacks the reader's optional dependency\n(dependency_missing). A record part that cannot be opened is 422 `invalid_record`.\nEvery response carries `limits_applied` (atrium-project#53).\n\nThe record goes in `document_json` and comes back in `document_json`, as with every\nother ATRIUM service (atrium-project#32 round 2). The earlier names — `document_record`\nin, `document_json_out` out — still work and are deprecated in the spec.\n\nThe OCR hand-off (atrium-digital-convert#4 W4). With digital-convert's record of a\nborn-digital PDF and the ATR ALTO of one page it flagged `needs_ocr`, the classified lines\nreplace that page's lines in the record, its `pages[]` row gets the page's quality and\n`ocr.engine`, and every other page stays as the converter wrote it (`ocr_handoff` in the\nresponse). The page is `page`, or the ALTO's `PHYSICAL_IMG_NR` mapped through the record's\n`page_index`; one that the record lacks or does not flag is a 422, checked before any model\nruns. The record's `source` stays the original's.\n\nReturns a list of classified lines.  Each entry carries:\n\n  line_num        (int)   – 1-based position after layout reordering\n  text            (str)   – cleaned text with split-word merges applied\n  lang            (str)   – ISO language code predicted by FastText\n  lang_score      (float) – FastText confidence [0, 1]\n  perplexity      (float) – Qwen2.5-0.5B perplexity; 0 for pre-filtered lines\n  garbage_density (float) – ratio of non-alphanumeric noise characters\n  sym_count       (int)   – tokens with strange/unexpected symbols\n  upper_count     (int)   – tokens with mid-word uppercase artefacts\n  repeated_count  (int)   – tokens with non-standard char repetition (>=40%)\n  ldl_fuses       (int)   – tokens with letter-digit-letter fusions\n  gibberish       (int)   – tokens lacking vowels or highly irregular ratios\n  word_weird      (float) – mean per-word weirdness score [0, 1]\n  quality_score   (float) – composite continuous quality score [0, 1]\n  category        (str)   – Clear | Noisy | Trash | Non-text | Empty\n                            Assigned dynamically using the unified penalty system.",
+        "description": "Upload an ALTO XML, plain-text or generic JSON file — or (#31) any other text-bearing\ndocument: PDF, DOCX, ODT, XLSX/ODS, PPTX/ODP, EPUB, RTF, HTML/hOCR, PAGE XML, TEI,\nMarkdown, CSV/TSV, JSON Lines, ABBYY/DjVu XML, Tesseract TSV, SRT/VTT, EML/MBOX,\ngzip/bz2/xz-compressed files and ZIP bundles of page files. `task_type=\"auto\"`\nkeeps `.txt` → text and `.json` → json; `.xml` and every other extension are\ndecided from the bytes (an uncompressed ALTO root → alto, anything readable →\ndocument). Document results carry `page`/`page_label` per line and a `pages`\nsummary; so do text uploads with form feeds and JSON uploads of several pages, paged as\nthe batch pipeline pages them. The readers use the config's [TEXT_INGEST] settings.\n\n`reading_order=alto` keeps an ALTO's own line order (no LayoutReader), and\n`include_record=true` returns a new record when none was sent (atrium-project#72, the\nservice–CLI alignment).\n\nErrors name the reader's code at the start of `detail` and, but for a named limit, as\n`cause`: 415 `unsupported_media_type` for a file of a kind this service does not read\n(binary_content, legacy_office_unsupported, image_needs_ocr, archive_unsupported), with\nthe readable extensions as `accepted`; 413 `limit_exceeded` for a file over a size or\ncount limit (too_large, zip_limits_exceeded; 422 for the reader's time limit, timeout);\n422 for a supported kind that cannot be read (corrupt, encrypted, malformed, no_text,\n...); 501 when this deployment lacks the reader's optional dependency\n(dependency_missing). A record part that cannot be opened is 422 `invalid_record`.\nEvery response carries `limits_applied` (atrium-project#53).\n\nThe record goes in `document_json` and comes back in `document_json`, as with every\nother ATRIUM service (atrium-project#32 round 2). The earlier names — `document_record`\nin, `document_json_out` out — still work and are deprecated in the spec.\n\nThe OCR hand-off (atrium-digital-convert#4 W4). With digital-convert's record of a\nborn-digital PDF and the ATR ALTO of one page it flagged `needs_ocr`, the classified lines\nreplace that page's lines in the record, its `pages[]` row gets the page's quality and\n`ocr.engine`, and every other page stays as the converter wrote it (`ocr_handoff` in the\nresponse). The page is `page`, or the ALTO's `PHYSICAL_IMG_NR` mapped through the record's\n`page_index`; one that the record lacks or does not flag is a 422, checked before any model\nruns. The record's `source` stays the original's.\n\nReturns the classified lines (`ProcessLine`): `line_num` (1-based, in reading order, per page\nof a paged upload; a blank line counts), `text`, `lang` and `lang_score` (after the\nexpected-language remap), `original_lang` and `orig_lang_score` (FastText's own), `perplexity`\n(the perplexity model's: 0 for a pre-filtered line, 99999 for a batch that could not be\nscored), the signals (`garbage_density`, `sym_count`, `upper_count`, `repeated_count`,\n`ldl_fuses`, `gibberish`, `word_weird`), `quality_score`, `category` (`Clear`, `Noisy`,\n`Trash`, `Non-text`, `Empty`), and on a paged upload `page` and, for a document, `page_label`.",
         "operationId": "process_document",
         "requestBody": {
           "content": {
@@ -433,7 +433,7 @@
           "line_num": {
             "type": "integer",
             "title": "Line Num",
-            "description": "1-based position after layout reordering; per page for a document."
+            "description": "1-based position in reading order (LayoutReader's, or the ALTO's own with `reading_order=alto`); per page of a paged upload. A blank line the page text keeps counts, as in the batch's page text."
           },
           "text": {
             "type": "string",
@@ -463,7 +463,7 @@
           "perplexity": {
             "type": "number",
             "title": "Perplexity",
-            "description": "Qwen2.5-0.5B perplexity; 99999 when the line's batch could not be scored."
+            "description": "The perplexity model's (Qwen2.5-0.5B by default; `GPT2_MODEL_NAME`, else the config's `[CLASSIFY] MODEL_NAME`): 0 for a pre-filtered line, 99999 when the line's batch could not be scored."
           },
           "garbage_density": {
             "type": "number",
@@ -2789,7 +2789,7 @@
           "line_num": {
             "type": "integer",
             "title": "Line Num",
-            "description": "1-based position after layout reordering; per page for a document."
+            "description": "1-based position in reading order (LayoutReader's, or the ALTO's own with `reading_order=alto`); per page of a paged upload. A blank line the page text keeps counts, as in the batch's page text."
           },
           "text": {
             "type": "string",
@@ -2819,7 +2819,7 @@
           "perplexity": {
             "type": "number",
             "title": "Perplexity",
-            "description": "Qwen2.5-0.5B perplexity; 99999 when the line's batch could not be scored."
+            "description": "The perplexity model's (Qwen2.5-0.5B by default; `GPT2_MODEL_NAME`, else the config's `[CLASSIFY] MODEL_NAME`): 0 for a pre-filtered line, 99999 when the line's batch could not be scored."
           },
           "garbage_density": {
             "type": "number",

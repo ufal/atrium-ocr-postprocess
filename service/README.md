@@ -37,7 +37,7 @@ source venv-ocr/bin/activate
 python service/text_api.py           # honours PORT and HOST; or: uvicorn service.text_api:app --reload
 ```
 
-A CUDA GPU is used when present; the service runs on a CPU. On Kubernetes, start from the hub's
+A CUDA GPU is used when present, otherwise the CPU (slower). On Kubernetes, start from the hub's
 [reference manifest and acceptance runbook](https://github.com/ufal/atrium-project/blob/main/docs/k8s_acceptance_runbook.md).
 
 ## Models and caches

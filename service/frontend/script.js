@@ -144,11 +144,11 @@ function renderResults(data) {
     const nontext = lines.filter(l => l.category === "Non-text").length;
     const empty   = lines.filter(l => l.category === "Empty").length;
 
-    // Page-level averages for word_weird and quality_score
-    // (only lines that went through GPU scoring contribute, matching
-    //  the avg_quality_score / avg_word_weird logic in aggregate_STAT)
+    // Page-level averages for word_weird and quality_score over the Clear and Noisy lines,
+    // as aggregate_STAT's avg_quality_score / avg_word_weird and the API's page quality_score
+    // average them (Trash lines used to count here too).
     const scoredLines = lines.filter(l =>
-        l.category !== "Empty" && l.category !== "Non-text"
+        l.category === "Clear" || l.category === "Noisy"
     );
     const avgWeird = scoredLines.length
         ? (scoredLines.reduce((s, l) => s + (l.word_weird ?? 0), 0) / scoredLines.length)

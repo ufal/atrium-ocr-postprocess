@@ -104,7 +104,7 @@ Its SSH Open Marketplace record:
 - **The category semantics are frozen for the S2 pilot.** Accuracy has been measured on a gold set of 2,067 lines
   and on corpus diffs, not validated in full; the tests pin the rules, not their accuracy.
 - **GPU.** The batch classification and the LayoutReader method want a GPU; the GLM method needs about 48 GB of
-  GPU memory. The service runs on a CPU.
+  GPU memory. The service uses a CUDA GPU when it has one, and otherwise runs, more slowly, on the CPU.
 
 ## Documentation
 

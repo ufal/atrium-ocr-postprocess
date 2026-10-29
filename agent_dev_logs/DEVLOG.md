@@ -1,5 +1,5 @@
 # 📓 atrium-ocr-postprocess — agent_dev_logs/DEVLOG.md (timeline index)
-> _OCR/ALTO post-processing and line categorization; the successor of atrium-alto-postprocess since 2026-10-01 (#56 there; the open issues were transferred and renumbered). 4 open issues: #2 (calibration), #4 (fine-tuning the quality model), #5 (documentation of the categorization logic), #8 (category ratios in the page statistics); #1 closed 2026-10-16, #3 2026-10-13 and #6 2026-10-07. `test` = `5d853b9` (2026-10-28) · **v1.13.1-beta** (2026-10-27); v1.14.0-beta prepared on 2026-10-28. Latest entry: 2026-10-28. #3's parameter stages after 2026-10-09, up to `v1.11.0-beta`, are recorded in its digest and plan, not here. Entries before 2026-10-01 use atrium-alto-postprocess's issue numbers._
+> _OCR/ALTO post-processing and line categorization; the successor of atrium-alto-postprocess since 2026-10-01 (#56 there; the open issues were transferred and renumbered). 4 open issues: #2 (calibration), #4 (fine-tuning the quality model), #5 (documentation of the categorization logic), #8 (category ratios in the page statistics); #1 closed 2026-10-16, #3 2026-10-13 and #6 2026-10-07. `test` = `4d2edff` (2026-10-28) · **v1.14.0-beta** (2026-10-28); v1.15.0-beta prepared on 2026-10-29, the pilot candidate (atrium-project#77). Latest entry: 2026-10-29. #3's parameter stages after 2026-10-09, up to `v1.11.0-beta`, are recorded in its digest and plan, not here. Entries before 2026-10-01 use atrium-alto-postprocess's issue numbers._
 > _Per-issue detail: `digests/{id}.digest.md` · `plans/{id}.plan.md` · `issues/` exports (source of truth). Cross-repo/hub history lives in `ufal/atrium-project/agent_dev_logs/DEVLOG.md` (deduplicated out of this file)._
 
 ## 2026-03-13
@@ -1797,3 +1797,27 @@ week, ≈ 2026-10-02). Recorded in the #30 digest and plan; nothing switched on.
 * **Checks:** 2307 passed, 12 skipped (GLM, torch, korektor, optuna/SALib), 2 xfailed; ruff and ruff format clean on
   the changed files; `check_version.py --tag v1.14.0-beta`, `docs_check.py`, `runbook_check.py`, `image_closure.py`
   and the bundle test OK.
+
+## 2026-10-29 — v1.15.0-beta: the batch and the service end alike at the edges (atrium-project#72, #77)
+
+* **How it was checked:** `tests/test_cli_service_parity.py` runs the batch scripts' own functions (loaded without
+  torch) beside the service on the same inputs; four cases are added, each failing on the previous code: an ALTO
+  without `<Page>` size and with a word without coordinates; a LayoutReader that runs out of memory at every window;
+  a page's `quality_score` from `aggregate_STAT._page_records_from_stats` and `record_scoring.page_records_from_lines`
+  on the same lines; the perplexity model a config names.
+* **Batch:** `extract_LytRdr_ALTO_2_TXT.parse_alto_xml` reads a missing size or coordinate as 0, as
+  `service/utils.parse_alto_xml_lines` does (it dropped the page, or the String). At the smallest LayoutReader window
+  the page keeps the ALTO's order, as `service/text_inference._run_layout_reader` keeps it (it returned False and
+  the page's text was lost). `aggregate_STAT` writes a page's `quality_score` to 4 decimals, as `record_scoring`.
+* **Service:** `text_inference.ppl_model_name()`: `GPT2_MODEL_NAME`, else the config's `[CLASSIFY] MODEL_NAME`, else
+  Qwen2.5-0.5B (a model set in config.txt reached the batch only). `/info`'s `line_fields` adds `original_lang`,
+  `orig_lang_score`, `page`, `page_label`; the `/process` description and `ProcessLine`'s `line_num` and `perplexity`
+  say what they are now; the "one request = ONE page" comment is corrected. The web pages (`frontend`,
+  `frontend-lindat`) average Clear and Noisy lines, as the API and `aggregate_STAT` (Trash counted), and `index.html`
+  names the batch's real page-statistics file.
+* **Docs:** the parity table of `docs/usage.md` gains ALTO without coordinates, LayoutReader out of memory, its
+  windows, the perplexity model, the perplexity batch, the page blend, `--source-origin`, `--force-single-page`,
+  `page`, a compressed ALTO (the shared reader on both sides: the ALTO stages take `*.xml`); README and the service
+  README on the GPU (the service runs on one when present).
+* **Release:** v1.15.0-beta in `CITATION.cff` (2026-10-29), `setup/para_config.txt`, the regenerated spec;
+  CONTRIBUTING row.

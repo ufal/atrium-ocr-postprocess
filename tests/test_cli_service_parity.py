@@ -555,3 +555,101 @@ def test_a_page_of_trash_alone_has_a_band_and_no_score_on_both_sides():
 
 if __name__ == "__main__":  # pragma: no cover
     sys.exit(pytest.main([os.path.abspath(__file__), "-q"]))
+
+
+#: A page without its size, and a word without its coordinates.
+ALTO_NO_COORDS = """<?xml version="1.0" encoding="UTF-8"?>
+<alto xmlns="http://www.loc.gov/standards/alto/ns-v4#">
+  <Layout><Page ID="p1"><PrintSpace><TextBlock ID="b1">
+    <TextLine ID="l1"><String CONTENT="Bez"/><SP/><String CONTENT="souřadnic" HPOS="10" VPOS="10" WIDTH="90" HEIGHT="20"/></TextLine>
+  </TextBlock></PrintSpace></Page></Layout>
+</alto>
+""".encode("utf-8")
+
+
+def test_an_alto_without_coordinates_keeps_its_text_on_both_sides(tmp_path):
+    """v1.15.0-beta: the batch's LayoutReader parse dropped the page without WIDTH/HEIGHT, and a String
+    without coordinates; the service kept both (a missing value counts as 0). Now both keep them."""
+    from service.utils import parse_alto_xml_lines
+
+    alto = tmp_path / "DOC7-1.alto.xml"
+    alto.write_bytes(ALTO_NO_COORDS)
+    batch = _batch_function(ROOT / "extract_LytRdr_ALTO_2_TXT.py", "parse_alto_xml", ET=ET)(str(alto))
+    assert batch == parse_alto_xml_lines(str(alto))
+    assert batch[0] == ["Bez souřadnic"]
+
+
+def test_a_layoutreader_out_of_memory_keeps_the_alto_order_on_both_sides(tmp_path):
+    """v1.15.0-beta: when even the smallest LayoutReader window runs out of memory, the batch keeps the
+    page in the ALTO's order, as the service does (`_run_layout_reader`); it skipped the page."""
+    np = pytest.importorskip("numpy")
+    import contextlib
+    import types
+
+    from service.utils import normalize_boxes, post_process_text
+
+    class OutOfMemory(Exception):
+        pass
+
+    def model(**_):
+        raise OutOfMemory("CUDA out of memory")
+
+    script = ROOT / "extract_LytRdr_ALTO_2_TXT.py"
+    namespace = {
+        "torch": types.SimpleNamespace(
+            cuda=types.SimpleNamespace(OutOfMemoryError=OutOfMemory, empty_cache=lambda: None),
+            Tensor=type(None),
+            no_grad=contextlib.nullcontext,
+        ),
+        "model": model,
+        "device": "cpu",
+        "boxes2inputs": lambda boxes: {},
+        "prepare_inputs": lambda inputs, model: inputs,
+        "parse_logits": None,
+        "parse_alto_xml": _batch_function(script, "parse_alto_xml", ET=ET),
+        "normalize_boxes": _batch_function(script, "normalize_boxes"),
+        "post_process_text": _batch_function(script, "post_process_text", np=np),
+        "document_hook": __import__("document_hook"),
+        "LR_CHUNK_SIZE": 4,
+        "LR_MIN_CHUNK_SIZE": 2,
+        "Path": Path,
+    }
+    extract = _batch_function(script, "extract_single_page", **namespace)
+    alto = tmp_path / "DOC8-1.alto.xml"
+    alto.write_bytes(ALTO_BLOCKS)
+    assert extract(("DOC8", "1", str(alto), str(tmp_path / "out"))) is True
+    written = (tmp_path / "out" / "DOC8" / "DOC8-1.txt").read_text(encoding="utf-8")
+    lines, boxes, (width, height) = namespace["parse_alto_xml"](str(alto))
+    assert written == post_process_text(lines, normalize_boxes(boxes, width, height))
+
+
+def test_a_pages_quality_score_has_four_decimals_on_both_sides():
+    """v1.15.0-beta: the batch record carried aggregate_STAT's mean unrounded; record_scoring (/process,
+    /score_record) rounds it to 4 decimals. Both now give 0.1673 for these lines."""
+    pd = pytest.importorskip("pandas")
+    import aggregate_STAT
+    import record_scoring
+
+    lines = [
+        {"page": "1", "line": 1, "categ": "Clear", "quality_score": 0.1},
+        {"page": "1", "line": 2, "categ": "Noisy", "quality_score": 0.2345678},
+        {"page": "1", "line": 3, "categ": "Trash", "quality_score": 0.9},
+    ]
+    stats = pd.DataFrame([{"page_num": 1, "Clear": 1, "Noisy": 1, "Trash": 1, "avg_quality_score": 0.1672839}])
+    (batch,) = aggregate_STAT._page_records_from_stats(stats)
+    (service,) = record_scoring.page_records_from_lines(lines)
+    assert batch["quality_score"] == service["quality_score"] == 0.1673
+    assert batch["quality_band"] == service["quality_band"]
+
+
+def test_the_service_reads_the_configs_perplexity_model(tmp_path, monkeypatch):
+    """v1.15.0-beta: `[CLASSIFY] MODEL_NAME`, what classify_TEXT.py reads, now reaches the service too;
+    GPT2_MODEL_NAME still wins."""
+    inference = sys.modules[type(text_api.text_manager).__module__]
+    config = tmp_path / "config.txt"
+    config.write_text("[CLASSIFY]\nMODEL_NAME = distilgpt2\n", encoding="utf-8")
+    monkeypatch.setenv("LANGID_CONFIG", str(config))
+    monkeypatch.delenv("GPT2_MODEL_NAME", raising=False)
+    assert inference.ppl_model_name() == "distilgpt2"
+    monkeypatch.setenv("GPT2_MODEL_NAME", "Qwen/Qwen2.5-0.5B")
+    assert inference.ppl_model_name() == "Qwen/Qwen2.5-0.5B"

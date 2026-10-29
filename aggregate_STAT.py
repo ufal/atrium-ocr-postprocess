@@ -230,7 +230,8 @@ def _page_records_from_stats(page_stats_df) -> list:
             rec["quality_band"] = document_hook.quality_band(clear, noisy, trash)
         qs = row.get("avg_quality_score")
         if pd.notna(qs):
-            rec["quality_score"] = float(qs)
+            # 4 decimals, as record_scoring writes it for /process and /score_record (atrium-project#72).
+            rec["quality_score"] = round(float(qs), 4)
         records.append(rec)
     return records
 

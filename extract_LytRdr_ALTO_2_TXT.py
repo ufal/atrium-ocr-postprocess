@@ -121,9 +121,11 @@ def parse_alto_xml(xml_path):
     if page is None:
         return [], [], (0, 0)
 
+    # A missing size or coordinate counts as 0, as in the service (service/utils.parse_alto_xml_lines):
+    # the page and its text are kept; it used to drop the page, or the String (atrium-project#72).
     try:
-        page_w = int(float(page.attrib.get("WIDTH")))
-        page_h = int(float(page.attrib.get("HEIGHT")))
+        page_w = int(float(page.attrib.get("WIDTH", 0)))
+        page_h = int(float(page.attrib.get("HEIGHT", 0)))
     except (ValueError, TypeError):
         return [], [], (0, 0)
 
@@ -151,10 +153,10 @@ def parse_alto_xml(xml_path):
                 subs_content = child.attrib.get("SUBS_CONTENT")
 
                 try:
-                    x = int(float(child.attrib.get("HPOS")))
-                    y = int(float(child.attrib.get("VPOS")))
-                    w = int(float(child.attrib.get("WIDTH")))
-                    h = int(float(child.attrib.get("HEIGHT")))
+                    x = int(float(child.attrib.get("HPOS", 0)))
+                    y = int(float(child.attrib.get("VPOS", 0)))
+                    w = int(float(child.attrib.get("WIDTH", 0)))
+                    h = int(float(child.attrib.get("HEIGHT", 0)))
                 except (ValueError, TypeError):
                     continue
 
@@ -356,12 +358,15 @@ def extract_single_page(args):
                 CHUNK_SIZE = CHUNK_SIZE // 2
 
                 if CHUNK_SIZE < MIN_CHUNK_SIZE:
-                    # Even the smallest viable chunk triggers OOM: give up on
-                    # this page rather than looping indefinitely.
+                    # Even the smallest viable chunk triggers OOM: the page keeps the ALTO's own
+                    # order, as the service keeps it (service/text_inference.py); the page used to
+                    # be skipped, its text lost (atrium-project#72).
                     print(
-                        f"Skipping {file_id}-{page_id}: OOM even at chunk size {CHUNK_SIZE * 2} (min={MIN_CHUNK_SIZE})."
+                        f"{file_id}-{page_id}: OOM even at chunk size {CHUNK_SIZE * 2} (min={MIN_CHUNK_SIZE}); "
+                        "the page keeps the ALTO's reading order."
                     )
-                    return False
+                    full_ordered_lines, full_ordered_boxes = list(lines), list(norm_boxes)
+                    break
 
                 print(f"OOM on {file_id}-{page_id}: retrying chunk at i={i} with reduced CHUNK_SIZE={CHUNK_SIZE}.")
                 # Do NOT advance i — retry the same position with smaller chunk.

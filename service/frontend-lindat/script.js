@@ -105,8 +105,9 @@ function renderResults(data) {
     const nontext = lines.filter(l => l.category === "Non-text").length;
     const empty   = lines.filter(l => l.category === "Empty").length;
 
-    // Page-level averages — exclude Empty and Non-text (matches batch pipeline)
-    const scored    = lines.filter(l => l.category !== "Empty" && l.category !== "Non-text");
+    // Page-level averages over the Clear and Noisy lines, as the batch pipeline (aggregate_STAT)
+    // and the API's page quality_score average them (Trash lines used to count here too).
+    const scored    = lines.filter(l => l.category === "Clear" || l.category === "Noisy");
     const avgWeird  = scored.length
         ? (scored.reduce((s, l) => s + (l.word_weird || 0), 0) / scored.length)
         : null;

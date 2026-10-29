@@ -527,9 +527,10 @@
 
             <h2>Page-Level Averages</h2>
             <p>The summary bar shows <em>Avg Quality</em> and <em>Avg Weirdness</em>
-            averaged over all lines that passed through GPU scoring (Clear, Noisy, Trash),
-            matching the <code>avg_quality_score</code> and <code>avg_word_weird</code>
-            columns in <code>result_page_summary.csv</code>.</p>
+            averaged over the page's Clear and Noisy lines, as the API's page
+            <code>quality_score</code> and the <code>avg_quality_score</code> and
+            <code>avg_word_weird</code> columns of the batch's page statistics
+            (<code>aggregate_STAT.py</code>, <code>samples_page_stats.csv</code>) average them.</p>
         </div>
     </div>
 
