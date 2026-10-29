@@ -1821,3 +1821,15 @@ week, ≈ 2026-10-02). Recorded in the #30 digest and plan; nothing switched on.
   README on the GPU (the service runs on one when present).
 * **Release:** v1.15.0-beta in `CITATION.cff` (2026-10-29), `setup/para_config.txt`, the regenerated spec;
   CONTRIBUTING row.
+
+## 2026-10-29 (evening) — v1.15.1-beta: a record that cannot be added to is refused (atrium-project#72)
+
+* **Shared modules** (re-vendored from the hub with `scripts/revendor_shared.sh`): `atrium_document.py` raises
+  `InvalidRecordError` when a list block the merge adds rows to is not a list of objects, before anything is written,
+  and `service/atrium_service.py` answers it with 422 `invalid_record`. Here that is `pages` and `lines`, on
+  `/process` and `/score_record` alike. The spec's registry text names the case, and the `invalid_record` row of
+  `service/README.md` names `pages` and `lines`.
+* **CI:** the hub's workflows are pinned to the commit that carries the modules (the maintainer's pin move; the Trivy
+  database retry of `b07090f` is already in).
+* **Release:** v1.15.1-beta in `CITATION.cff`, `setup/para_config.txt`, the spec's version; CONTRIBUTING row.
+* **Checks:** 2307 passed, 11 skipped, 2 xfailed (without torch); pre-commit clean.
