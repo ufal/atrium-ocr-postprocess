@@ -47,7 +47,7 @@ For the service itself (the published image, its endpoints, errors and limits) r
 The [run_pipeline.py](../run_pipeline.py) orchestrator runs every stage sequentially
 (**split → statistics → text extraction → classification → aggregation**) and, at the end,
 **merges all per-stage paradata** logs into a single run summary describing every stage, the
-intermediate file formats produced, and the **effective end-to-end output license** (see
+intermediate file formats produced, and the components every stage used, with their licences (see
 [Paradata logging](reference/paradata.md)).
 
 ```bash
@@ -66,9 +66,9 @@ or the `LANGID_CONFIG` environment variable.
 * **Extraction method:** `[PIPELINE] METHOD` selects the **Step 3** backend —
 `alto-tools`, `layoutreader` (**default**), or `glm` for ALTO XML; `json-keys` for generic OCR
 JSON; `text-lines` for every other text-bearing format (#31). The method also selects the
-Step 1/2 scripts for its input format. The choice flows through to the merged license: a
-LayoutReader run resolves to **CC BY-NC-SA 4.0**, an alto-tools run to
-**CC BY-NC 4.0**.
+Step 1/2 scripts for its input format. The choice shows in the merged component list: a
+LayoutReader run lists LayoutLMv3 (**CC BY-NC-SA 4.0**) besides the FastText weights
+(**CC BY-NC 4.0**) every run lists.
 * **`--input-csv`:** the page statistics CSV. Step 2 writes it, and Steps 3 and 4 read it — every
 extractor and `classify_TEXT.py` take `--input-csv` (#31 Phase 5; the flag used to reach Step 2
 only). Without the flag the ALTO/JSON methods read `[EXTRACT].INPUT_CSV` / `[CLASSIFY].INPUT_CSV`
@@ -85,8 +85,7 @@ directory, alongside the individual per-stage logs.
 > [!NOTE]
 > Every stage — Step 1 (`page_split.py` / `text_split.py`) included — writes its own paradata
 > log, so a full run merges **five** logged stages, and the dry-run tags all five `[paradata]`.
-> The merged license is re-derived from the **union** of components used across all stages, so
-> the end-to-end most-restrictive rule holds.
+> The merged component list is the **union** of the components used across all stages.
 
 > [!TIP]
 > Prefer to inspect or re-run a single stage? The individual scripts below remain fully usable on

@@ -1,7 +1,7 @@
-# Paradata, output licensing and the document record
+# Paradata, component licences and the document record
 
-What each run records about itself, how a licence is computed for its outputs today, and the record this tool
-reads and writes.
+What each run records about itself, the components it lists with their licences, and the record this tool reads
+and writes.
 
 ## Paradata logging
 
@@ -16,10 +16,10 @@ container image (when set), the Python version, and assigns a unique `run_id` to
 reference is resolved **dynamically** — environment overrides (`ATRIUM_RUNNER_REPO`, `ATRIUM_RUNNER_REF`,
 `ATRIUM_RUNNER_IMAGE`) take precedence over the static fallback in [para_config.txt](../../setup/para_config.txt) — so the log
 points at the image actually executing rather than a fixed fork.
-* **Licence label:** Computes a **licence label** for the run (a summary, not the licence of its outputs) from the
-licensed components it actually exercised, and records it as `license` / `license_url` plus a detailed `license_detail` block (per-component licenses,
-which component(s) `determined_by` the result, `is_non_commercial` / `is_share_alike` flags, and any unknown licenses).
-See [The licence label of a run](paradata.md#the-licence-label-of-a-run) below.
+* **Components:** the licensed components the run actually exercised, each with its licence, in the
+`license_detail` block (`components`). The `license` / `license_url` fields and the rest of `license_detail` belong to
+an older calculation and are not a licence. See [The components a run lists](paradata.md#the-components-a-run-lists)
+below.
 * **Configuration:** Stores run-time configuration, including script
 names, input/output paths, and specific model choices.
 * **Timing:** Records precise UTC start times, end times, and the total duration of the run in seconds.
@@ -34,24 +34,19 @@ By default, JSON logs are written to the [paradata](../../paradata) directory fo
 `<YYMMDD-HHmmss>_<program>.json`. Paradata is intended to live alongside the **outputs** (not committed to the
 repository); the paradata JSON files themselves are distributed under the **CC BY-NC 4.0** license.
 
-## The licence label of a run
+## The components a run lists
 
 > [!IMPORTANT]
-> The computed licence below is a summary of the components a run used, **not the licence of the files it
-> produces**: the rights in an output depend first on the source document and on the terms of the services used, and
+> The licences below are those of the components a run used, **not the licence of the files it produces**: the rights in an output depend first on the source document and on the terms of the services used, and
 > they are stated by whoever holds them (for the AMČR pilot, AMČR; agreed on 22 October 2026,
 > [atrium-project#6](https://github.com/ufal/atrium-project/issues/6)). No tool asserts an output licence.
 
-The label is computed per run as the **most restrictive** licence among the components (models, data, APIs) that the
-run actually used. The mechanism is data-driven via [para_config.txt](../../setup/para_config.txt) (component →
-licence) and [para_licenses.py](../../para_licenses.py) (restrictiveness ranking + share-alike / non-commercial rules),
-so the licensing owner can adjust it without touching the logger.
+[para_config.txt](../../setup/para_config.txt) declares each component (models, data, APIs) and its licence, and
+[para_licenses.py](../../para_licenses.py) normalises the licence names, so the licensing owner can adjust them
+without touching the logger. Components flagged `always` are listed for every run; components flagged `conditional`
+only when the script that uses them records it. For this repository:
 
-Each repository ships a [para_config.txt](../../setup/para_config.txt) listing its components. Components flagged `always` count
-toward every run (the worst-case baseline); components flagged `conditional` are only counted when the script that uses
-them records it. For this repository the components and their effect on the **computed label** are:
-
-| Component                                                                   | License         | Counted     | Used by                                                       |
+| Component                                                                   | License         | Listed      | Used by                                                       |
 |-----------------------------------------------------------------------------|-----------------|-------------|---------------------------------------------------------------|
 | alto-tools (https://github.com/cneud/alto-tools) — vendored, see below      | Apache-2.0      | always      | page split, statistics, alto-tools text extraction            |
 | FastText (https://huggingface.co/facebook/fasttext-language-identification) | CC BY-NC 4.0    | always      | language identification (`classify_TEXT.py`)                  |
@@ -64,18 +59,14 @@ them records it. For this repository the components and their effect on the **co
 
 [^p]: pypdfium2 is dual-licensed Apache-2.0 **or** BSD-3-Clause; `para_licenses` does not parse SPDX `OR`, so it
 is recorded as Apache-2.0 (either is permissive). The text-lines readers use no other licensed component: DOCX,
-XLSX, PPTX, ODF, EPUB, HTML and XML are read with the standard library and lxml, so a text-lines run stays at the
-**CC BY-NC 4.0** baseline.
+XLSX, PPTX, ODF, EPUB, HTML and XML are read with the standard library and lxml.
 
-Because the always-on FastText weights are **CC BY-NC 4.0**, the baseline label for this repository is
-**CC BY-NC 4.0** (non-commercial). Runs that additionally use the LayoutReader method escalate to
-**CC BY-NC-SA 4.0** (non-commercial **and** share-alike), the most restrictive option here. A run that exercised only
-permissive components would resolve to **Apache-2.0**.
+Every run lists the FastText weights, which are **CC BY-NC 4.0** (non-commercial). A run with the LayoutReader method
+also lists LayoutLMv3, **CC BY-NC-SA 4.0** (non-commercial **and** share-alike).
 
 > [!NOTE]
-> The restrictiveness ordering encoded in [para_licenses.py](../../para_licenses.py) is a mechanical engineering
-> approximation, **not legal advice**; unrecognised licenses are treated conservatively as maximally restrictive so a
-> missing entry can never silently relax the recorded label.
+> The `license` and `license_url` fields beside the list are an older calculated value, not a licence, and should
+> not be used ([Licences and paradata](https://ufal.github.io/atrium-project/ecosystem/licences/) on the hub).
 
 ## The document record
 

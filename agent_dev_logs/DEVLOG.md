@@ -1833,3 +1833,11 @@ week, ≈ 2026-10-02). Recorded in the #30 digest and plan; nothing switched on.
   database retry of `b07090f` is already in).
 * **Release:** v1.15.1-beta in `CITATION.cff`, `setup/para_config.txt`, the spec's version; CONTRIBUTING row.
 * **Checks:** 2307 passed, 11 skipped, 2 xfailed (without torch); pre-commit clean.
+
+## 2026-11-02 — The calculated licence out of the docs (atrium-project#6)
+
+* **`docs/reference/paradata.md`:** "The licence label of a run" becomes "The components a run lists": the
+  component table stays, the baseline/escalation sentences go, and a note links the hub's "old field to ignore".
+  The page title says "component licences". `docs/usage.md`'s three "effective/merged license" passages list
+  components instead (motyc, 10-29: "Even a warning can be missleading").
+* **Checks:** 2311 passed, 14 skipped, 2 xfailed, as before.
