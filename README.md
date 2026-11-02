@@ -1,16 +1,12 @@
-# OCR Output Postprocessing Pipeline
+# ATRIUM ocr-postprocess: OCR text lines sorted into five quality categories
 
-ocr-postprocess turns the output of OCR, and other text-bearing files, into ordered text lines with a
-quality category for each: `Clear`, `Noisy`, `Trash`, `Non-text` or `Empty`. Use it to decide which pages and
-lines can go on to NLP, which need correcting, and which need another OCR pass. It is stage 2 of the ATRIUM
-processing chain for scanned archaeological documents.
+ocr-postprocess reads the text that OCR (text recognition) produced from scanned documents, or the text in other
+files, and splits it into lines in reading order. It gives every line a language and a quality score, and labels it
+`Clear`, `Noisy`, `Trash`, `Non-text` or `Empty`. Use it to decide which pages can go on to language processing,
+which lines need correcting, and which pages need another OCR pass. It is stage 2 of the ATRIUM chain.
 
 [Releases](https://github.com/ufal/atrium-ocr-postprocess/releases) · [MIT licence](LICENSE) ·
 [ATRIUM documentation](https://ufal.github.io/atrium-project/workflows/ocr-postprocess/)
-
-Formerly `atrium-alto-postprocess`: on 1 October 2026 the project continued here under its new name, with the
-pipeline, the categories and the scoring unchanged. Records written before keep the program id `alto-postprocess`,
-which the record contract accepts as the same writer.
 
 ## Inputs and outputs
 
@@ -37,6 +33,12 @@ What only one of them does, and why (the document passes, the GLM method, page s
 
 ## Quick start
 
+**What you need:** Docker for the service, or Python 3.11 and a checkout for the batch pipeline. Network access to
+the Hugging Face Hub for the models, at the first start; the images already hold the language-identification model. A
+checkout's [setup](docs/usage.md#set-up-the-environment) also clones LayoutReader from GitHub. A GPU is optional for
+the service, which runs more slowly on a CPU; the batch classification and the LayoutReader method want one. No other
+host is called.
+
 The service, from the published image (the first start downloads two models from Hugging Face; see
 [Models and caches](service/README.md#models-and-caches)):
 
@@ -49,7 +51,7 @@ curl --fail-with-body -sS -X POST localhost:8000/process \
 Expected: HTTP 200 and `out.json` with `"type": "alto_xml"` and a `cleaned_lines` list in which every line has
 `text`, `lang`, `quality_score` and `category`.
 
-The batch pipeline, from a checkout with its [setup](docs/usage.md#setup) done, over the samples in
+The batch pipeline, from a checkout with its [setup](docs/usage.md#set-up-the-environment) done, over the samples in
 `data_samples/`:
 
 ```bash
@@ -64,11 +66,11 @@ slow without a GPU; `--method alto-tools` runs on a CPU.
 
 ## How it works
 
-The pipeline splits each document into pages, writes a statistics table of the pages, extracts each page's text
-in reading order (five methods, from layout-aware LayoutReader to plain ALTO text), and then classifies every
-line. Classification reads each line with two models as witnesses — FastText for its language and Qwen2.5-0.5B
-for its perplexity — builds a quality score from nine measurements of the text, and applies a short list of rules
-for the cases the score gets wrong. The batch pipeline then corrects isolated mistakes from the rest of the page.
+The pipeline splits each document into pages and writes a statistics table of the pages. It extracts each page's
+text in reading order (five methods, from layout-aware LayoutReader to plain ALTO text) and then classifies every
+line. Classification reads each line with two models as witnesses: FastText for its language and Qwen2.5-0.5B for
+its perplexity. It builds a quality score from nine measurements of the text and applies a short list of rules for
+the cases the score gets wrong. The batch pipeline then corrects isolated mistakes from the rest of the page.
 
 | Category   | Meaning                                                                    | What to do with it                         |
 |------------|----------------------------------------------------------------------------|--------------------------------------------|
@@ -93,38 +95,42 @@ Its SSH Open Marketplace record:
 ## Limits and maturity
 
 - **The rules are Czech-first.** Lines in other languages are scored less reliably: a clean English or German
-  sentence can read `Noisy`, and words with `w`, `q` or `x` count against a line
-  ([details](docs/categorization_logic.md#foreign-language-lines)).
+  sentence can read `Noisy`, and words with `w`, `q` or `x` count against a line. Check a collection in another
+  language before you trust its categories ([details](docs/categorization_logic.md#foreign-language-lines)).
 - **Short lines without Czech diacritics.** About 26,000 genuine garbage lines over both AMČR collections read
-  `Clear`; on a line of one to three tokens without diacritics, `Clear` is less certain than it looks
+  `Clear`. On a line of one to three tokens without diacritics, `Clear` is less certain than it looks
   ([measurements](docs/evaluation/categorization.md)).
-- **The service and the batch pipeline differ on whole documents:** only the batch pipeline runs the document
-  passes, so a service call answers each line on its own
-  ([every difference](docs/usage.md#the-command-line-and-the-service)).
-- **The category semantics are frozen for the S2 pilot.** Accuracy has been measured on a gold set of 2,067 lines
-  and on corpus diffs, not validated in full; the tests pin the rules, not their accuracy.
-- **GPU.** The batch classification and the LayoutReader method want a GPU; the GLM method needs about 48 GB of
-  GPU memory. The service uses a CUDA GPU when it has one, and otherwise runs, more slowly, on the CPU.
+- **The service and the batch pipeline differ on whole documents.** Only the batch pipeline runs the document
+  passes, so a service call answers each line on its own. The same document can get different categories from the
+  two ([every difference](docs/usage.md#the-command-line-and-the-service)).
+- **The category rules are frozen for the S2 pilot.** Their accuracy has been measured on a gold set of 2,067 lines
+  and on corpus diffs, not validated in full. The tests pin the rules, not their accuracy
+  ([what was measured](docs/evaluation/categorization.md)).
+- **GPU.** The batch classification and the LayoutReader method want a GPU, and the GLM method needs about 48 GB of
+  GPU memory. The service uses a CUDA GPU when it has one and otherwise runs, more slowly, on the CPU
+  ([the GLM method](docs/usage.md#glm-method)).
 
 ## Documentation
 
-| To                                                 | Read                                                                                 |
-|----------------------------------------------------|--------------------------------------------------------------------------------------|
-| run the pipeline, stage by stage                   | [docs/usage.md](docs/usage.md)                                                       |
-| compare the command line with the service          | [docs/usage.md](docs/usage.md#the-command-line-and-the-service)                      |
-| run and operate the service, its errors and limits | [service/README.md](service/README.md)                                               |
-| see the API contract                               | [service/openapi.json](service/openapi.json)                                         |
-| set every option                                   | [docs/configuration.md](docs/configuration.md)                                       |
-| understand how a line is categorised               | [docs/categorization_logic.md](docs/categorization_logic.md)                         |
-| look up every rule and constant                    | [docs/reference/categorization_rules.md](docs/reference/categorization_rules.md)     |
-| look up every output column                        | [docs/reference/outputs.md](docs/reference/outputs.md)                               |
-| read every input format                            | [docs/text_inputs.md](docs/text_inputs.md)                                           |
-| see the paradata, licences and the document record | [docs/reference/paradata.md](docs/reference/paradata.md)                             |
-| see what was measured                              | [docs/evaluation/categorization.md](docs/evaluation/categorization.md)               |
-| see why the rules are as they are                  | [docs/decisions/2026-10-categorization.md](docs/decisions/2026-10-categorization.md) |
-| contribute, test, re-vendor code                   | [docs/development.md](docs/development.md), [CONTRIBUTING.md](CONTRIBUTING.md)       |
+| For                 | To                                                 | Read                                                                                 |
+|---------------------|----------------------------------------------------|--------------------------------------------------------------------------------------|
+| using it            | run the pipeline, stage by stage                   | [docs/usage.md](docs/usage.md)                                                       |
+|                     | compare the command line with the service          | [docs/usage.md](docs/usage.md#the-command-line-and-the-service)                      |
+|                     | look up every output column                        | [docs/reference/outputs.md](docs/reference/outputs.md)                               |
+|                     | read every input format                            | [docs/text_inputs.md](docs/text_inputs.md)                                           |
+|                     | see the paradata, licences and the document record | [docs/reference/paradata.md](docs/reference/paradata.md)                             |
+| running the service | run and operate it, read its errors and limits     | [service/README.md](service/README.md)                                               |
+|                     | see the API contract                               | [service/openapi.json](service/openapi.json)                                         |
+|                     | set every option                                   | [docs/configuration.md](docs/configuration.md)                                       |
+| judging the results | see what was measured                              | [docs/evaluation/categorization.md](docs/evaluation/categorization.md)               |
+|                     | see why the rules are as they are                  | [docs/decisions/2026-10-categorization.md](docs/decisions/2026-10-categorization.md) |
+| changing the code   | understand how a line is categorised               | [docs/categorization_logic.md](docs/categorization_logic.md)                         |
+|                     | look up every rule and constant                    | [docs/reference/categorization_rules.md](docs/reference/categorization_rules.md)     |
+|                     | set up, test, re-vendor code; find the history     | [docs/development.md](docs/development.md)                                           |
+|                     | follow the conventions                             | [CONTRIBUTING.md](CONTRIBUTING.md)                                                   |
 
-The documentation follows the ATRIUM
+Terms used across the tools are explained in the
+[ATRIUM glossary](https://ufal.github.io/atrium-project/glossary/). The documentation follows the ATRIUM
 [documentation style](https://github.com/ufal/atrium-project/blob/main/docs/documentation-style.md).
 
 ## Licence, citation and acknowledgements
@@ -143,3 +149,5 @@ Developed by [ÚFAL](https://ufal.mff.cuni.cz/home-page), Charles University. Fu
 [ATRIUM](https://atrium-research.eu/) (GA 101132163), with the support of the LINDAT/CLARIAH-CZ research
 infrastructure and the AIS CR infrastructure (LM2023031). Contact: the
 [issue tracker](https://github.com/ufal/atrium-ocr-postprocess/issues).
+
+Formerly `atrium-alto-postprocess`; its history is in [docs/development.md](docs/development.md#history-of-the-repository).

@@ -1,16 +1,26 @@
 # Evaluation of the line categories
 
+**In short:** Category accuracy has been measured on a gold set of 2,067 hand-labelled lines and by re-scoring both
+AMČR collections (113,101 documents, 71.8 million lines) in memory. The finding that matters for a user: a `Clear`
+verdict on a line of one to three tokens without Czech diacritics is less certain than it looks, because about 26,000
+genuine garbage lines over both collections read `Clear`. It does not show the accuracy of the categories as a whole:
+the tests pin what the rules do, not whether they match a person's judgement.
+
 What has been measured about the five categories, on which data, and what it does not show. The rules are
 in [the reference](../reference/categorization_rules.md); the decisions the measurements settled are in
 [the decision record](../decisions/2026-10-categorization.md).
 
 ## Tests are not an accuracy measurement
 
-The test suite pins **what the program does**: `tests/test_categorization_walkthrough.py` follows each worked
-example through every step, `tests/test_scoring_single_source.py` holds the batch pipeline, the service and the
-offline re-scorer to one scoring function, and `tests/test_service_hardening.py` compares the service with the
-batch path line by line. A green suite says the categories are what the rules give. It does not say the rules
-give the categories a person would.
+The test suite pins **what the program does**:
+
+- `tests/test_categorization_walkthrough.py` follows each worked example through every step;
+- `tests/test_scoring_single_source.py` holds the batch pipeline, the service and the offline re-scorer to one
+  scoring function;
+- `tests/test_service_hardening.py` compares the service with the batch path line by line.
+
+A green suite says the categories are what the rules give. It does not say the rules give the categories a person
+would.
 
 Accuracy has been measured on the sets below only. A full validation on a gold set, and fine-tuning a model on
 it ([ocr-postprocess#4](https://github.com/ufal/atrium-ocr-postprocess/issues/4)), are deferred by the AMČR
@@ -33,7 +43,7 @@ baseline ([atrium-project#67](https://github.com/ufal/atrium-project/issues/67))
   on a line of one to three tokens without Czech diacritics is less certain than the label suggests.** A consumer
   that filters on `categ == "Clear"` should know it.
 - **`LOWPPL_CLEAR_MAX` 50 → 35 (2026-10-11).** Over both collections it moves 62,859 lines and the page band of
-  1,128 of 1,226,349 pages; of the labelled lines it moves, 63 become right and none wrong.
+  1,128 of 1,226,349 pages. Of the labelled lines it moves, 63 become right and none wrong.
 - **Foreign-language lines.** The rules are Czech-first; the cases where that shows are listed, with the lines
   that pin them, in [the reference](../reference/categorization_rules.md#known-limits-and-what-to-measure-next).
   They have not been measured over a corpus.
@@ -53,7 +63,7 @@ The full figures, with their dates and commits, are in
 ## Document passes
 
 The batch pipeline's identical-text vote (`pp_dedup`), measured over both collections: 43,103 groups of the
-same text in a document, 43,052 of them unanimous and 51 contested; the vote rescues 51 lines and pulls 10
+same text in a document, 43,052 of them unanimous and 51 contested. The vote rescues 51 lines and pulls 10
 readable ones down. The other three passes have not been measured on their own.
 
 ## Measuring a change

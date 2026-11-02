@@ -1841,3 +1841,16 @@ week, ≈ 2026-10-02). Recorded in the #30 digest and plan; nothing switched on.
   The page title says "component licences". `docs/usage.md`'s three "effective/merged license" passages list
   components instead (motyc, 10-29: "Even a warning can be missleading").
 * **Checks:** 2311 passed, 14 skipped, 2 xfailed, as before.
+
+## 2026-11-02 — atrium-project#79 phase F, tool round: the docs for each kind of reader
+
+Documentation only; no code, test or configuration change.
+* **F3:** `docs/development.md` § Working records is the one Markdown pointer into `agent_dev_logs/`; other pages cite
+  the issue. CONTRIBUTING's documentation table follows the hub template.
+* **F4:** H1 "ATRIUM ocr-postprocess: OCR text lines sorted into five quality categories" (CONTRIBUTING's title follows); the opening is 76 words; the former-name paragraph moved to `docs/development.md`.
+* **F5:** the runbook follows the template's order, with "At a glance" under Start and "Shutdown behaviour"; tracker
+  shorthand and version history are out of its running text. It gains Endpoints, How it works and Tests; "Hardware and model notes" folds into At a glance and Models and caches.
+* **F6/F7:** task headings on `docs/usage.md`; "In short" on the evaluation and decision pages, with Decision · Status · Why · Consequence; sentence passes (the decision page 24.7 → 18.0, `categorization_logic.md` 20.6 → 16.1). `categorization_rules.md` is unchanged.
+* **Map:** the hub's `agent_dev_logs/plans/79.F-relocation_map.md` § atrium-ocr-postprocess (every moved block, corrected facts,
+  renamed anchors).
+* **Checks:** `docs_check` and `runbook_check` pass; 2311 passed, 14 skipped, 2 xfailed, as at the head.

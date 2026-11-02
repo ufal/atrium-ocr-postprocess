@@ -1,23 +1,43 @@
 # Categorisation decisions, 2026
 
-Dated decisions behind the line categoriser of ocr-postprocess, kept with the measurements that settled
-them. The rules themselves are in [the reference](../reference/categorization_rules.md); the measurements
-are summarised on [the evaluation page](../evaluation/categorization.md). Nothing here describes current
-behaviour that those pages do not already state. Moved here from `docs/categorization_logic.md` on
-2026-10-20 (atrium-project#79), unchanged except for links and headings.
+**In short:** The category semantics (the rules, thresholds and weights that give a line its category) are frozen for
+the S2 pilot by the decision of 2026-09-30. A later change is measured on a corpus diff first. One threshold moved
+inside the pilot: `LOWPPL_CLEAR_MAX` went from 50 to 35, which moves 62,859 lines and breaks no labelled one. For a
+user, the same text keeps the same category through the pilot. The page does not show the accuracy of the categories
+on a validated gold set, which the AMČR baseline deferred.
+
+**Decision:** Freeze the category semantics for the S2 pilot. A change after the freeze is measured on a corpus diff
+with `tools/corpus_change.py` before it is adopted.
+
+**Status:** In force for the S2 pilot. Decided on 2026-09-30 (ocr-postprocess#2); the pilot's parameter work ended on
+2026-10-12, with `LOWPPL_CLEAR_MAX` 35 as the one change.
+
+**Why:** The accuracy of the categories is measured, not validated. Validating them on a gold set and fine-tuning a
+model on it are deferred by the AMČR baseline. The known limits are measurements to make after the pilot, not defects
+to patch inside it. The one exception, `LOWPPL_CLEAR_MAX` 50 → 35, broke no labelled line.
+
+**Consequence:** The collections are re-scored with `LOWPPL_CLEAR_MAX` 35 as `DOC_LINE_CATEG_1210`. The witness floor
+stays off and the shape witness is held. `Trash` stays the verdict for short garbage, and web and e-mail addresses
+read `Clear`. The sections below give the measurements behind each choice.
+
+Dated decisions behind the line categoriser of ocr-postprocess, kept with the measurements that settled them. The
+rules themselves are in [the reference](../reference/categorization_rules.md); the measurements are summarised on
+[the evaluation page](../evaluation/categorization.md). Nothing here describes current behaviour that those pages do
+not already state. Moved here from `docs/categorization_logic.md` on 2026-10-20 (atrium-project#79), unchanged except
+for links and headings.
 
 ## Frozen for the S2 pilot
 
-**Frozen for the pilot.** The category semantics are frozen for the S2 pilot (the decision of 2026-09-30 on
-ocr-postprocess#2). A change after it is measured on a corpus diff with `tools/corpus_change.py`. One threshold
-moved inside the pilot: `LOWPPL_CLEAR_MAX` 50 → 35 (ocr-postprocess#3, stage 16, 2026-10-11), which broke no line on
-any labelled set. Measured in memory over both collections (`tools/corpus_change.py reach`, stage 17, 2026-10-12),
-it moves 62,859 lines and the page band of 1,128 of 1,226,349 pages, and of the labelled lines it moves 63 become
-right and none wrong; the pilot's parameter work ended there, and the collections are re-scored with it as
-`DOC_LINE_CATEG_1210`. Validating the categories on a gold set and fine-tuning a model on it
-(ocr-postprocess#4) are deferred by the AMČR baseline (atrium-project#67). The known limits listed in
-[Foreign-language lines](../reference/categorization_rules.md#foreign-language-lines) and [Overrides and exception cases](../reference/categorization_rules.md#overrides-and-exception-cases)
-are measurements to make after the pilot, not defects to patch inside it.
+The category semantics are frozen for the S2 pilot (the decision of 2026-09-30 on ocr-postprocess#2). A change after it
+is measured on a corpus diff with `tools/corpus_change.py`. One threshold moved inside the pilot: `LOWPPL_CLEAR_MAX`
+50 → 35 (ocr-postprocess#3, stage 16, 2026-10-11), which broke no line on any labelled set. Measured in memory over
+both collections (`tools/corpus_change.py reach`, stage 17, 2026-10-12), it moves 62,859 lines and the page band of
+1,128 of 1,226,349 pages. Of the labelled lines it moves, 63 become right and none wrong. The pilot's parameter work
+ended there, and the collections are re-scored with it as `DOC_LINE_CATEG_1210`. Validating the categories on a gold
+set and fine-tuning a model on it (ocr-postprocess#4) are deferred by the AMČR baseline (atrium-project#67). The known
+limits listed in [Foreign-language lines](../reference/categorization_rules.md#foreign-language-lines) and
+[Overrides and exception cases](../reference/categorization_rules.md#overrides-and-exception-cases) are measurements to
+make after the pilot, not defects to patch inside it.
 
 ---
 
@@ -27,15 +47,15 @@ Notes that stood in the rules until 2026-10-20, about mechanisms earlier revisio
 
 > [!NOTE]
 > There is no `symbol_ratio` term and no `rot_penalty` subtraction in the current implementation — both
-> appeared in earlier revisions. Symbol density is no longer fed into the quality score (the `symbol`
-> per-line column has also been removed); rotation/inversion is now handled entirely by the
+> appeared in earlier revisions. Symbol density is no longer fed into the quality score, and the `symbol`
+> per-line column has also been removed. Rotation and inversion are now handled entirely by the
 > per-line lexicon override and the page-level sweep described in the reference. `compute_quality_score()`
 > still accepts an `is_upright_czech` parameter for signature compatibility, but it has no effect on the computed value.
 
 > [!NOTE]
 > **(B2) `QS_GARBAGE_NORM_MAX` vs. `CATEG_GARBAGE_DENSITY_HIGH`.** The garbage-density term inside the quality-score
-> formula is now normalised against its own constant, `QS_GARBAGE_NORM_MAX` (default **0.35**), separate from
-> `CATEG_GARBAGE_DENSITY_HIGH` (also default **0.35**), which gates the hard Trash override in
+> formula is now normalised against its own constant, `QS_GARBAGE_NORM_MAX` (default **0.35**). That constant is
+> separate from `CATEG_GARBAGE_DENSITY_HIGH` (also default **0.35**), which gates the hard Trash override in
 > [Categorisation logic](../reference/categorization_rules.md#categorisation-logic). The two constants were previously the same value reused in both
 > places, which made their individual contribution to the importance sweep inseparable. At default configuration
 > both equal 0.35, so behaviour is bit-identical to before; they can now be tuned independently.
@@ -51,10 +71,10 @@ Notes that stood in the rules until 2026-10-20, about mechanisms earlier revisio
 
 > [!CAUTION]
 > `apply_short_cap=False` is load-bearing, not a detail. `score_line()` applies `SHORT_PPL_CAP` to
-> `wc <= 2`, which is the blend's *only* target population, so re-scoring with the default pinned every
+> `wc <= 2`. That is the blend's *only* target population, so re-scoring with the default pinned every
 > blended value straight back to 850 before any rule could read it. The pass computed a number, wrote it
-> to `perplex`, and then produced a category for a different number — leaving each affected row
-> internally inconsistent and the whole feature unable to move a category at any magnitude. Every blend
+> to `perplex`, and then produced a category for a different number. Each affected row was left
+> internally inconsistent, and the whole feature could not move a category at any magnitude. Every blend
 > test passed throughout, because they assert on the blended *number*; the only `categ` assertion was an
 > idempotence check, which passes trivially when nothing moves. `TestBlendReachesTheRules` now asserts on
 > a category actually changing.
@@ -62,28 +82,28 @@ Notes that stood in the rules until 2026-10-20, about mechanisms earlier revisio
 ## The definition note (2026-10-01 revision)
 
 > [!IMPORTANT]
-> **This page describes what the program does, not what the five labels mean to a reader — and
+> **This page describes what the program does, not what the five labels mean to a reader, and
 > the two are not currently the same thing.** The definition an annotator works to was settled by
-> @david-spacil on 2026-09-22 (issue #30 § 6) and agreed by @DanaKriv on 2026-10-01 (Q1): **`Trash` means illegible.**
-> Anything legible is `Clear`; anything easily decipherable through a mistake is `Noisy` —
+> @david-spacil on 2026-09-22 (issue #30 § 6) and agreed by @DanaKriv on 2026-10-01 (Q1). **`Trash` means illegible.**
+> Anything legible is `Clear`; anything easily decipherable through a mistake is `Noisy`,
 > **regardless of how useful the line is**. `Non-text` cannot be told apart from `Trash` without
 > the page image and is out of scope for hand annotation.
 >
-> Measured against that, the routes below send readable text to `Trash` in at least two places:
-> a correctly scanned web address (`rule_domain_notation`, § 5, lifted as far as `Noisy` by D33)
-> and the short-garbage route, whose only verdict is `Trash` even for damage a person can
+> Measured against that, the routes below send readable text to `Trash` in at least two places.
+> One is a correctly scanned web address (`rule_domain_notation`, § 5, lifted as far as `Noisy` by D33).
+> The other is the short-garbage route, whose only verdict is `Trash` even for damage a person can
 > decipher.
 >
 > The first now has a route that can finish the job: **`rule_domain_notation_categ`** (gate 0b in
 > the table below, issue #30 D43). It is driven by **`DOMAIN_NOTATION_CATEG`**, which holds a
 > **category name**, not an on/off switch. It shipped empty (off) until 2026-10-01 and **ships
 > `Clear` since** — @david-spacil and @DanaKriv's answer to Q4. *Every* line `_RE_NOTATION_URL` recognises as a web or
-> e-mail address gets that category, and the route runs **first** in the cascade, above even
-> `rule_hard_sweep`: every signal below it measures how word-like a string is, and an address is
-> not trying to be a word (`weird_ratio` is 1.00 on a URL, `detect_fused_words` fires on the
-> address shape, an `@` halves `valid_word_ratio`). Its measured limit: nothing in it separates a
-> correctly scanned address from a mis-scanned one, so the configured category applies to both —
-> and `e-mail: officeauappmost.cz`, whose `@` the scanner lost, already reads `Clear` without the
+> e-mail address gets that category. The route runs **first** in the cascade, above even
+> `rule_hard_sweep`. Every signal below it measures how word-like a string is, and an address is
+> not trying to be a word: `weird_ratio` is 1.00 on a URL, `detect_fused_words` fires on the
+> address shape, and an `@` halves `valid_word_ratio`. Its measured limit: nothing in it separates a
+> correctly scanned address from a mis-scanned one, so the configured category applies to both.
+> `e-mail: officeauappmost.cz`, whose `@` the scanner lost, already reads `Clear` without the
 > route. An unrecognised value fails at import rather than silently doing nothing.
 >
 > *(Corrected 2026-09-22. An earlier revision of this note described a `rule_domain_notation_clear`
@@ -93,9 +113,9 @@ Notes that stood in the rules until 2026-10-20, about mechanisms earlier revisio
 > The second is not changed and is not described here as a defect: the short-garbage route's
 > target category is a decision with an owner. **Answered 2026-10-01 (Q6): `Trash` stays.**
 > The owners asked for the annotation to decide and for `Trash` if it could not. @DanaKriv's 357
-> decisions put about a third of what the shape witness convicts at `Noisy`, but no signal the
-> route can read separates those lines: a clean companion word on the line moves the census head
-> the right way (358 → 275 errors) and the sample tail the wrong way (1,180 → 1,636), and the
+> decisions put about a third of what the shape witness convicts at `Noisy`. No signal the
+> route can read separates those lines. A clean companion word on the line moves the census head
+> the right way (358 → 275 errors) and the sample tail the wrong way (1,180 → 1,636). The
 > recoverability bands are 60/40 at best. So the fallback applies.
 > See [`issue30/issue30_review_request.md`](../issue30/issue30_review_request.md) § 6 and
 > [`../README.md`](../../README.md)'s five-category table.
@@ -106,7 +126,15 @@ Notes that stood in the rules until 2026-10-20, about mechanisms earlier revisio
 
 ## Gate 6, `rule_short_garbage`
 
-Structural short-garbage route (e.g. `olie`). Recorded as `trash_threshold`. It does **not** consult `check_rescues()`. Since `070620f` (issue #30) it no longer returns unconditionally: it convicts only when `quality_score < CATEG_TRASH_SCORE_MAX + 0.35` **and** a second witness holds. On the short diacritic-free population `_has_strong_garbage_evidence()` returns `False` for *everything* — garbage and real domain vocabulary alike — so requiring it here was a suspension of the rule rather than a narrowing, at a measured cost of roughly **26,000 garbage lines reaching `Clear`**. `_has_shape_garbage_evidence()` (`SHORT_GARBAGE_WITNESS_ENABLE`, **off by default**) is the second witness that does discriminate; it is now wired here as an additional disjunct and is documented under §5c below. This is the **only** site in the short-line path that returns `Trash` — section 7's `damage` branch returns `Noisy` — which is why the witness belongs here and nowhere else.
+Structural short-garbage route (e.g. `olie`). Recorded as `trash_threshold`. It does **not** consult
+`check_rescues()`. Since `070620f` (issue #30) it no longer returns unconditionally: it convicts only when
+`quality_score < CATEG_TRASH_SCORE_MAX + 0.35` **and** a second witness holds. On the short diacritic-free population
+`_has_strong_garbage_evidence()` returns `False` for *everything*, garbage and real domain vocabulary alike. Requiring
+it here was therefore a suspension of the rule rather than a narrowing, at a measured cost of roughly **26,000 garbage
+lines reaching `Clear`**. `_has_shape_garbage_evidence()` (`SHORT_GARBAGE_WITNESS_ENABLE`, **off by default**) is the
+second witness that does discriminate; it is now wired here as an additional disjunct and is documented under §5c
+below. This is the **only** site in the short-line path that returns `Trash` — section 7's `damage` branch returns
+`Noisy` — which is why the witness belongs here and nowhere else.
 
 ## Gate 6, `rule_domain_notation`
 
@@ -116,9 +144,46 @@ Consulted at **two** narrow sites — the outer guard of `rule_short_garbage`, a
 
 Condition and rationale, as the issue #30 round left them:
 
-**Off by default** (`SHORT_GARBAGE_WITNESS_ENABLE=false`). A phonotactic **shape** test over sub-tokens of ≥ `SHORT_GARBAGE_WITNESS_MIN_ALPHA` (def: 4) alphabetic characters: a **vowel run** (3 in a row by default, `SHORT_GARBAGE_WITNESS_VOWEL_RUN_MIN`; **4 when the raw FastText label is German or French**, `SHORT_GARBAGE_WITNESS_VOWEL_RUN_EXEMPT_LANGS` = `deu,fra` / `..._MIN_EXEMPT` = 4, issue #30 D44), the same character three times in a token of ≤ 8 letters, a doubled consonant in first position, or fewer than `SHORT_GARBAGE_WITNESS_VARIETY_MAX` (def: 0.50) distinct letters at ≥ 7 letters. Vetoed for the whole line by `has_cz_diacs()`, `is_structured_line()`, `is_domain_notation()` and `_RE_FUSED_GRID_REF` (a grid reference with its sub-letter fused, `S-VIIIb` — the hyphenless twin of a shape `is_domain_notation()` accepts); sub-tokens are split on `. - –` **and on joining punctuation** (`, / ; : ( ) " = _ ? ! * #`, `_witness_subtokens()`, issue #30 D46 — a comma-list like `erhalten,Siedelungsfund,gefunden` used to be read as one 30-letter token, and `low_variety` fires on any string that long); per sub-token it skips the `[neutral]` / `[short_exception]` / `[short_valid]` word lists, uppercase roman numerals (≤ 7 glyphs), Latin taxonomic suffixes (`-aceae`, `-idae`, …) and, once `SHORT_GARBAGE_LEXICON_PATH` points at a built table, any token attested in ≥ `SHORT_GARBAGE_LEXICON_MIN_DF` documents. It skips any token listed in `setup/word_lists.txt` `[allowed]` (#30 Q5b).
+**Off by default** (`SHORT_GARBAGE_WITNESS_ENABLE=false`). A phonotactic **shape** test over sub-tokens of ≥
+`SHORT_GARBAGE_WITNESS_MIN_ALPHA` (def: 4) alphabetic characters. It fires on a **vowel run** (3 in a row by default,
+`SHORT_GARBAGE_WITNESS_VOWEL_RUN_MIN`; **4 when the raw FastText label is German or French**,
+`SHORT_GARBAGE_WITNESS_VOWEL_RUN_EXEMPT_LANGS` = `deu,fra` / `..._MIN_EXEMPT` = 4, issue #30 D44), the same character
+three times in a token of ≤ 8 letters, a doubled consonant in first position, or fewer than
+`SHORT_GARBAGE_WITNESS_VARIETY_MAX` (def: 0.50) distinct letters at ≥ 7 letters. The whole line is vetoed by
+`has_cz_diacs()`, `is_structured_line()`, `is_domain_notation()` and `_RE_FUSED_GRID_REF` (a grid reference with its
+sub-letter fused, `S-VIIIb`, the hyphenless twin of a shape `is_domain_notation()` accepts). Sub-tokens are split on
+`. - –` **and on joining punctuation** (`, / ; : ( ) " = _ ? ! * #`, `_witness_subtokens()`, issue #30 D46). A
+comma-list like `erhalten,Siedelungsfund,gefunden` used to be read as one 30-letter token, and `low_variety` fires on
+any string that long. Per sub-token the test skips the `[neutral]` / `[short_exception]` / `[short_valid]` word lists,
+uppercase roman numerals (≤ 7 glyphs), Latin taxonomic suffixes (`-aceae`, `-idae`, …) and, once
+`SHORT_GARBAGE_LEXICON_PATH` points at a built table, any token attested in ≥ `SHORT_GARBAGE_LEXICON_MIN_DF`
+documents. It also skips any token listed in `setup/word_lists.txt` `[allowed]` (#30 Q5b).
 
-Reaches `oueussd`, `sektlll`, `cuxoaid`, `Tthts I`, `rragment`, `NINNNIC`, `vansasaasasa` — the garbage `_has_strong_garbage_evidence()` misses — while leaving `malakofauna`, `diapozitiv`, `Equus caballus`, `Skelettmaterial` and `vrstva` alone. It deliberately does **not** reuse `detect_fused_words()`'s other two clauses: `len(core) > 14` flags `Skelettmaterial`, and the 5+ consonant run flags `vrstva`, `ctvrtek`, `zmrzl` — ordinary diacritic-free Czech. The language label is the RAW `original_lang`, never the stored `lang`, which `remap_lang()` rewrites to Czech; a caller that passes no label gets the strict threshold. **Known limits:** the phonotactically legal residue (`edelite`, `vfetennl k.`) is out of reach by construction and needs a lexicon (#30 D14), with an optional `no_vocabulary` clause behind `SHORT_GARBAGE_LEXICON_CONVICT` (false); and the language label on a short damaged line is often wrong (#30 Z5). **Measured against the 2,064 scored rows of the gold sidecar** (`tools/gold/sidecars/issue30_gold_2067.csv`): with the document cascade it passes the adoption gate — errors 513 → 503, `Clear`-loss 38 → 38, 12 fixes / 2 breaks, p = 0.013, and 503 → 502 / 38 → 37 with the language split; per line (`--no-postprocessing`) it fails it, `Clear`-loss 53 → 54. @david-spacil's independent re-check of his 508 lines on the **default config (no lexicon)**, 2026-09-23: agreement 326 → 335/508 on `4ed309a`, 16 lines moved (11 fixed, 2 broken, 3 wrong either way). One of the two breaks was `S-VIIIb`, whose `_RE_FUSED_GRID_REF` guard had been deleted by an unrelated commit (`cc4990e`, 2026-09-18) and is restored and pinned by tests; the other, `Lokolieace: •VIII,` (gold `Noisy`), is damage a reader can decipher, which this route can only answer with `Trash`. **Confirmed by him on `3b02959`, with the guard restored: 336/508**, 15 lines moved (11 fixed, 1 broken, 3 wrong either way), `Lokolieace: •VIII,` the only break, and 0 of 508 changed with the flag off. **@DanaKriv's 357 decisions (2026-10-01, returned in place in `docs/issue30/census.csv` + `sample.csv`), text-only, no lexicon, after D46:** projected tail errors 4,844 → 1,180 of 5,646 lines, census head 339 → 358 of 558 (decipherable damage, which this route answers `Trash` — Q6), `Clear`-loss 0 in both. Before D46 her only two at-risk `Clear` labels (`XXX,1937,str. 21`, `okraj sekt.III,konec`) were convicted. **Stage 12, the same labels on the real lines, lexicon armed (2026-10-01):** on Dana's 826 lines errors 648 → 642, `Clear`-loss 1 = 1, p = 0.24 — the projection above is the witness's verdict on the text, and this gate consults it on about 3% of those lines; on the 2,064 gold errors 510 → 499, `Clear`-loss 38 = 38, p = 0.0034. The flip rule is met; the flag is held to be decided together with the proposed witness floor (#30 D47, stage 13).
+Reaches `oueussd`, `sektlll`, `cuxoaid`, `Tthts I`, `rragment`, `NINNNIC`, `vansasaasasa` — the garbage
+`_has_strong_garbage_evidence()` misses — while leaving `malakofauna`, `diapozitiv`, `Equus caballus`,
+`Skelettmaterial` and `vrstva` alone. It deliberately does **not** reuse `detect_fused_words()`'s other two clauses:
+`len(core) > 14` flags `Skelettmaterial`, and the 5+ consonant run flags `vrstva`, `ctvrtek`, `zmrzl` — ordinary
+diacritic-free Czech. The language label is the RAW `original_lang`, never the stored `lang`, which `remap_lang()`
+rewrites to Czech; a caller that passes no label gets the strict threshold. **Known limits:** the phonotactically
+legal residue (`edelite`, `vfetennl k.`) is out of reach by construction. It needs a lexicon (#30 D14), with an
+optional `no_vocabulary` clause behind `SHORT_GARBAGE_LEXICON_CONVICT` (false). The language label on a short damaged
+line is often wrong (#30 Z5). **Measured against the 2,064 scored rows of the gold sidecar**
+(`tools/gold/sidecars/issue30_gold_2067.csv`): with the document cascade it passes the adoption gate (errors 513 →
+503, `Clear`-loss 38 → 38, 12 fixes / 2 breaks, p = 0.013, and 503 → 502 / 38 → 37 with the language split). Per line
+(`--no-postprocessing`) it fails the gate: `Clear`-loss 53 → 54. @david-spacil's independent re-check of his 508 lines
+on the **default config (no lexicon)**, 2026-09-23: agreement 326 → 335/508 on `4ed309a`, 16 lines moved (11 fixed, 2
+broken, 3 wrong either way). One of the two breaks was `S-VIIIb`. Its `_RE_FUSED_GRID_REF` guard had been deleted by
+an unrelated commit (`cc4990e`, 2026-09-18); it is restored and pinned by tests. The other, `Lokolieace: •VIII,` (gold
+`Noisy`), is damage a reader can decipher, which this route can only answer with `Trash`. **Confirmed by him on
+`3b02959`, with the guard restored: 336/508.** 15 lines moved (11 fixed, 1 broken, 3 wrong either way), `Lokolieace:
+•VIII,` was the only break, and 0 of 508 changed with the flag off. **@DanaKriv's 357 decisions (2026-10-01, returned
+in place in `docs/issue30/census.csv` + `sample.csv`), text-only, no lexicon, after D46:** projected tail errors 4,844
+→ 1,180 of 5,646 lines. Census head 339 → 358 of 558 (decipherable damage, which this route answers `Trash`, Q6).
+`Clear`-loss 0 in both. Before D46 her only two at-risk `Clear` labels (`XXX,1937,str. 21`, `okraj sekt.III,konec`)
+were convicted. **Stage 12, the same labels on the real lines, lexicon armed (2026-10-01):** on Dana's 826 lines
+errors 648 → 642, `Clear`-loss 1 = 1, p = 0.24. The projection above is the witness's verdict on the text, and this
+gate consults it on about 3% of those lines. On the 2,064 gold errors 510 → 499, `Clear`-loss 38 = 38, p = 0.0034. The
+flip rule is met; the flag is held to be decided together with the proposed witness floor (#30 D47, stage 13).
 
 ## The witness floor
 
@@ -128,11 +193,11 @@ Reaches `oueussd`, `sektlll`, `cuxoaid`, `Tthts I`, `rragment`, `NINNNIC`, `vans
 `noisy_threshold`. It never touches a `Trash`, `Noisy`, `Non-text` or `Empty` verdict, it does not need the signal
 half of gate 6, and it is independent of `SHORT_GARBAGE_WITNESS_ENABLE`. The page-level smoothing in
 `apply_document_postprocessing()` acts after it, so with the floor on a line it created can still be moved to `Trash`
-by the surrounded-`Trash` pass or page rule 1. Per line it only ever answers `Noisy`, but by lowering a page's `Clear`
-share and median score it can fire page rule 1, which sends every `Noisy` line on that page to `Trash` — so it can
-move `Clear`-loss in the pipeline even though no A/B on the sidecars showed it. The A/B tool also reports
+by the surrounded-`Trash` pass or page rule 1. Per line it only ever answers `Noisy`. But by lowering a page's `Clear`
+share and median score it can fire page rule 1, which sends every `Noisy` line on that page to `Trash`. It can
+therefore move `Clear`-loss in the pipeline even though no A/B on the sidecars showed it. The A/B tool also reports
 `Clear-demoted` (gold `Clear` → any other class) for rules like this one. **Stays off** (@david-spacil, 2026-10-05):
-over both collections with the shipped config (no token table) it moved 25,448 lines, and a blind annotation of the
+over both collections with the shipped config (no token table) it moved 25,448 lines. A blind annotation of the
 change found ≈ 3,920 fixed against ≈ 13,509 broken, including ≈ 1,250 lines annotated `Clear` (e.g. the `IV-2`
 table cells) taken to `Trash` by page rule 1. Measure it on a corpus diff (`tools/corpus_change.py`), not on the
 sidecars.

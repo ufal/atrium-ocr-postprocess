@@ -426,5 +426,6 @@ by the rule**, **6,714 of them kept today**. Sections 0 and 3 were rewritten on 
 added on 2026-09-22 from a separate 23-rule review scored against the 2,064 annotated lines; the
 remaining sections were measured on 2026-09-21 and are unaffected by the repeat, because they
 describe the archive rather than the rule. Every figure here is recomputed from the files attached
-to issue #30 and is reproducible from them. The technical write-up is
-`agent_dev_logs/digests/3.digest.md`, § "Stage 8 f/g re-run read against its own delivery"._
+to issue #30 and is reproducible from them. The technical write-up is the digest of
+[issue #30](https://github.com/ufal/atrium-alto-postprocess/issues/30), § "Stage 8 f/g re-run read against its own
+delivery"._

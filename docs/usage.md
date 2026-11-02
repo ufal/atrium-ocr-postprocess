@@ -5,7 +5,16 @@ For the service itself (the published image, its endpoints, errors and limits) r
 [service/README.md](../service/README.md). Every output column is listed in
 [the output reference](reference/outputs.md); every setting in [configuration](configuration.md).
 
-## Setup
+On this page: [Set up the environment](#set-up-the-environment) · [Run the whole pipeline](#run-the-whole-pipeline) ·
+[Step 1: split documents into pages](#step-1-split-documents-into-pages) ·
+[Step 2: build the page statistics](#step-2-build-the-page-statistics) ·
+[Step 3: extract the text](#step-3-extract-the-text) · [Step 4.1: classify lines](#step-41-classify-lines) ·
+[Step 4.2: aggregate page statistics](#step-42-aggregate-page-statistics) ·
+[Score an existing record](#score-an-existing-record-score_recordpy) ·
+[Call the service instead](#call-the-service-instead) ·
+[The command line and the service](#the-command-line-and-the-service)
+
+## Set up the environment
 
 1.  Create and activate a new **virtual environment** in the project directory.
 2.  Install the required Python packages:
@@ -35,26 +44,26 @@ For the service itself (the published image, its endpoints, errors and limits) r
 > without its leading `v`. `./data` is part of the clone and belongs to you, while the images run as uid 10001 by
 > default: `docker-compose.yml` runs the services as `user: "${ATRIUM_UID:-10001}:0"`, so put your uid in `.env`
 > once — `echo "ATRIUM_UID=$(id -u)" >> .env`. With `docker run`, pass `--user "$(id -u):0"`. Docker Desktop
-> (macOS, Windows) needs neither. (atrium-project#69)
+> (macOS, Windows) needs neither.
 
 > [!NOTE]
-> There is no `alto-tools` install step any more. The statistics and text-extraction code paths this
-> pipeline used are **vendored** in [alto_tools.py](../alto_tools.py) — see [Vendored code](development.md#vendored-code).
+> `alto-tools` needs no install step. The statistics and text-extraction code paths this
+> pipeline uses are **vendored** in [alto_tools.py](../alto_tools.py) — see [Vendored code](development.md#vendored-code).
 
 
-## Running the whole pipeline
+## Run the whole pipeline
 
 The [run_pipeline.py](../run_pipeline.py) orchestrator runs every stage sequentially
-(**split → statistics → text extraction → classification → aggregation**) and, at the end,
-**merges all per-stage paradata** logs into a single run summary describing every stage, the
+(**split → statistics → text extraction → classification → aggregation**). At the end it
+**merges all per-stage paradata** logs into a single run summary. The summary describes every stage, the
 intermediate file formats produced, and the components every stage used, with their licences (see
 [Paradata logging](reference/paradata.md)).
 
 ```bash
 python3 run_pipeline.py                      # all settings from config.txt
 python3 run_pipeline.py --method glm         # override just the extraction backend
-python3 run_pipeline.py --method json-keys --input-dir data_samples/JSON   # generic OCR JSON (#31)
-python3 run_pipeline.py --method text-lines  # PDF/DOCX/TXT/... from [PIPELINE].INPUT_DIR_TEXT (#31)
+python3 run_pipeline.py --method json-keys --input-dir data_samples/JSON   # generic OCR JSON
+python3 run_pipeline.py --method text-lines  # PDF/DOCX/TXT/... from [PIPELINE].INPUT_DIR_TEXT
 python3 run_pipeline.py --skip-split         # PAGE_ALTO already populated
 python3 run_pipeline.py --dry-run            # print the resolved plan, run nothing
 ```
@@ -65,17 +74,16 @@ python3 run_pipeline.py --dry-run            # print the resolved plan, run noth
 or the `LANGID_CONFIG` environment variable.
 * **Extraction method:** `[PIPELINE] METHOD` selects the **Step 3** backend —
 `alto-tools`, `layoutreader` (**default**), or `glm` for ALTO XML; `json-keys` for generic OCR
-JSON; `text-lines` for every other text-bearing format (#31). The method also selects the
+JSON; `text-lines` for every other text-bearing format. The method also selects the
 Step 1/2 scripts for its input format. The choice shows in the merged component list: a
 LayoutReader run lists LayoutLMv3 (**CC BY-NC-SA 4.0**) besides the FastText weights
 (**CC BY-NC 4.0**) every run lists.
-* **`--input-csv`:** the page statistics CSV. Step 2 writes it, and Steps 3 and 4 read it — every
-extractor and `classify_TEXT.py` take `--input-csv` (#31 Phase 5; the flag used to reach Step 2
-only). Without the flag the ALTO/JSON methods read `[EXTRACT].INPUT_CSV` / `[CLASSIFY].INPUT_CSV`
-as before, and `text-lines` uses its own CSV, `[EXTRACT].INPUT_CSV_TEXT`
-(`data_samples/text_stats.csv`), which the orchestrator passes to Steps 3 and 4 — so a text-lines
-run no longer overwrites the ALTO methods' `data_samples/test_alto_stats.csv`.
-* **text-lines extras (#31):** without `--input-dir` it reads `[PIPELINE].INPUT_DIR_TEXT`
+* **`--input-csv`:** the page statistics CSV. Step 2 writes it, and Steps 3 and 4 read it: every
+extractor and `classify_TEXT.py` take `--input-csv`. Without the flag the ALTO and JSON methods read
+`[EXTRACT].INPUT_CSV` and `[CLASSIFY].INPUT_CSV`. The `text-lines` method uses its own CSV,
+`[EXTRACT].INPUT_CSV_TEXT` (`data_samples/text_stats.csv`), which the orchestrator passes to Steps 3 and 4, so a
+text-lines run does not overwrite the ALTO methods' `data_samples/test_alto_stats.csv`.
+* **text-lines extras:** without `--input-dir` it reads `[PIPELINE].INPUT_DIR_TEXT`
 (`data_samples/TEXT`); `--strict` / `--no-strict` reach `text_split.py` and
 `extract_TEXT_2_TXT.py` (a strict failure stops the pipeline); `--source-origin ocr:<engine>`
 reaches the split stage of every method.
@@ -114,8 +122,8 @@ Each page-specific file retains the header from its original source document.
 > the ATRIUM ABBYY exports use — v4, BnF), and each page file keeps it. A `.xml` whose root is not a
 > namespaced `<alto>` (PAGE XML, TEI, namespace-less ALTO) is skipped with its root named; the
 > [text-lines method](#any-other-text-bearing-input) reads those. A re-split
-> replaces a document's page files: pages the input no longer yields are removed, also when the
-> input now fails. Tesseract numbers its ALTO pages from 0 (`PHYSICAL_IMG_NR="0"`), so its page
+> replaces a document's page files: pages the input does not yield are removed, also when the
+> input fails. Tesseract numbers its ALTO pages from 0 (`PHYSICAL_IMG_NR="0"`), so its page
 > files are `<doc>-0.alto.xml`, `<doc>-1.alto.xml`, …
 
 Example of the output directory with divided per-page XML files: [PAGE_ALTO](../data_samples/PAGE_ALTO) .
@@ -133,11 +141,11 @@ PAGE_ALTO/
 
 ### Generic JSON input
 
-Real OCR/Doc-AI engines don't agree on how they represent multi-page documents, so the JSON
-path is detected heuristically rather than assuming one vendor's schema: a nested page-list
-container (e.g. Azure Document Intelligence's/docTR's `pages` array), a flat element list
-tagged with a per-item page field (e.g. AWS Textract), or — when neither pattern is found —
-today's single-page-per-file default (e.g. pero-ocr, OCR.space).
+Real OCR/Doc-AI engines don't agree on how they represent multi-page documents. The JSON
+path is therefore detected heuristically, without assuming one vendor's schema. It looks for a nested page-list
+container (e.g. Azure Document Intelligence's/docTR's `pages` array) or a flat element list
+tagged with a per-item page field (e.g. AWS Textract). When neither pattern is found, each file is
+one page (e.g. pero-ocr, OCR.space).
 
 * **Input:** `../JSON/` (input directory with generic JSON OCR-engine documents)
 * **Output:** `../PAGE_JSON/` (output directory with JSON files split into pages)
@@ -200,7 +208,7 @@ A re-run never leaves stale pages of a document that now fails, and a page direc
 replaced when it holds nothing but that document's page files. DOCX/ODT footnotes end the page
 that cites them (`[TEXT_INGEST].NOTES`). All caps live in `[TEXT_INGEST]` in
 [config.txt](../setup/config.txt) ; each can also be set as the environment variable
-`ATRIUM_TEXT_INGEST_<KEY>`, which wins over the file (atrium-project#53; the full list is
+`ATRIUM_TEXT_INGEST_<KEY>`, which wins over the file (the full list is
 [service/README.md § Limits](../service/README.md#limits)).
 
 ```
@@ -218,10 +226,9 @@ PAGE_TEXT/
 This is the pipeline's **first** stage to see the original file, so when
 `[DOCUMENT].JSON_DIR` is configured it is also the first writer of the record's `source`
 block (`sha256`, `filename`, `media_type`, `page_count`, `origin`). `source` is
-immutable — first writer wins — and since the `atrium_document` §1a hardening its
-`origin` is what **authorises** this repo to write the positional blocks
-(`pages`/`content`/`lines`/`tables`), so that no document can end up with half an
-OCR-derived plane and half a digital-born one. A value that matches no known originator
+immutable: the first writer wins. Its `origin` **authorises** this repo to write the
+positional blocks (`pages`/`content`/`lines`/`tables`, the `atrium_document` §1a rule), so that no
+document can end up with half an OCR-derived plane and half a born-digital one. A value that matches no known originator
 prefix silently switches that check off, which is why the resolution is verified and a
 mismatch warns.
 
@@ -230,24 +237,23 @@ mismatch warns.
 | ALTO XML | `ABBYY-ALTO`     | ALTO from the ABBYY toolchain the extractors already assume (see `extract_LytRdr_ALTO_2_TXT.py`) |
 | JSON     | `ocr:generic`    | Generic OCR/Doc-AI export whose specific engine the file does not name                           |
 
-For `text_split.py` (#31) the default is **truthful per format**. The OCR outputs are
-`ABBYY-ALTO` (ALTO), `ocr:page-xml`, `ocr:hocr` — for an ALTO or hOCR file that names its engine
-in its header, that engine instead (`ocr:tesseract`, `ocr:pero`, `ocr:kraken`, `ocr:transkribus`,
-`ocr:ocrd`, …; #31 Phase 5) —, `ocr:abbyy-finereader`, `ocr:djvu`,
-`ocr:tesseract`, `ocr:pdf-text-layer` (a PDF whose text is an invisible OCR layer under the page
-image) and `ocr:generic` (TXT, Markdown, CSV/TSV, JSON/JSONL, TEI, XML, subtitles); a ZIP bundle
-takes its members' origin. Born-digital documents are `digital-born-<kind>` (DOCX, ODT/ODS/ODP,
+For `text_split.py` the default is **truthful per format**. The OCR outputs are `ABBYY-ALTO` (ALTO), `ocr:page-xml`,
+`ocr:hocr`, `ocr:abbyy-finereader`, `ocr:djvu`, `ocr:tesseract`, `ocr:pdf-text-layer` (a PDF whose text is an
+invisible OCR layer under the page image) and `ocr:generic` (TXT, Markdown, CSV/TSV, JSON/JSONL, TEI, XML,
+subtitles). An ALTO or hOCR file that names its engine in its header gets that engine instead (`ocr:tesseract`,
+`ocr:pero`, `ocr:kraken`, `ocr:transkribus`, `ocr:ocrd`, …). A ZIP bundle takes its members' origin. Born-digital
+documents are `digital-born-<kind>` (DOCX, ODT/ODS/ODP,
 XLSX, PPTX, EPUB, RTF, plain HTML, e-mail, a PDF with visible text). A born-digital record is
-originated by [`digital-convert`](https://github.com/ufal/atrium-digital-convert), so this repo then writes **only** `source` into
-it: `document_hook` holds back the `pages`/`content`/`lines` blocks of every stage
+originated by [`digital-convert`](https://github.com/ufal/atrium-digital-convert), so this repo then writes **only**
+`source` into it. `document_hook` holds back the `pages`/`content`/`lines` blocks of every stage
 (`atrium_document` §1a), except for the pages digital-convert flags `needs_ocr`. Those pages'
 rows are written page by page, their lines replaced by this repo's, and every other page is left
-alone (the OCR hand-off, atrium-digital-convert#4 W4;
-[service/README.md](../service/README.md#merging-an-ocrd-page-into-a-born-digital-record-w4)). The CSV
+alone (the OCR hand-off;
+[service/README.md](../service/README.md#merging-an-ocrd-page-into-a-born-digital-record)). The CSV
 outputs of the run are produced either way. `--source-origin ocr:<engine>` overrides the default when the
 files are known OCR output.
 
-digital-convert reads PDF, DOCX and, since its v1.1.0-beta, ODT, ODS, XLSX and RTF (with this repository's
+digital-convert reads PDF, DOCX, ODT, ODS, XLSX and RTF (with this repository's
 `text_formats.py`), so born-digital records of the other kinds (PPTX, ODP, EPUB, HTML, e-mail) keep `source`
 only. The lines digital-convert does write can be scored on its record by `POST /score_record`
 ([service/README.md](../service/README.md#scoring-a-record-post-score_record)). When files of such a kind really are OCR or transcription exports, say so per kind:
@@ -267,7 +273,7 @@ or via the `DOCUMENT_SOURCE_ORIGIN` env var, so orchestrated `run_pipeline.py` r
 (which invoke this script with no extra CLI flags) can set it too. Precedence: CLI flag >
 env var > config value > per-format default.
 
-## Step 2: page statistics
+## Step 2: build the page statistics
 
 Next, use the output directory from Step 1 as the input for this script to generate a
 foundational CSV statistics file.
@@ -275,7 +281,7 @@ foundational CSV statistics file.
 ```
 python3 alto_stats_create.py <input_dir> -o output.csv     # ALTO XML
 python3 json_stats_create.py <input_dir> -o output.csv     # generic JSON (json-keys)
-python3 text_stats_create.py <input_dir> -o output.csv     # text-lines (#31)
+python3 text_stats_create.py <input_dir> -o output.csv     # text-lines
 ```
 
 The three builders write the same columns. `text_stats_create.py` takes the document id from the
@@ -306,6 +312,16 @@ file is extracted again on the next run; one that is current is skipped (resume)
 * **Input 2:** `../PAGE_ALTO/` (input directory with ALTO XML files split into pages from Step 1)
 * **Output:** `../PAGE_TXT/` or `../PAGE_TXT_LR/` (directory containing raw text files)
 
+Choose the method by the input and by the hardware you have:
+
+| Method                     | Best for                  | Runs on         | Key feature                                                                                                                                              |
+|----------------------------|---------------------------|-----------------|----------------------------------------------------------------------------------------------------------------------------------------------------------|
+| **LayoutReader** (default) | Multi-column layouts      | **GPU**         | Reconstructs natural reading order and handles hyphenated words.                                                                                         |
+| **alto-tools**             | Fast, large-scale batches | **CPU**         | High speed, low memory usage for raw content overview.                                                                                                   |
+| **GLM** (LLM-based)        | Degraded or complex scans | **GPU** (48GB+) | Generative OCR directly from images; patches transcription errors.                                                                                       |
+| **json-keys**              | Generic OCR-engine JSON   | **CPU**         | Schema-agnostic text-key walk; Azure/Textract-style page detection.                                                                                      |
+| **text-lines**             | Any other text file       | **CPU**         | PDF/DOCX/ODT/XLSX/PPTX/EPUB/RTF/HTML/hOCR/PAGE/TEI/ABBYY/DjVu/Tesseract/CSV/MD/SRT/EML/TXT, compressed or zipped → pages × lines, recognised by content. |
+
 ### LayoutReader method (the default)
 
 > [!CAUTION]
@@ -315,11 +331,10 @@ file is extracted again on the next run; one that is current is skipped (resume)
 python3 extract_LytRdr_ALTO_2_TXT.py
 ```
 
-Uses the LayoutReader framework (https://github.com/ppaanngggg/layoutreader) to extract text and bounding boxes of XML elements
-(specifically, `<TextLine>` elements containing `String`s with `CONTENT` attribute),
-process them to reconstruct the reading order of lines (columns-friendly), handle words split
-between two lines (adding the full form of the word), and group page contents into paragraphs
-based on the vertical spread of text lines.
+Uses the LayoutReader framework (https://github.com/ppaanngggg/layoutreader) to extract the text and bounding boxes
+of XML elements (specifically, `<TextLine>` elements containing `String`s with `CONTENT` attribute). It reconstructs
+the reading order of lines (columns-friendly) and handles words split between two lines, adding the full form of the
+word. It groups page contents into paragraphs based on the vertical spread of text lines.
 
 Example of per-page text files: [PAGE_TXT_LR](../data_samples/PAGE_TXT_LR) .
 
@@ -400,20 +415,19 @@ python3 extract_JSON_2_TXT.py
 
 Reads each page's generic OCR/Doc-AI JSON and walks a whitelist of informative keys
 (`content`, `text`, `line`, `word`, ... — no assumption about a particular vendor's schema
-beyond "text lives under a key named roughly `text`/`line`/`word`"), yielding the page's text
-in document order, each text once at line granularity (see the note below). This is the **Extraction Layer**: it makes no other change to the
-JSON and does not know about `doc.json` at all.
+beyond "text lives under a key named roughly `text`/`line`/`word`"). It yields the page's text
+in document order, each text once at line granularity (see the note below). This is the **Extraction Layer**: it
+makes no other change to the JSON and does not know about `doc.json` at all.
 
 Example input: [data_samples/JSON](../data_samples/JSON) (an Azure-style `analyzeResult.pages` document).
 
 > [!NOTE]
-> json-keys re-serialises each split page **with its document header**, but reads only the page:
-> the page object a page file holds (Azure's whole-document `analyzeResult.content` no longer
-> opens every page), each text once at line granularity (a line's `words[]` are not repeated
-> after it; AWS Textract's `WORD` blocks are dropped when `LINE` blocks exist) — the rules the
-> [text-lines method](#text-lines-method) uses for the
-> same JSON (#31 Phase 5). On real AWS Textract responses and Microsoft's Azure example result both
-> methods give exactly the engine's `LINE`s per page; json-keys used to write 3–6× as many lines.
+> json-keys re-serialises each split page **with its document header**, but reads only the page. It reads the
+> page object a page file holds (not Azure's whole-document `analyzeResult.content`) and each text once at line
+> granularity: a line's `words[]` are not repeated after it, and AWS Textract's `WORD` blocks are dropped when
+> `LINE` blocks exist. These are the rules the [text-lines method](#text-lines-method) uses for the same JSON. On
+> real AWS Textract responses and Microsoft's Azure example result both methods give exactly the engine's `LINE`s
+> per page.
 
 ```
 PAGE_TXT_JSON/
@@ -429,11 +443,11 @@ PAGE_TXT_JSON/
 #### Accreting into the document record
 
 When [`[DOCUMENT].JSON_DIR`](reference/paradata.md) (or the `DOCUMENT_JSON_DIR` env var) is
-configured, a second, separate **Accretion Layer** runs after extraction: for every document,
+configured, a second, separate **Accretion Layer** runs after extraction. For every document,
 it reads back that document's already-written `.txt` pages and merges them into
-`<doc_id>.document.json` as this repo's owned fields — `pages[].ocr`
-(`ocr-postprocess`'s share of the field-split `pages` block) and the whole `content` block —
-leaving every other block (`page_categories`, `entities`, `source`, ...) untouched, per the
+`<doc_id>.document.json` as this repo's owned fields: `pages[].ocr`
+(`ocr-postprocess`'s share of the field-split `pages` block) and the whole `content` block.
+Every other block (`page_categories`, `entities`, `source`, ...) is left untouched, per the
 `atrium_document.schema.json` paired-hook contract. With no baseline `doc.json` yet on disk,
 the record is created holding just this contribution (accretion rule 3). This mirrors what
 the other three extraction methods above already do.
@@ -513,13 +527,14 @@ python3 classify_TEXT.py [--input-csv <stats.csv>]
   `skipped_files_detail`).
 
 > [!TIP]
-> This script is resume-capable. If interrupted, run it again and documents whose output CSV is at least as new as all of
-> their page texts are skipped; a document with a page text newer than its output (re-ingested, re-extracted) is
-> classified again. A document's rows are built in `<doc>.csv.part` and renamed once the document is complete, so a
-> `<doc>.csv` that exists is a finished one and a run that died leaves nothing a resume could mistake for it. Output
-> CSVs of documents that are not in the page CSV are listed in a warning, never deleted: `aggregate_STAT.py` aggregates
-> every CSV in the directory. The Step 3 extractors resume the same way, page by page, and Steps 1 and 3 rewrite a page
-> file only when its content changed, so a full re-run over unchanged inputs skips everything again.
+> This script is resume-capable. If interrupted, run it again: documents whose output CSV is at least as new as all
+> of their page texts are skipped. A document with a page text newer than its output (re-ingested, re-extracted) is
+> classified again. A document's rows are built in `<doc>.csv.part` and renamed once the document is complete. A
+> `<doc>.csv` that exists is therefore a finished one, and a run that died leaves nothing a resume could mistake for
+> it. Output CSVs of documents that are not in the page CSV are listed in a warning, never deleted:
+> `aggregate_STAT.py` aggregates every CSV in the directory. The Step 3 extractors resume the same way, page by page.
+> Steps 1 and 3 rewrite a page file only when its content changed, so a full re-run over unchanged inputs skips
+> everything again.
 
 The columns, the diagnostic flags and what they mean are in
 [the output reference](reference/outputs.md#step-41-per-line-categories); the rules behind `categ` in
@@ -550,10 +565,10 @@ python3 aggregate_STAT.py
 
 The page-level schema is in [the output reference](reference/outputs.md#step-42-page-statistics).
 
-To aggregate a whole collection again from its classified line tables (#8: the 2026-10-12 run with the category
-ratios), `tools/page_stats_rerun.sh` is a SLURM job that writes next to the old outputs, never over them, and
-`tools/page_stats_check.py` compares the two and writes a report: the pages in each, every old column, the ratios,
-the per-document files and the run's skips.
+To aggregate a whole collection again from its classified line tables, with the category ratios, use
+`tools/page_stats_rerun.sh`. It is a SLURM job that writes next to the old outputs, never over them.
+`tools/page_stats_check.py` then compares the two and writes a report: the pages in each, every old column, the
+ratios, the per-document files and the run's skips.
 
 Totals are integers and the category ratios are rounded to 4 decimal places; the averages are written as
 computed, unrounded.
@@ -576,7 +591,7 @@ identify files that need another round of OCR or manual correction based on the 
 majority of **Clear** lines can be marked for further processing. The absence of clear lines combined with a high proportion
 of **Trash** lines may also indicate handwritten content, which can be excluded before Handwritten Text Recognition (HTR) is applied.
 
-## Scoring an existing record: `score_record.py`
+## Score an existing record: `score_record.py`
 
 A record whose lines another tool wrote (digital-convert's record of a born-digital PDF or DOCX), or an OCR record
 to score again, is scored by `score_record.py`, the command line of `POST /score_record`. Both run
@@ -595,58 +610,11 @@ the endpoint's answer without the record (`cleaned_lines`, `pages`, `limits_appl
 `--paradata-dir` (default `paradata/`).
 
 The models are the service's, without LayoutReader; `GPT2_MODEL_NAME` picks the perplexity model. The service's
-`MAX_PAGES` and `MAX_LINES_PER_PAGE` do not apply. Exit status: 0 when every record was scored; 1 when one was
-not (a file that is not a record, a page key it lacks), with the others still scored; 2 for a path that does not
+`MAX_PAGES` and `MAX_LINES_PER_PAGE` do not apply. Exit status: 0 when every record was scored. It is 1 when one was
+not (a file that is not a record, a page key it lacks); the others are still scored. It is 2 for a path that does not
 exist.
 
-## The command line and the service
-
-The batch pipeline (`run_pipeline.py`, its stages and `score_record.py`) and the service (`service/text_api.py`)
-share their parts: the readers (`text_formats.py`, `page_split.json_pages`), the split-word merge
-(`text_util.merge_split_words`), the scorer (`classify_TEXT.score_line`), the record scoring
-(`record_scoring.py`) and the record writer (`document_hook.py`). The same input gives the same pages, lines and
-categories, except where this table says otherwise (atrium-project#72).
-[tests/test_cli_service_parity.py](../tests/test_cli_service_parity.py) runs the batch's own functions and the
-service on the same ALTO, text, JSON and record inputs and compares `(page, line_num, text)`, the categories and the
-page scores; on 2026-10-29 it was extended to ALTO without coordinates, a LayoutReader out of memory, the page
-score's precision and the perplexity model.
-
-| What                               | Command line                                                                            | Service                                                                                                       | Why they differ                                                                     |
-|------------------------------------|-----------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------|
-| How much per run                   | folders of documents                                                                    | one page or document per request                                                                              | the service is stateless                                                            |
-| ALTO XML of several pages          | split into pages (`page_split.py`)                                                      | classified as one flattened page and not written into a record                                                | the service's ALTO reader keeps no page per line; post one page per request         |
-| ALTO reading order                 | `--method layoutreader` (default), `alto-tools` or `glm`                                | `reading_order=layoutreader` (default) or `alto`; `alto` gives the lines of `alto-tools` since v1.14.0-beta   | GLM needs about 48 GB of GPU memory                                                 |
-| Plain text                         | a form feed starts a page (`text_split.py`)                                             | the same pages, since v1.13.0-beta                                                                            |                                                                                     |
-| OCR JSON of several pages          | pages by `page_split.py`                                                                | the same pages, since v1.13.0-beta                                                                            |                                                                                     |
-| Other text-bearing files           | `--method text-lines`                                                                   | `task_type=document`                                                                                          |                                                                                     |
-| The kind of a file                 | the method, for the whole run                                                           | `task_type`; `auto` routes `.txt` and `.json` by name and every other file by its bytes                       | as before                                                                           |
-| Blank lines                        | an `Empty` row, numbered with the rest (below)                                          | the same, since v1.14.0-beta                                                                                  |                                                                                     |
-| The document passes                | applied (identical-text vote, surrounded Trash, page context, inverted-scan sweep)      | not applied: each line is answered on its own                                                                 | they need the whole document                                                        |
-| Line fields                        | the CSV columns of [Step 4.1](reference/outputs.md#step-41-per-line-categories)         | the JSON fields of `AltoLine`: fewer, some renamed ([mapping](reference/outputs.md#the-services-line-fields)) | the JSON keeps what a client reads                                                  |
-| A page's `quality_score`           | the mean of its `Clear` and `Noisy` lines (`aggregate_STAT.py`)                         | the same, since v1.14.0-beta; 4 decimals on both since v1.15.0-beta                                           |                                                                                     |
-| ALTO without size or coordinates   | kept: a missing value counts as 0                                                       | the same                                                                                                      | the same since v1.15.0-beta (the LayoutReader method dropped the page, or the word) |
-| LayoutReader out of memory         | at the smallest window, the page keeps the ALTO's order                                 | the same, with a `skipped` note                                                                               | the same since v1.15.0-beta (the batch skipped the page)                            |
-| LayoutReader windows               | `[EXTRACT] LR_CHUNK_SIZE`, `LR_MIN_CHUNK_SIZE` (350, 50)                                | the `LR_CHUNK_SIZE`, `LR_MIN_CHUNK_SIZE` environment settings (350, 50)                                       | set per deployment                                                                  |
-| The perplexity model               | `[CLASSIFY] MODEL_NAME`                                                                 | `GPT2_MODEL_NAME`, else `[CLASSIFY] MODEL_NAME`                                                               | the same since v1.15.0-beta (the service read the environment only)                 |
-| Perplexity batch                   | `[CLASSIFY] BATCH_SIZE` (128 lines)                                                     | `PPL_BATCH_LINES` (32 lines)                                                                                  | a dedicated GPU against one shared with page-classification                         |
-| Page-relative perplexity blend     | `[CLASSIFY] PAGE_PPL_BLEND_ENABLE` (off)                                                | not applied                                                                                                   | it needs the whole page's lines; off by default                                     |
-| Where the input came from          | `--source-origin`, or `[DOCUMENT] SOURCE_ORIGIN`                                        | `[DOCUMENT] SOURCE_ORIGIN` only                                                                               | a batch names its collection's origin                                               |
-| One page per document              | `extract_JSON_2_TXT.py --force-single-page`                                             | none                                                                                                          | a batch option for legacy collections                                               |
-| The page of an upload              | the file's own page number                                                              | `page`, for an ATR page written into a born-digital record                                                    | the OCR hand-off is a service call                                                  |
-| A compressed ALTO (`.alto.xml.gz`) | read by the shared reader as a document (`--method text-lines`): no reading-order model | the same (`task_type=document`)                                                                               | the same: the ALTO stages take `*.xml`                                              |
-| Page statistics, reports           | CSV files                                                                               | not returned                                                                                                  | batch outputs                                                                       |
-| The record                         | `[DOCUMENT] JSON_DIR`, with a baseline there or without                                 | `document_json` in and out; `include_record=true` returns a new one when none is sent                         |                                                                                     |
-| Scoring a record                   | `score_record.py`                                                                       | `POST /score_record`                                                                                          | the service applies `MAX_PAGES` and `MAX_LINES_PER_PAGE`                            |
-| Paradata                           | a file in `paradata/`                                                                   | the response's `paradata`, a `CreateAction`                                                                   | atrium-project#71                                                                   |
-
-**A blank line** is not an element of the ALTO: the extraction writes one where the page's layout breaks. The
-`layoutreader` method writes one where the next line in reading order starts more than 1.5 line heights below the
-previous one, or more than one line height above it (a new column); `alto-tools` writes one before each
-`<TextBlock>`. In a text-lines input it is a line with nothing visible on it (empty, or only spaces, control
-characters or zero-width spaces), such as an empty paragraph of a DOCX; both sides keep those only with
-`[TEXT_INGEST] KEEP_BLANK_LINES = true`.
-
-## Calling the API instead
+## Call the service instead
 
 The service, `service/text_api.py`, runs the same categoriser with the same `setup/config.txt` and the same
 default perplexity model (Qwen2.5-0.5B). Both run the CPU pre-filter first, so a numeric, code-like or blank line
@@ -660,3 +628,51 @@ compressed files and ZIP bundles). A text with form feeds, a paged JSON and a do
 413 `limit_exceeded`. `POST /score_record` scores the lines of a record in place.
 
 Endpoints, fields, errors and limits: the **[service documentation](../service/README.md)**.
+
+## The command line and the service
+
+The batch pipeline (`run_pipeline.py`, its stages and `score_record.py`) and the service (`service/text_api.py`)
+share their parts: the readers (`text_formats.py`, `page_split.json_pages`), the split-word merge
+(`text_util.merge_split_words`), the scorer (`classify_TEXT.score_line`), the record scoring
+(`record_scoring.py`) and the record writer (`document_hook.py`). The same input gives the same pages, lines and
+categories, except where this table says otherwise.
+[tests/test_cli_service_parity.py](../tests/test_cli_service_parity.py) runs the batch's own functions and the
+service on the same ALTO, text, JSON and record inputs. It compares `(page, line_num, text)`, the categories and the
+page scores, and it covers ALTO without coordinates, a LayoutReader out of memory, the page score's precision and the
+perplexity model.
+
+| What                               | Command line                                                                            | Service                                                                                                       | Why they differ                                                             |
+|------------------------------------|-----------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------|
+| How much per run                   | folders of documents                                                                    | one page or document per request                                                                              | the service is stateless                                                    |
+| ALTO XML of several pages          | split into pages (`page_split.py`)                                                      | classified as one flattened page and not written into a record                                                | the service's ALTO reader keeps no page per line; post one page per request |
+| ALTO reading order                 | `--method layoutreader` (default), `alto-tools` or `glm`                                | `reading_order=layoutreader` (default) or `alto`; `alto` gives the lines of `alto-tools`                      | GLM needs about 48 GB of GPU memory                                         |
+| Plain text                         | a form feed starts a page (`text_split.py`)                                             | the same pages                                                                                                |                                                                             |
+| OCR JSON of several pages          | pages by `page_split.py`                                                                | the same pages                                                                                                |                                                                             |
+| Other text-bearing files           | `--method text-lines`                                                                   | `task_type=document`                                                                                          |                                                                             |
+| The kind of a file                 | the method, for the whole run                                                           | `task_type`; `auto` routes `.txt` and `.json` by name and every other file by its bytes                       |                                                                             |
+| Blank lines                        | an `Empty` row, numbered with the rest (below)                                          | the same                                                                                                      |                                                                             |
+| The document passes                | applied (identical-text vote, surrounded Trash, page context, inverted-scan sweep)      | not applied: each line is answered on its own                                                                 | they need the whole document                                                |
+| Line fields                        | the CSV columns of [Step 4.1](reference/outputs.md#step-41-per-line-categories)         | the JSON fields of `AltoLine`: fewer, some renamed ([mapping](reference/outputs.md#the-services-line-fields)) | the JSON keeps what a client reads                                          |
+| A page's `quality_score`           | the mean of its `Clear` and `Noisy` lines (`aggregate_STAT.py`)                         | the same; 4 decimals on both                                                                                  |                                                                             |
+| ALTO without size or coordinates   | kept: a missing value counts as 0                                                       | the same                                                                                                      |                                                                             |
+| LayoutReader out of memory         | at the smallest window, the page keeps the ALTO's order                                 | the same, with a `skipped` note                                                                               |                                                                             |
+| LayoutReader windows               | `[EXTRACT] LR_CHUNK_SIZE`, `LR_MIN_CHUNK_SIZE` (350, 50)                                | the `LR_CHUNK_SIZE`, `LR_MIN_CHUNK_SIZE` environment settings (350, 50)                                       | set per deployment                                                          |
+| The perplexity model               | `[CLASSIFY] MODEL_NAME`                                                                 | `GPT2_MODEL_NAME`, else `[CLASSIFY] MODEL_NAME`                                                               |                                                                             |
+| Perplexity batch                   | `[CLASSIFY] BATCH_SIZE` (128 lines)                                                     | `PPL_BATCH_LINES` (32 lines)                                                                                  | a dedicated GPU against one shared with page-classification                 |
+| Page-relative perplexity blend     | `[CLASSIFY] PAGE_PPL_BLEND_ENABLE` (off)                                                | not applied                                                                                                   | it needs the whole page's lines; off by default                             |
+| Where the input came from          | `--source-origin`, or `[DOCUMENT] SOURCE_ORIGIN`                                        | `[DOCUMENT] SOURCE_ORIGIN` only                                                                               | a batch names its collection's origin                                       |
+| One page per document              | `extract_JSON_2_TXT.py --force-single-page`                                             | none                                                                                                          | a batch option for legacy collections                                       |
+| The page of an upload              | the file's own page number                                                              | `page`, for an ATR page written into a born-digital record                                                    | the OCR hand-off is a service call                                          |
+| A compressed ALTO (`.alto.xml.gz`) | read by the shared reader as a document (`--method text-lines`): no reading-order model | the same (`task_type=document`)                                                                               | the same: the ALTO stages take `*.xml`                                      |
+| Page statistics, reports           | CSV files                                                                               | not returned                                                                                                  | batch outputs                                                               |
+| The record                         | `[DOCUMENT] JSON_DIR`, with a baseline there or without                                 | `document_json` in and out; `include_record=true` returns a new one when none is sent                         |                                                                             |
+| Scoring a record                   | `score_record.py`                                                                       | `POST /score_record`                                                                                          | the service applies `MAX_PAGES` and `MAX_LINES_PER_PAGE`                    |
+| Paradata                           | a file in `paradata/`                                                                   | the response's `paradata`, a `CreateAction`                                                                   | the service writes no file                                                  |
+
+**A blank line** is not an element of the ALTO: the extraction writes one where the page's layout breaks. The
+`layoutreader` method writes one where the next line in reading order starts more than 1.5 line heights below the
+previous one. It also writes one where the next line starts more than one line height above it (a new column).
+`alto-tools` writes one before each `<TextBlock>`. In a text-lines input it is a line with nothing visible on it
+(empty, or only spaces, control
+characters or zero-width spaces), such as an empty paragraph of a DOCX; both sides keep those only with
+`[TEXT_INGEST] KEEP_BLANK_LINES = true`.

@@ -14,8 +14,8 @@ structured JSON format.
 * **Provenance:** Captures the tool name, a tool **version** tag, the repository/runner reference, the running
 container image (when set), the Python version, and assigns a unique `run_id` to each execution. The repository
 reference is resolved **dynamically** — environment overrides (`ATRIUM_RUNNER_REPO`, `ATRIUM_RUNNER_REF`,
-`ATRIUM_RUNNER_IMAGE`) take precedence over the static fallback in [para_config.txt](../../setup/para_config.txt) — so the log
-points at the image actually executing rather than a fixed fork.
+`ATRIUM_RUNNER_IMAGE`) take precedence over the static fallback in [para_config.txt](../../setup/para_config.txt). The log
+therefore points at the image actually executing rather than a fixed fork.
 * **Components:** the licensed components the run actually exercised, each with its licence, in the
 `license_detail` block (`components`). The `license` / `license_url` fields and the rest of `license_detail` belong to
 an older calculation and are not a licence. See [The components a run lists](paradata.md#the-components-a-run-lists)
@@ -32,7 +32,7 @@ if a file fails to process.
 
 By default, JSON logs are written to the [paradata](../../paradata) directory following the naming convention
 `<YYMMDD-HHmmss>_<program>.json`. Paradata is intended to live alongside the **outputs** (not committed to the
-repository); the paradata JSON files themselves are distributed under the **CC BY-NC 4.0** license.
+repository). The paradata JSON files themselves are distributed under the **CC BY-NC 4.0** licence.
 
 ## The components a run lists
 
@@ -78,7 +78,7 @@ version **`1.0`**. That version is frozen as the hub tag
 
 * [tests/test_schema_freeze.py](../../tests/test_schema_freeze.py) checks this repository's schema
   against the frozen copy beside it,
-  [atrium_document.schema.doc-schema-v1.json](../../atrium_document.schema.doc-schema-v1.json) : the
+  [atrium_document.schema.doc-schema-v1.json](../../atrium_document.schema.doc-schema-v1.json). The
   copy is exactly the tagged file, nothing declared at the freeze has been removed or renamed, and
   every change made since is registered;
 * all three files, like `atrium_document.py`, are vendored from the hub and kept byte-identical to
@@ -86,11 +86,11 @@ version **`1.0`**. That version is frozen as the hub tag
   additionally checks that every record shape the tools write validates under both the frozen and
   the current schema.
 
-Since v1.10.0-beta every write of this tool that touches `pages` or `lines` (each batch stage, `/process`,
-`/score_record` and, since v1.13.0-beta, `score_record.py`) also sets the record's `quality_summary` block (atrium-project#73): page and line totals,
-how many pages carry a `quality_score` with their mean, median, min and max, and the lines per `categ`
-(digital-convert's `Garbage` / `Inverted` verdicts included). It is recomputed from the record as written,
-numbers only — no band, no threshold — and nothing in the pipeline reads it to route or refuse a document.
+Every write of this tool that touches `pages` or `lines` (each batch stage, `/process`, `/score_record` and
+`score_record.py`) also sets the record's `quality_summary` block. It holds page and line totals, how many pages
+carry a `quality_score` with their mean, median, min and max, and the lines per `categ` (digital-convert's `Garbage` /
+`Inverted` verdicts included). It is recomputed from the record as written, numbers only, with no band and no
+threshold. Nothing in the pipeline reads it to route or refuse a document.
 
 What may change after the freeze, and what a new major version takes, is in the hub's
 [Freeze & conformance](https://github.com/ufal/atrium-project/blob/main/docs/document_schema.md#freeze--conformance).

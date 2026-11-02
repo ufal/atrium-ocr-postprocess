@@ -73,3 +73,38 @@ function calls.
 **Updating it** — re-copy the two code paths from a newer upstream commit, update `UPSTREAM_COMMIT` in
 [alto_tools.py](../alto_tools.py) and the table above, then run `pytest tests/test_alto_tools.py`. Golden values
 in that file are upstream CLI output and must only change when upstream's behaviour genuinely does.
+
+## Working records
+
+[`agent_dev_logs/`](../agent_dev_logs/) is the maintainers' working record. It is not documentation for users: it is
+long, dated, and written by the maintainers for themselves. It holds:
+
+- `DEVLOG.md`, a dated timeline of the work on every issue;
+- `digests/`, one digest per issue: what was found, measured and decided, refreshed as the thread moved;
+- `plans/`, one plan per issue: the stages of the work and what was left;
+- `issues/`, exports of the GitHub threads.
+
+The files are named by this repository's issue numbers; the DEVLOG entries before 1 October 2026 use the numbers of
+the former repository (see [History of the repository](#history-of-the-repository)). Every other page cites the issue
+instead of these files.
+
+## History of the repository
+
+The project was called `atrium-alto-postprocess` until 1 October 2026. On that date it continued here as
+`atrium-ocr-postprocess`, a new repository, with the pipeline, the categories and the scoring unchanged. The service
+id and the images were renamed with it: the images are `ghcr.io/ufal/atrium-ocr-postprocess` and
+`ghcr.io/ufal/atrium-ocr-postprocess-api`, and the OpenAPI spec declares `x-atrium-service-previous:
+atrium-alto-postprocess`.
+
+Its open issues moved here and were renumbered. Issue #30 there ("Algorithm change for 2010+ years documents"), which
+the pages under `docs/issue30/` and `tools/` cite, is [#3](https://github.com/ufal/atrium-ocr-postprocess/issues/3)
+here. Issue #23 (fine-tuning a model for the quality score) is
+[#4](https://github.com/ufal/atrium-ocr-postprocess/issues/4).
+
+Records written before the rename keep the program id `alto-postprocess`. The record contract accepts it as the same
+writer as `ocr-postprocess`. The release history is in [CONTRIBUTING.md](../CONTRIBUTING.md#release-history).
+
+One older behaviour is worth knowing when reading old outputs. Before phase 5 of issue #31 (the text-lines method; the
+v1.6.0-beta row of the [release history](../CONTRIBUTING.md#release-history) names its JSON line extraction), the
+`json-keys` method wrote 3–6 times as many lines as the engine's own `LINE`s on real AWS Textract responses and on
+Microsoft's Azure example result.
