@@ -1870,3 +1870,12 @@ Documentation only; no code, test or configuration change.
 * **CONTRIBUTING.md:** the release row. It covers the 11-02 licence wording (atrium-project#6), the documentation
   round (#79) and the 11-03 CI fixes, with the hub's workflows pinned to `6a10787` (the pin sweep, committed
   before this one).
+
+## 2026-11-03 (evening) — The torch download retries; the hub pin moves again
+
+* **`Dockerfile`:** the pip install that fetches torch from download.pytorch.org gets up to three attempts, 20 s
+  apart. The base stage's `ENV` sets `PIP_DEFAULT_TIMEOUT=60`, so a stall may last 60 s instead of pip's 15.
+  On 11-03 keyword-extract's `llm` build failed on "Read timed out" at 25.7 of 196.2 MB of the CPU torch wheel.
+  `PIP_RESUME_RETRIES` would not help here: the `python:3.11` images ship a pip that predates it.
+* **Hub pin:** the callers move to the hub commit that turns the build cache off on tags (a tag run cannot read
+  the `test` caches) and lists each CRITICAL and HIGH finding in the scan summary.

@@ -14,7 +14,7 @@ ENV ATRIUM_RUNNER_IMAGE=${ATRIUM_RUNNER_IMAGE} \
     ATRIUM_RUNNER_REPO=${ATRIUM_RUNNER_REPO} \
     ATRIUM_RUNNER_REF=${ATRIUM_RUNNER_REF} \
     PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 \
-    PIP_NO_CACHE_DIR=1 PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_NO_CACHE_DIR=1 PIP_DISABLE_PIP_VERSION_CHECK=1 PIP_DEFAULT_TIMEOUT=60 \
     HF_HOME=/cache/huggingface \
     MODEL_DIR=/app/models \
     LANGID_CONFIG=/app/setup/config.txt
@@ -80,7 +80,14 @@ WORKDIR /app
 #    installs its own extras. fastapi/pydantic keep their exact pins in service/requirements.txt.
 COPY setup/requirements.txt setup/
 COPY service/requirements.txt service/requirements.txt
-RUN pip install --index-url ${TORCH_INDEX_URL} "torch>=2.1,<3.0" \
+# pytorch.org's CDN can stall a download mid-wheel: on 2026-11-03 keyword-extract's `llm` build failed on
+# "Read timed out" at 25.7 of 196.2 MB of the CPU torch wheel. Up to three attempts, 20 s apart; the base
+# stage's PIP_DEFAULT_TIMEOUT=60 also lets a stall last 60 s instead of pip's 15.
+RUN for attempt in 1 2 3; do \
+        pip install --index-url ${TORCH_INDEX_URL} "torch>=2.1,<3.0" && break; \
+        [ "$attempt" = 3 ] && exit 1; \
+        echo "pip install failed (attempt $attempt of 3); retrying in 20 s"; sleep 20; \
+    done \
     && pip install -r setup/requirements.txt -r service/requirements.txt
 
 # 2) LayoutReader v3/ (translated from setup_api_server.sh) -> /app/v3 (on sys.path)
