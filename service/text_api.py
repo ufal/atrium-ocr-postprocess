@@ -1502,4 +1502,8 @@ if __name__ == "__main__":
         # adds its own drain on top of this; docs/k8s_deployment.md in the hub carries
         # the full budget these two have to fit inside.
         timeout_graceful_shutdown=int(os.getenv("GRACEFUL_SHUTDOWN_S", "20")),
+        # LOG_LEVEL governs uvicorn's own records too, its start-up lines and its access log: the level
+        # basicConfig() set above, so `WARN` and the other spellings logging accepts work here too.
+        # Without it uvicorn logged INFO under LOG_LEVEL=WARNING (atrium-project#61).
+        log_level=logging.getLogger().getEffectiveLevel(),
     )

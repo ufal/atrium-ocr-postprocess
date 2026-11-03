@@ -65,9 +65,10 @@ def collection(tmp_path):
 
 
 def _edit(path: Path, edit):
+    """Apply ``edit`` to the table: it changes the frame in place, or returns the new one."""
     df = pd.read_csv(path, dtype={"file": str, "main_lang": str})
-    edit(df)
-    df.to_csv(path, index=False, encoding="utf-8")
+    edited = edit(df)
+    (df if edited is None else edited).to_csv(path, index=False, encoding="utf-8")
 
 
 def test_a_rerun_that_only_adds_the_ratios_passes_and_says_what_it_checked(collection):
@@ -112,7 +113,7 @@ def test_a_ratio_outside_zero_one_fails(collection):
 def test_a_missing_per_document_file_fails_unless_the_run_logged_its_skip(collection):
     coll, paradata = collection
     (coll / "DOC_LINE_STATS_1210r" / "stats_CTX000000003.csv").unlink()
-    _edit(coll / "page_stats_1210r.csv", lambda df: df.drop(df.index[df["file"] == "CTX000000003"], inplace=True))
+    _edit(coll / "page_stats_1210r.csv", lambda df: df[df["file"] != "CTX000000003"])
     text, failed = psc.run(coll, "1210", "1210r", paradata)
     assert "1 missing (CTX000000003)" in text and failed >= 2  # the file, and its page in the table
 

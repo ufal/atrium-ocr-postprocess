@@ -6,7 +6,11 @@ pytest-cov
 # pinned exactly, with pydantic: see service/requirements.txt (atrium-project#32 round 2)
 fastapi==0.141.1
 pydantic==2.13.5
+# httpx AND httpx2: httpx for tools/quality_model/correct.py's REST calls and its live korektor
+# test; httpx2 because starlette's TestClient takes it when installed, which ends its "httpx is
+# deprecated" warning.
 httpx
+httpx2
 python-multipart>=0.0.32
 openapi-spec-validator
 # (#37) atrium_document.schema.json conformance check for the json-keys

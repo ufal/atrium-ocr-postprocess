@@ -26,7 +26,9 @@ env:
   # (12-factor X) Must match docker.yml's pre-install-torch, or the nightly
   # smoke tests a torch the published image never ships.
   PRE_INSTALL_TORCH: "torch>=2.1,<3.0"
-  REQUIREMENTS: "setup/requirements.txt service/requirements.txt setup/requirements-test.txt"
+  # requirements-finetune.txt: scikit-learn for the slow training smoke (tests/test_quality_model_train.py),
+  # which skipped without it.
+  REQUIREMENTS: "setup/requirements.txt service/requirements.txt setup/requirements-test.txt setup/requirements-finetune.txt"
 
 jobs:
   slow-tests:
@@ -77,7 +79,8 @@ jobs:
         env:
           PYTHONPATH: .
           HF_TOKEN: ${{ secrets.HF_TOKEN }}   # only needed by repos pulling gated models
-        run: python -m pytest -m slow -v --tb=short
+        # -rs lists every skip with its reason, so a slow test that stops running shows in the log.
+        run: python -m pytest -m slow -v --tb=short -rs
 
       # One open issue per failing lane, commented on by each later failure; scheduled runs only
       # (atrium-project#81). It used to open a new issue on every failing run.

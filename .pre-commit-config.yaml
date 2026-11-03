@@ -17,7 +17,7 @@ repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.15.18          # PARAM: pre-commit autoupdate
     hooks:
-      - id: ruff          # lint (reads ./ruff.toml)
+      - id: ruff-check    # lint (reads ./ruff.toml)
       - id: ruff-format   # formatter
 
   # setup_api_server.sh is the shell surface for this repo:

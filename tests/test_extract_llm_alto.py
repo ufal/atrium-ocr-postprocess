@@ -16,17 +16,47 @@ test at the bottom exercises the document-record contribution this stage makes, 
 runs entirely through document_hook + atrium_document and needs no ML library at all —
 a module-level skip hid it behind dependencies it does not use, and this file's zero
 document_json coverage is exactly why the identical pattern went unverified here.
+
+Several other test modules put an empty placeholder module into ``sys.modules`` for torch, tqdm,
+fasttext and transformers, so they import without those libraries. Collected before this file,
+the placeholders made the import below fail ("cannot import name 'AutoConfig' from
+'transformers' (unknown location)") even where the real libraries are installed, and these
+tests skipped in every lane. ``_import_past_placeholders`` sets them aside for this one import
+and puts them back, so the modules that rely on them are unaffected.
 """
+
+import importlib
+import sys
 
 import pytest
 
 import document_hook
 from atrium_document import DocumentRecord, load_document
 
+#: The names other test modules stub with an empty ``types.ModuleType``.
+_STUBBED = ("torch", "tqdm", "fasttext", "transformers")
+
+
+def _is_placeholder(module) -> bool:
+    # A placeholder is a bare ModuleType: no import spec and no file. A real module has a spec.
+    return module is not None and getattr(module, "__spec__", None) is None and not hasattr(module, "__file__")
+
+
+def _import_past_placeholders(name: str):
+    stubs = {n: sys.modules.pop(n) for n in _STUBBED if _is_placeholder(sys.modules.get(n))}
+    try:
+        return importlib.import_module(name)
+    finally:
+        sys.modules.update(stubs)
+
+
 try:
     from PIL import Image
 
-    from extract_LLM_ALTO_2_TXT import _load_extract_config, resize_if_huge, trim_whitespace
+    _extract = _import_past_placeholders("extract_LLM_ALTO_2_TXT")
+    _load_extract_config = _extract._load_extract_config
+    resize_if_huge = _extract.resize_if_huge
+    trim_whitespace = _extract.trim_whitespace
 
     _GLM_IMPORT_ERROR = None
 except Exception as exc:  # torch / transformers / tqdm / pandas / PIL missing or partial

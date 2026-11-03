@@ -1854,3 +1854,12 @@ Documentation only; no code, test or configuration change.
 * **Map:** the hub's `agent_dev_logs/plans/79.F-relocation_map.md` § atrium-ocr-postprocess (every moved block, corrected facts,
   renamed anchors).
 * **Checks:** `docs_check` and `runbook_check` pass; 2311 passed, 14 skipped, 2 xfailed, as at the head.
+
+## 2026-11-03 — What the green CI runs on the 11-02 `test` head hid (atrium-project, CI audit)
+
+* **uvicorn gets the configured log level:** `uvicorn.run(…, log_level=…)` in `service/text_api.py`. Under `LOG_LEVEL=WARNING` uvicorn still logged its start-up lines and the access log, and the hub's probe, which read only the service's own format, reported none.
+* **`tests/test_extract_llm_alto.py`:** its six helper tests skipped in every lane. Other test modules leave empty placeholder modules for torch, tqdm, fasttext and transformers in `sys.modules`, so the import failed even where the libraries exist. The file now sets the placeholders aside for its one import and puts them back.
+* **`setup/requirements-test.txt`:** `httpx2` beside `httpx`. `tools/quality_model/correct.py` calls httpx.
+* **`scheduled-smoke.yml`:** installs `setup/requirements-finetune.txt` (the slow training test needs scikit-learn) and lists skips (`-rs`).
+* One pandas `inplace=` gone from `tests/test_page_stats_check.py`; pre-commit `ruff-check`.
+* **Checks:** 2311 passed, 14 skipped, 2 xfailed without torch, as before; with torch, 2318 passed (+6, plus one slow test). `uvicorn.run` receives WARNING under `LOG_LEVEL=WARNING`.
