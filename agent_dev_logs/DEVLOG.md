@@ -1863,3 +1863,10 @@ Documentation only; no code, test or configuration change.
 * **`scheduled-smoke.yml`:** installs `setup/requirements-finetune.txt` (the slow training test needs scikit-learn) and lists skips (`-rs`).
 * One pandas `inplace=` gone from `tests/test_page_stats_check.py`; pre-commit `ruff-check`.
 * **Checks:** 2311 passed, 14 skipped, 2 xfailed without torch, as before; with torch, 2318 passed (+6, plus one slow test). `uvicorn.run` receives WARNING under `LOG_LEVEL=WARNING`.
+
+## 2026-11-03 — v1.15.2-beta
+
+* **Version:** v1.15.1-beta → v1.15.2-beta in `setup/para_config.txt`, `CITATION.cff`, `service/openapi.json`. `CITATION.cff` `date-released` 2026-11-03.
+* **CONTRIBUTING.md:** the release row. It covers the 11-02 licence wording (atrium-project#6), the documentation
+  round (#79) and the 11-03 CI fixes, with the hub's workflows pinned to `6a10787` (the pin sweep, committed
+  before this one).
