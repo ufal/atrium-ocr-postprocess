@@ -155,7 +155,7 @@ def main(argv=None) -> None:
     )
     # alto_tools is already seeded as an "always" component, so its Apache-2.0
     # license is recorded automatically; FastText (CC BY-NC 4.0, also "always")
-    # keeps the effective license at the project baseline. No explicit
+    # keeps the calculated licence label at the project baseline. No explicit
     # log_component call is needed for the alto-tools method.
     _total_inputs = len(tasks)
 

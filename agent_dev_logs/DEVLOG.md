@@ -1,5 +1,5 @@
 # 📓 atrium-ocr-postprocess — agent_dev_logs/DEVLOG.md (timeline index)
-> _OCR/ALTO post-processing and line categorization; the successor of atrium-alto-postprocess since 2026-10-01 (#56 there; the open issues were transferred and renumbered). 4 open issues: #2 (calibration), #4 (fine-tuning the quality model), #5 (documentation of the categorization logic), #8 (category ratios in the page statistics); #1 closed 2026-10-16, #3 2026-10-13 and #6 2026-10-07. `test` = `4d2edff` (2026-10-28) · **v1.14.0-beta** (2026-10-28); v1.15.0-beta prepared on 2026-10-29, the pilot candidate (atrium-project#77). Latest entry: 2026-10-29. #3's parameter stages after 2026-10-09, up to `v1.11.0-beta`, are recorded in its digest and plan, not here. Entries before 2026-10-01 use atrium-alto-postprocess's issue numbers._
+> _OCR/ALTO post-processing and line categorization; the successor of atrium-alto-postprocess since 2026-10-01 (#56 there; the open issues were transferred and renumbered). Open issue: #4 (fine-tuning the quality model, deferred past the pilot). #9 (the scheduled-smoke failure of 11-04, scipy) closed 2026-11-04; #8 closed 2026-10-26, #2 2026-10-22, #5 2026-10-20, #1 2026-10-16, #3 2026-10-13 and #6 2026-10-07. **Pilot release: v1.15.3-beta** (`9ab887a`, 2026-11-04; immutable, with `images.json`; atrium-project#77). Hub workflows pinned to `51aad6c` (`v1`). Latest entry: 2026-11-04 (afternoon). #3's parameter stages after 2026-10-09, up to `v1.11.0-beta`, are recorded in its digest and plan, not here. Entries before 2026-10-01 use atrium-alto-postprocess's issue numbers._
 > _Per-issue detail: `digests/{id}.digest.md` · `plans/{id}.plan.md` · `issues/` exports (source of truth). Cross-repo/hub history lives in `ufal/atrium-project/agent_dev_logs/DEVLOG.md` (deduplicated out of this file)._
 
 ## 2026-03-13
@@ -1907,3 +1907,10 @@ Documentation only; no code, test or configuration change.
   `python3 scripts/pin_hub_reusables.py --sha <that commit>` from the hub so the pins and these copies land in one
   commit (para-drift compares them with the hub at the pin); then tag.
 * **Checks:** the suite on Python 3.11 with `requirements-test.txt` (the release lane, no torch): 2320 passed, 14 skipped, 2 xfailed; `tests/test_openapi_contract.py` 12 of 12 against the app; `check_version.py --tag` agrees; the shared selftests pass; ruff clean.
+
+## 2026-11-04 (afternoon) — The pilot release out; records and comments aligned
+
+* **Released:** v1.15.3-beta (10:00Z), the pilot release (atrium-project#77). The `scheduled-smoke` run dispatched after the fix (41821703975) is green with scipy 1.17.1 and numpy 2.4.6; #9 closed 11:34.
+* **Hub pin:** the workflows move from `14110d7` to `51aad6c` (`v1`), with the Trivy scan's pause and the CVE gate's retry (atrium-project#81). No release; the next one carries it. `workflow_lint --require-sha-pins` OK; shared files in parity.
+* **#6 wording:** a comment in `extract_ALTO_2_TXT.py` says "calculated licence label".
+* **Records:** the header names the open issue (#4) and the pilot release.
