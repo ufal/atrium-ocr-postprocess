@@ -41,6 +41,11 @@ updates:
       # (issue atrium-project#10)
       - dependency-name: "numpy"
         versions: [">= 2.5.0"]
+      # scipy 1.18 has the same Python >= 3.12 floor. setup/requirements-finetune.txt
+      # caps it at <1.18; the scheduled lane failed on `scipy>=1.18.1` (ocr-postprocess#9).
+      # Lift together with the numpy entry.
+      - dependency-name: "scipy"
+        versions: [">= 1.18.0"]
       # Pinned exactly here (requirements-test.txt) and in service/requirements.txt: the
       # committed service/openapi.json is a function of both (atrium-project#32 round 2). Bump
       # them together by hand and regenerate the spec in the same commit

@@ -664,7 +664,10 @@ def main() -> int:
     # job, a Kubernetes Job or CI that classify crashed in read "success" over stale or partial outputs.
     verdict = "PIPELINE ABORTED" if aborted else "PIPELINE COMPLETE"
     print(f"\n{'=' * 78}\n> {verdict} - merged {data['stage_count']} logged stage(s)")
-    print(f"  Effective output license : {data['license']}  ({data['license_url']})")
+    # No output licence is asserted (atrium-project#6): the run lists its components, each with its
+    # own licence, in license_detail; data["license"] is only the calculated label over them.
+    components = (data.get("license_detail") or {}).get("components") or []
+    print(f"  Components and licences  : {len(components)} (license_detail.components; no output licence)")
     fmts = ", ".join(f"{k}x{v}" for k, v in data["intermediate_formats"].items()) or "-"
     print(f"  Intermediate formats     : {fmts}")
     print(f"  Total duration           : {data['total_duration_seconds']} s")

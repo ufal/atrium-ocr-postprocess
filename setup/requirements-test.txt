@@ -39,7 +39,8 @@ PyYAML
 # and numpy, so declaring them here is the fix; the pins mirror
 # setup/requirements.txt exactly so the two can never resolve differently.
 pandas>=3.0.6,<4.0
-numpy>=2.4.6
+# numpy 2.5 requires Python >= 3.12 (see .github/dependabot.yml); capped for 3.11.
+numpy>=2.4.6,<2.5
 tqdm>=4.70.1
 lxml>=6.1.3
 # (#31) the text-lines readers' optional dependencies, declared here so their tests

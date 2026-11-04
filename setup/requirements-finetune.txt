@@ -4,5 +4,9 @@ pyarrow>=25.0.1
 # setup/requirements-sweep.txt. The repo standardises on 3.11 (CI, Dockerfile,
 # and pandas>=3.0.5 in requirements-test.txt all require it).
 scikit-learn>=1.9.1
-scipy>=1.18.1
+# scipy 1.18 requires Python >= 3.12; 1.17.1 is the last release for 3.11, the
+# interpreter of every lane and image here. `scipy>=1.18.1` made the scheduled lane
+# unresolvable (ocr-postprocess#9, 2026-11-04). Lift the cap with the move to 3.12;
+# .github/dependabot.yml ignores scipy >= 1.18 until then.
+scipy>=1.17.1,<1.18
 httpx>=0.28.1

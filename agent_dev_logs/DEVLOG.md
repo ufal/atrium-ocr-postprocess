@@ -1879,3 +1879,31 @@ Documentation only; no code, test or configuration change.
   `PIP_RESUME_RETRIES` would not help here: the `python:3.11` images ship a pip that predates it.
 * **Hub pin:** the callers move to the hub commit that turns the build cache off on tags (a tag run cannot read
   the `test` caches) and lists each CRITICAL and HIGH finding in the scan summary.
+
+## 2026-11-04 — v1.15.3-beta prepared: no licence asserted on a crate (atrium-project#6)
+
+* **Shared modules (atrium-project#6, step 1 of the rights proposal; re-vendored from the hub, byte-identical):**
+  * `atrium_rocrate.py`: a document or run crate's root `license` names `#no-licence-asserted`, a contextual
+    entity that asserts nothing (the rights depend on the source and on AMČR's permission). The calculated
+    licence is no longer exported as the crate's. A fragment carries no licence entity; `--wrap` gives its stub
+    root `#no-licence-asserted`.
+  * `atrium_document.py` and the schema: a record marks its calculated `provenance.license` with
+    `provenance.license_basis: "calculated"` (declared, optional, `calculated` only; registered in
+    `tests/test_schema_freeze.py`). `service/openapi.json` carries the new record schema.
+  * `para_licenses.py`: the notes list the components and say that no output licence is asserted; the
+    "Effective output license is X, the most restrictive among N" sentence is gone.
+  * Tests: `tests/test_atrium_rocrate.py`, `tests/test_document_originators.py`, `tests/test_schema_freeze.py`.
+* **The red scheduled lane (#9):** `setup/requirements-finetune.txt` asked for `scipy>=1.18.1`, which needs
+  Python 3.12; the lane runs 3.11, and it has installed that file since the 11-03 CI audit, so the run of 11-04
+  (41764533125) failed at install. Now `scipy>=1.17.1,<1.18` (1.17.1 is the last release for 3.11), and
+  `.github/dependabot.yml` ignores scipy >= 1.18 beside numpy. `numpy>=2.4.6` gets the same `<2.5` cap in
+  `setup/requirements.txt`, `service/requirements.txt` and `setup/requirements-test.txt`: numpy 2.5 needs 3.12
+  too, and only the Dependabot ignore protected it. The capped set resolves on Python 3.11
+  (`pip install --dry-run --python-version 3.11`). Close #9 after a dispatched green run.
+* **`run_pipeline.py`:** the summary prints the run's component count (`license_detail.components`) instead of
+  "Effective output license".
+* **Version v1.15.3-beta** (prepared, not tagged): `setup/para_config.txt`, `CITATION.cff` (`date-released` 2026-11-04), `service/openapi.json`; the `CONTRIBUTING.md` row.
+* **Yours:** push the hub first and move `v1` to it; then, in this repository, run
+  `python3 scripts/pin_hub_reusables.py --sha <that commit>` from the hub so the pins and these copies land in one
+  commit (para-drift compares them with the hub at the pin); then tag.
+* **Checks:** the suite on Python 3.11 with `requirements-test.txt` (the release lane, no torch): 2320 passed, 14 skipped, 2 xfailed; `tests/test_openapi_contract.py` 12 of 12 against the app; `check_version.py --tag` agrees; the shared selftests pass; ruff clean.
