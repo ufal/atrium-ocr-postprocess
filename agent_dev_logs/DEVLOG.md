@@ -1,5 +1,5 @@
 # 📓 atrium-ocr-postprocess — agent_dev_logs/DEVLOG.md (timeline index)
-> _OCR/ALTO post-processing and line categorization; the successor of atrium-alto-postprocess since 2026-10-01 (#56 there; the open issues were transferred and renumbered). Open issue: #4 (fine-tuning the quality model, deferred past the pilot). #9 (the scheduled-smoke failure of 11-04, scipy) closed 2026-11-04; #8 closed 2026-10-26, #2 2026-10-22, #5 2026-10-20, #1 2026-10-16, #3 2026-10-13 and #6 2026-10-07. **Pilot release: v1.15.3-beta** (`9ab887a`, 2026-11-04; immutable, with `images.json`; atrium-project#77). Hub workflows pinned to `51aad6c` (`v1`). Latest entry: 2026-11-04 (afternoon). #3's parameter stages after 2026-10-09, up to `v1.11.0-beta`, are recorded in its digest and plan, not here. Entries before 2026-10-01 use atrium-alto-postprocess's issue numbers._
+> _OCR/ALTO post-processing and line categorization; the successor of atrium-alto-postprocess since 2026-10-01 (#56 there; the open issues were transferred and renumbered). Open issue: #4 (fine-tuning the quality model, deferred past the pilot). #9 (the scheduled-smoke failure of 11-04, scipy) closed 2026-11-04; #8 closed 2026-10-26, #2 2026-10-22, #5 2026-10-20, #1 2026-10-16, #3 2026-10-13 and #6 2026-10-07. **Pilot release: v1.15.3-beta** (`9ab887a`, 2026-11-04; immutable, with `images.json`; atrium-project#77). Hub workflows pinned to `51aad6c` (`v1`). Latest entry: 2026-11-05. #3's parameter stages after 2026-10-09, up to `v1.11.0-beta`, are recorded in its digest and plan, not here. Entries before 2026-10-01 use atrium-alto-postprocess's issue numbers._
 > _Per-issue detail: `digests/{id}.digest.md` · `plans/{id}.plan.md` · `issues/` exports (source of truth). Cross-repo/hub history lives in `ufal/atrium-project/agent_dev_logs/DEVLOG.md` (deduplicated out of this file)._
 
 ## 2026-03-13
@@ -1914,3 +1914,20 @@ Documentation only; no code, test or configuration change.
 * **Hub pin:** the workflows move from `14110d7` to `51aad6c` (`v1`), with the Trivy scan's pause and the CVE gate's retry (atrium-project#81). No release; the next one carries it. `workflow_lint --require-sha-pins` OK; shared files in parity.
 * **#6 wording:** a comment in `extract_ALTO_2_TXT.py` says "calculated licence label".
 * **Records:** the header names the open issue (#4) and the pilot release.
+
+## 2026-11-05 — Decision models on ambiguous lines: a plan (page-classification#58)
+
+* **New:** `plans/decision_models.plan.md`. This repository's part of the decision-model plan anchored on
+  page-classification#58.
+* **The work:** an offline selector tags the lines the rule cascade is least sure of:
+  * S1: short lines without Czech diacritics;
+  * S2: 9a–9f red flags without a conviction;
+  * S3: band edges;
+  * S4: confident foreign lines read `Noisy`;
+  * S5: document-pass overrides.
+* **The models** (Clef, Clef-Flash, Strands Decider 2B) answer a `choice` over `Clear`/`Noisy`/`Trash`/`Non-text`
+  into a sidecar `DOC_LINE_DECIDE/`.
+* **The judge:** the `tools/gold/` verdict, with the gold set split by document.
+* **No rule, column, record or default changes;** the pilot freeze holds. Which stage to call next stays a rule
+  outside the tool.
+* Not pushed: files delivered in chat.
