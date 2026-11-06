@@ -11,7 +11,7 @@ pydantic==2.13.5
 # deprecated" warning.
 httpx
 httpx2
-python-multipart>=0.0.32
+python-multipart>=0.0.33
 openapi-spec-validator
 # (#37) atrium_document.schema.json conformance check for the json-keys
 # extractor's doc.json accretion output.

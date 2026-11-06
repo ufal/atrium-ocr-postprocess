@@ -52,7 +52,7 @@ EARLY_STOPPING_PATIENCE = 2
 OUTPUT_DIR = runs
 
 [EVAL]
-# Banding thresholds default to the production values (read from text_util_langID);
+# Banding thresholds default to the production values (read from text_util);
 # set here only to override. Trash < TRASH_MAX <= Noisy < NOISY_MAX <= Clear.
 # TRASH_MAX = 0.55
 # NOISY_MAX = 0.80

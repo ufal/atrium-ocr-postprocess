@@ -14,7 +14,7 @@
 fastapi==0.141.1
 pydantic==2.13.5
 uvicorn>=0.54.0,<1.0
-python-multipart>=0.0.32
+python-multipart>=0.0.33
 # (atrium-project#10 D4) /process accretes into a document record through
 # document_hook.py, which validates it against atrium_document.schema.json before
 # writing. Declared here too because setup/setup_api_server.sh installs ONLY this
