@@ -1,5 +1,5 @@
 # 📓 atrium-ocr-postprocess — agent_dev_logs/DEVLOG.md (timeline index)
-> _OCR/ALTO post-processing and line categorization; the successor of atrium-alto-postprocess since 2026-10-01 (#56 there; the open issues were transferred and renumbered). Open issue: #4 (fine-tuning the quality model, deferred past the pilot). #9 (the scheduled-smoke failure of 11-04, scipy) closed 2026-11-04; #8 closed 2026-10-26, #2 2026-10-22, #5 2026-10-20, #1 2026-10-16, #3 2026-10-13 and #6 2026-10-07. **Pilot release: v1.15.3-beta** (`9ab887a`, 2026-11-04; immutable, with `images.json`; atrium-project#77). Hub workflows pinned to `51aad6c` (`v1`). Latest entry: 2026-11-06. #3's parameter stages after 2026-10-09, up to `v1.11.0-beta`, are recorded in its digest and plan, not here. Entries before 2026-10-01 use atrium-alto-postprocess's issue numbers._
+> _OCR/ALTO post-processing and line categorization; the successor of atrium-alto-postprocess since 2026-10-01 (#56 there; the open issues were transferred and renumbered). Open issues: #4 (fine-tuning the quality model, deferred past the pilot) and #10 (decision models on ambiguous lines, opened 2026-11-06; a sub-issue of atrium-project#83). #9 (the scheduled-smoke failure of 11-04, scipy) closed 2026-11-04; #8 closed 2026-10-26, #2 2026-10-22, #5 2026-10-20, #1 2026-10-16, #3 2026-10-13 and #6 2026-10-07. **Pilot release: v1.15.3-beta** (`9ab887a`, 2026-11-04; immutable, with `images.json`; atrium-project#77). Hub workflows pinned to `51aad6c` (`v1`). Latest entry: 2026-11-06 (evening). #3's parameter stages after 2026-10-09, up to `v1.11.0-beta`, are recorded in its digest and plan, not here. Entries before 2026-10-01 use atrium-alto-postprocess's issue numbers._
 > _Per-issue detail: `digests/{id}.digest.md` · `plans/{id}.plan.md` · `issues/` exports (source of truth). Cross-repo/hub history lives in `ufal/atrium-project/agent_dev_logs/DEVLOG.md` (deduplicated out of this file)._
 
 ## 2026-03-13
@@ -1943,3 +1943,24 @@ Documentation only; no code, test or configuration change.
 * **Version v1.15.4-beta** (prepared, not tagged): `CITATION.cff`, `setup/para_config.txt`, `service/openapi.json`, the version
   examples in the docs; the `CONTRIBUTING.md` row; a paragraph on the entry point in `docs/usage.md`.
 * **Yours:** push the hub commit with `container_entrypoint.py` and move `v1`; here, `python3 ../atrium-project/scripts/pin_hub_reusables.py --sha <v1>` committed with these files (para-drift checks the copy only at a pin that has it); push `test`; then `python3 ../atrium-project/scripts/tag_release.py v1.15.4-beta`, which tags the pushed HEAD only and pushes that one tag.
+
+## 2026-11-06 (evening) — #10: the ambiguity selector, written (atrium-project#83)
+
+* **Read:** the push of 16:53 (`aff72a0`: `10.plan.md`, `10.digest.md`); #10, opened 16:37 under atrium-project#83.
+* **Written (not pushed):** `tools/decide_lines.py`, with `tests/test_decide_lines.py` (31).
+  * It tags the S1–S5 lines from the production scorer: `_rescore_row` inside `rule_fire_capture()`, the loop of
+    `tools/rule_coverage_report.py`.
+  * S3 reads the score `categorize_line` receives before the clamp.
+  * It counts `drift`.
+  * `--gold` gives the rule's error per tag; `--workers` runs documents in parallel.
+* **Checked:**
+  * the new tests with `test_env_contract.py` and `test_workflow_layout.py`: 57 passed;
+  * ruff;
+  * `data_samples/DOC_LINE_CATEG/`: 13 lines scored, no drift, none tagged.
+* **Records:** the #10 export; `plans/10.plan.md` and `digests/10.digest.md` (the numbers and links after the rename;
+  the S3 and S4 rows as built).
+* **Yours:**
+  * push;
+  * on the cluster, the selector over the gold set and `DOC_LINE_CATEG_1210` (Output A1);
+  * the fixed #10 body and the comment for @DanaKriv, delivered in chat.
+* Not pushed: files delivered as per-repo zips.
