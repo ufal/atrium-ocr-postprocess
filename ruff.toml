@@ -65,4 +65,6 @@ exclude = [
     "tests/test_limits_contract.py",
     "atrium_openapi.py",
     "tests/test_openapi_contract.py",
+    "container_entrypoint.py",
+    "tests/test_container_entrypoint_shared.py",
 ]

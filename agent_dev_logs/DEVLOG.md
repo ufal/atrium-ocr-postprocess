@@ -1,5 +1,5 @@
 # 📓 atrium-ocr-postprocess — agent_dev_logs/DEVLOG.md (timeline index)
-> _OCR/ALTO post-processing and line categorization; the successor of atrium-alto-postprocess since 2026-10-01 (#56 there; the open issues were transferred and renumbered). Open issue: #4 (fine-tuning the quality model, deferred past the pilot). #9 (the scheduled-smoke failure of 11-04, scipy) closed 2026-11-04; #8 closed 2026-10-26, #2 2026-10-22, #5 2026-10-20, #1 2026-10-16, #3 2026-10-13 and #6 2026-10-07. **Pilot release: v1.15.3-beta** (`9ab887a`, 2026-11-04; immutable, with `images.json`; atrium-project#77). Hub workflows pinned to `51aad6c` (`v1`). Latest entry: 2026-11-05. #3's parameter stages after 2026-10-09, up to `v1.11.0-beta`, are recorded in its digest and plan, not here. Entries before 2026-10-01 use atrium-alto-postprocess's issue numbers._
+> _OCR/ALTO post-processing and line categorization; the successor of atrium-alto-postprocess since 2026-10-01 (#56 there; the open issues were transferred and renumbered). Open issue: #4 (fine-tuning the quality model, deferred past the pilot). #9 (the scheduled-smoke failure of 11-04, scipy) closed 2026-11-04; #8 closed 2026-10-26, #2 2026-10-22, #5 2026-10-20, #1 2026-10-16, #3 2026-10-13 and #6 2026-10-07. **Pilot release: v1.15.3-beta** (`9ab887a`, 2026-11-04; immutable, with `images.json`; atrium-project#77). Hub workflows pinned to `51aad6c` (`v1`). Latest entry: 2026-11-06. #3's parameter stages after 2026-10-09, up to `v1.11.0-beta`, are recorded in its digest and plan, not here. Entries before 2026-10-01 use atrium-alto-postprocess's issue numbers._
 > _Per-issue detail: `digests/{id}.digest.md` · `plans/{id}.plan.md` · `issues/` exports (source of truth). Cross-repo/hub history lives in `ufal/atrium-project/agent_dev_logs/DEVLOG.md` (deduplicated out of this file)._
 
 ## 2026-03-13
@@ -1931,3 +1931,15 @@ Documentation only; no code, test or configuration change.
 * **No rule, column, record or default changes;** the pilot freeze holds. Which stage to call next stays a rule
   outside the tool.
 * Not pushed: files delivered in chat.
+
+## 2026-11-06 — v1.15.4-beta prepared: the batch image starts Galaxy's job script (atrium-project#66)
+
+* **Why:** Galaxy starts a tool's container as `docker run … IMAGE /bin/sh tool_script.sh` in the job's working
+  directory. The old relative ENTRYPOINT passed `/bin/sh` to the program as an argument (exit 2) and failed outside `/app`.
+* **Change:** the hub-canonical `container_entrypoint.py` and its shared test, vendored by `revendor_shared.sh`; the
+  ENTRYPOINT names the program by its absolute path: `base` → `/app/run_pipeline.py`. Arguments still go to the program; a first argument
+  naming `sh`, `bash`, `dash`, `python` or `python3` runs as given. The pipeline still starts its stages by name from `/app`, so a Galaxy wrapper changes there before running it.
+  `tests/test_batch_entrypoint.py` pins the stages; `ruff.toml` excludes the two vendored files from formatting.
+* **Version v1.15.4-beta** (prepared, not tagged): `CITATION.cff`, `setup/para_config.txt`, `service/openapi.json`, the version
+  examples in the docs; the `CONTRIBUTING.md` row; a paragraph on the entry point in `docs/usage.md`.
+* **Yours:** push the hub commit with `container_entrypoint.py` and move `v1`; here, `python3 ../atrium-project/scripts/pin_hub_reusables.py --sha <v1>` committed with these files (para-drift checks the copy only at a pin that has it); push `test`; then `python3 ../atrium-project/scripts/tag_release.py v1.15.4-beta`, which tags the pushed HEAD only and pushes that one tag.

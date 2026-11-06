@@ -189,7 +189,12 @@ RUN mkdir -p /cache/huggingface /data \
 ENV HOME=/home/atrium
 USER atrium
 
-ENTRYPOINT ["python", "run_pipeline.py"]
+# container_entrypoint.py (hub-canonical, vendored; atrium-project#66) runs /app/run_pipeline.py by its absolute path with
+# the arguments `docker run` passes, as before. A first argument that names a shell or Python
+# (`/bin/sh tool_script.sh`) runs as given: that is how Galaxy starts a tool's container, in the
+# job's own working directory, where the old relative `python run_pipeline.py` failed. It ends in os.execv,
+# so the program is PID 1.
+ENTRYPOINT ["python", "/app/container_entrypoint.py", "/app/run_pipeline.py"]
 CMD []
 
 

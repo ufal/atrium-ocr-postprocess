@@ -46,6 +46,12 @@ On this page: [Set up the environment](#set-up-the-environment) · [Run the whol
 > once — `echo "ATRIUM_UID=$(id -u)" >> .env`. With `docker run`, pass `--user "$(id -u):0"`. Docker Desktop
 > (macOS, Windows) needs neither.
 
+The batch image passes its arguments to `run_pipeline.py` (`docker run IMAGE --config /data/config.txt`). Since
+`v1.15.4-beta` its entry point is the hub-canonical `container_entrypoint.py`, which names `run_pipeline.py` by its
+absolute path: a first argument that names a shell or Python runs that program instead (`docker run IMAGE /bin/sh
+job.sh`), which is how Galaxy starts a tool's container. Only those interpreters run; the pipeline starts its stages
+by name from `/app`, the image's `WORKDIR`, so a job script that runs it changes there first.
+
 > [!NOTE]
 > `alto-tools` needs no install step. The statistics and text-extraction code paths this
 > pipeline uses are **vendored** in [alto_tools.py](../alto_tools.py) — see [Vendored code](development.md#vendored-code).
