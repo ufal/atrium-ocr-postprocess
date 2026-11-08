@@ -1991,3 +1991,17 @@ Documentation only; no code, test or configuration change.
 * **Yours:** unpack and push; the comment for #10, delivered in chat. The scored runs wait for motyc's answer on
   where the gold lines may go (atrium-project#83).
 * Not pushed: files delivered as per-repo archives.
+
+## 2026-11-08 (round 2) — #10: the client's pin checked by the drift job (atrium-project#83)
+
+* **CI on `59727f9`/`1aa48f2`:**
+  * pre-commit: a blank line at the end of `DEVLOG.md`, fixed by K4TEL in `1aa48f2`;
+  * API Meta-Contract: GitHub's 504 on release downloads (`v1.15.4-beta/openapi.json`), reproduced from here, an
+    outage; re-run it.
+* **Written (not pushed):** `.github/workflows/para-drift.yml` gains `vendored-from: atrium-page-classification`, so
+  the drift job checks `tests/test_vendored_decision_parity.py` against page-classification at `39a7bea`. Without it
+  the pin was never run there.
+* **Checked:** the drift job's steps, locally: `vendored_pins.py list --owners atrium-page-classification`, then the
+  pin test with page-classification at `39a7bea` beside it. 4 passed, no skips.
+* **Yours:** push; re-run API Meta-Contract once GitHub's release downloads work.
+* Not pushed: files delivered as per-repo archives.
