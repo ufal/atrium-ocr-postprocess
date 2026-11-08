@@ -30,6 +30,11 @@ ignore = ["E501"]
 [lint.flake8-bugbear]
 extend-immutable-calls = ["fastapi.File", "fastapi.Form", "fastapi.Depends"]
 
+[lint.per-file-ignores]
+# Vendored byte-identical from atrium-page-classification (tests/test_vendored_decision_parity.py), whose
+# rule set has no "B": its zip() calls carry no strict=. Fix them there, never in the copy.
+"decision_client.py" = ["B905"]
+
 [format]
 # DO NOT FORMAT THE VENDORED CANONICAL FILES.
 #
@@ -67,4 +72,7 @@ exclude = [
     "tests/test_openapi_contract.py",
     "container_entrypoint.py",
     "tests/test_container_entrypoint_shared.py",
+    # Vendored from atrium-page-classification, pinned by tests/test_vendored_decision_parity.py
+    # (atrium-project#83): formatted there, never here.
+    "decision_client.py",
 ]

@@ -201,3 +201,156 @@ def test_the_shipped_samples_run_and_add_up(tmp_path):
 
 def test_main_needs_input(tmp_path):
     assert dl.main(["--input", str(tmp_path), "--out-dir", str(tmp_path / "o")]) == 2
+
+
+# ── the decision run (--decide, #10 Phase B/C) ────────────────────────────────────────────────
+
+import decision_client as dc  # noqa: E402
+
+
+def _client(fake):
+    return dc.DecisionClient(fake.url, "fake-model", timeout_s=20, retries=0)
+
+
+def _read(path):
+    with path.open(newline="", encoding="utf-8") as handle:
+        return list(csv.DictReader(handle))
+
+
+@pytest.mark.parametrize("path", sorted(dl.question_sets(), key=str), ids=lambda p: p.name)
+def test_committed_question_sets_match_the_generator(path):
+    expected = dl.render_question_set(dl.question_sets()[path])
+    assert path.read_text(encoding="utf-8") == expected, (
+        f"{path.name} drifted from tools/decide_lines.py; run `python3 tools/decide_lines.py --write-question-sets`"
+    )
+
+
+def test_the_quality_set_has_the_factors_the_context_and_a_five_level_score():
+    quality = dl.quality_questions()
+    assert list(quality) == [*dl.FACTORS, *dl.CONTEXT, "quality"]
+    assert all(quality[q]["type"] == "noul" for q in (*dl.FACTORS, *dl.CONTEXT))
+    assert quality["quality"]["type"] == "score" and len(quality["quality"]["criteria"]) == 5
+    assert len(dl.line_questions(True)) == len(quality) + 1 <= dc.MAX_QUESTIONS
+
+
+def test_the_category_choice_is_the_vocabularys_without_empty():
+    import atrium_vocab
+
+    criteria = dl.category_questions()["line_category"]["criteria"]
+    assert list(criteria) == ["Clear", "Noisy", "Trash", "Non-text"]
+    concepts = atrium_vocab.CONCEPTS["line-category"]
+    assert all(criteria[name] == concepts[name]["definition"]["en"] for name in criteria)
+
+
+def test_every_rule_view_names_real_rules_and_columns():
+    source = Path(text_util.__file__).read_text(encoding="utf-8")
+    sample = next(SAMPLES.glob("*.csv")).read_text(encoding="utf-8").splitlines()[0].split(",")
+    for factor, (rules, columns) in dl.RULE_VIEW.items():
+        assert factor in dl.FACTORS
+        for rule in rules:
+            assert f'_fire("{rule}")' in source, rule
+        for column in columns:
+            assert column == "_strange_symbols" or column in sample, column
+    assert set(dl.FACTORS) - set(dl.RULE_VIEW) == {"f_handwriting"}
+
+
+def test_rule_view_reads_fired_rules_detector_columns_and_the_language():
+    clean = {"text": "pohled na sondu", "original_lang": "ces_Latn", "orig_lang_score": "0.99"}
+    view = dl.rule_view(clean, [])
+    assert view["f_handwriting"] == "" and set(view.values()) <= {"0", ""}
+    assert dl.rule_view(clean, ["rule_bigram_run"])["f_repeated"] == "1"
+    assert dl.rule_view({**clean, "fused_words": "2"}, [])["f_split_merged"] == "1"
+    assert dl.rule_view({**clean, "damaged": "True"}, [])["f_misread_letters"] == "1"
+    assert dl.rule_view({**clean, "text": "nález ¦ § keramiky"}, [])["f_symbols"] == "1"
+    assert dl.rule_view({**clean, "original_lang": "deu_Latn", "orig_lang_score": "0.95"}, [])["f_foreign"] == "1"
+
+
+def test_line_state_sends_the_text_and_neighbours_on_the_same_page_only():
+    rows = [
+        {"page_num": "1", "text": "a1"},
+        {"page_num": "1", "text": ""},
+        {"page_num": "1", "text": "a3"},
+        {"page_num": "1", "text": "a4", "original_text": "a4 raw", "original_lang": "ces_Latn"},
+        {"page_num": "1", "text": "a5"},
+        {"page_num": "2", "text": "b1"},
+    ]
+    state = dl.line_state(rows, 3, {"text": "a4"})
+    assert state["line"] == "a4" and state["original_text"] == "a4 raw"
+    assert state["before"] == ["a1", "a3"] and state["after"] == ["a5"]
+    assert state["detected_language"] == "ces_Latn"
+    assert "categ" not in json.dumps(state) and "quality" not in json.dumps(state)
+
+
+def test_sampling_is_reproducible_and_roughly_the_rate():
+    keys = [("CTX", 1, i) for i in range(2000)]
+    first = [dl._sampled(k, 0.25, 7) for k in keys]
+    assert first == [dl._sampled(k, 0.25, 7) for k in keys]
+    assert 0.2 < sum(first) / len(first) < 0.3
+    assert all(dl._sampled(k, None, 7) for k in keys[:5])
+
+
+def test_decide_asks_the_quality_set_and_the_category_only_on_tagged_lines(tmp_path):
+    _write_doc(tmp_path / "in")
+    gold = _gold(tmp_path / "gold.csv")
+    with dc.FakeSystemOne() as fake:
+        summary, counts = dl.run_decide(
+            dl.input_files(tmp_path / "in"), tmp_path / "out", _ROOT / "setup" / "config.txt", _client(fake), gold
+        )
+        sent = [set(r["questions"]) for r in fake.requests]
+    rows = _read(tmp_path / "out" / "DOC_LINE_DECIDE.csv")
+    assert list(rows[0]) == dl.DECIDE_COLUMNS
+    assert counts["asked"] == len(rows) == len(sent) == 3  # the three gold lines
+    for row, questions in zip(rows, sent, strict=True):
+        assert ("line_category" in questions) == bool(row["tags"])
+        assert (row["category"] != "") == bool(row["tags"])
+        assert 0 <= float(row["quality"]) <= 1 and row["gold_categ"]
+        assert float(row["damage_index"]) == pytest.approx(
+            sum(float(row[f"P_{f}"]) for f in dl.FACTORS) / len(dl.FACTORS), abs=1e-3
+        )
+    assert summary["statuses"] == {"ok": 3}
+    assert summary["quality_vs_gold"]["lines"] == 3
+    assert "S1" in summary["category_per_tag"] and summary["category_per_tag"]["S1"]["gold_lines"] == 1
+    assert set(summary["factors"]) == {*dl.FACTORS, *dl.CONTEXT}
+
+
+def test_decide_tags_only_resume_and_a_failing_server(tmp_path):
+    _write_doc(tmp_path / "in")
+    config = _ROOT / "setup" / "config.txt"
+    inputs = dl.input_files(tmp_path / "in")
+    with dc.FakeSystemOne(lambda r: (500, {"error": "down"})) as fake:
+        summary, counts = dl.run_decide(inputs, tmp_path / "out", config, _client(fake), tags_only=True)
+    rows = _read(tmp_path / "out" / "DOC_LINE_DECIDE.csv")
+    assert rows and all(r["tags"] for r in rows) and counts["not_selected"] >= 1
+    assert {r["status"] for r in rows} == {"error"} and all(r["quality"] == "" for r in rows)
+    with pytest.raises(SystemExit):
+        dl.run_decide(inputs, tmp_path / "out", config, _client(fake))
+    with dc.FakeSystemOne() as fake:
+        _, again = dl.run_decide(inputs, tmp_path / "out", config, _client(fake), tags_only=True, resume=True)
+    assert again["asked"] == 0 and again["resumed"] == len(rows)
+
+
+def test_summary_metrics():
+    assert dl.auc([0.9, 0.8, 0.1, 0.2], [True, True, False, False]) == 1.0
+    assert dl.auc([0.5, 0.5], [True, False]) == 0.5
+    assert dl.auc([0.5], [True]) is None
+    assert dl.kappa([True, False, True, False], [True, False, True, False]) == 1.0
+    assert dl.kappa([True, True], [True, True]) is None
+    assert dl.spearman([1, 2, 3], [3, 2, 1]) == -1.0
+
+
+def test_main_decide_end_to_end_on_the_samples_names_the_server_by_kind(tmp_path):
+    out = tmp_path / "out"
+    with dc.FakeSystemOne() as fake:
+        code = dl.main(["--input", str(SAMPLES), "--out-dir", str(out), "--decide", "--url", fake.url, "--model", "m"])
+    assert code == 0
+    summary = json.loads((out / "DOC_LINE_DECIDE.summary.json").read_text(encoding="utf-8"))
+    assert summary["served_on"] == "local" and fake.url not in json.dumps(summary)
+    assert summary["counts"]["asked"] == summary["lines"] > 0
+    records = list((out / "paradata").glob("*.json"))
+    assert records and "decision_model" in records[0].read_text(encoding="utf-8")
+
+
+def test_main_decide_refuses_an_unconfigured_server(tmp_path, monkeypatch):
+    monkeypatch.delenv("DECISION_MODEL_URL", raising=False)
+    with pytest.raises(SystemExit):
+        dl.main(["--input", str(SAMPLES), "--out-dir", str(tmp_path / "o"), "--decide", "--url", "", "--model", "m"])

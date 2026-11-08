@@ -1,0 +1,22 @@
+{
+  "name": "line_category",
+  "version": 1,
+  "generated_by": "tools/decide_lines.py --write-question-sets",
+  "state": {
+    "task": "Judge the OCR text of `line`, one line recognised from a scanned page of an archaeological report or related material from a Czech archive (1920–2020). `before` and `after` are its neighbours on the page."
+  },
+  "source": "categories and definitions: atrium_vocab.CONCEPTS['line-category']; asked on S1–S5 lines",
+  "questions": {
+    "line_category": {
+      "type": "choice",
+      "criteria": {
+        "Clear": "Structurally sound text with low perplexity.",
+        "Noisy": "Partially degraded text (e.g., isolated strange symbols, mid-word uppercase).",
+        "Trash": "Severe OCR corruption, high symbol density, gibberish, or failed language ID.",
+        "Non-text": "Lines that are too short, lack letters, or are purely numbers/symbols."
+      },
+      "instructions": "Which category describes `line`?"
+    }
+  },
+  "schema_digest": "72c57f1f36c0282b63bc4fe2d325a86bb20350356caa2b090e8e2e9c94b4ced4"
+}

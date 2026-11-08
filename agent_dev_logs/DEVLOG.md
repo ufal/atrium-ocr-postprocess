@@ -1964,3 +1964,31 @@ Documentation only; no code, test or configuration change.
   * on the cluster, the selector over the gold set and `DOC_LINE_CATEG_1210` (Output A1);
   * the fixed #10 body and the comment for @DanaKriv, delivered in chat.
 * Not pushed: files delivered as per-repo zips.
+
+## 2026-11-08 — #10: every line's text quality, and the category on S1–S5 (atrium-project#83)
+
+* **Asked (K4TEL, in session):** text only. Evaluate the quality of the text with the degradation options the rules
+  already define (too many symbols and numbers, repeated characters, too few vowels, strange characters, misread
+  letters, handwriting read wrongly, …) and a score. The category question stays, on the S1–S5 lines.
+* **Written (not pushed):**
+  * **`decision_client.py`,** vendored from page-classification (`39a7bea`, `v1.13.0-beta`):
+    * pinned in `tests/test_vendored_decision_parity.py`;
+    * `ruff.toml`: B905 ignored for the copy, which is excluded from formatting;
+    * `DECISION_*` under `NOT_PUBLISHED`;
+    * `decision_model` in `setup/para_config.txt`.
+  * **`tools/decide_lines.py`:**
+    * `--write-question-sets` writes `decisions/line_quality.v1.json` (10 factors, `f_foreign`, `quality`) and
+      `decisions/line_category.v1.json`;
+    * `--decide` (`--tags-only`, `--sample-rate`, `--resume`, `--served-on`) writes `DOC_LINE_DECIDE.csv` and its
+      summary;
+    * the selector's loop is now `scored_lines()`, shared by both modes.
+  * **Tests:** `tests/test_decide_lines.py` (44).
+* **Checked:**
+  * the full suite: 2,385 passed, 12 skipped, 2 xfailed;
+  * ruff;
+  * `--decide` on `data_samples/DOC_LINE_CATEG/` against the fake server: 13 lines asked, 2 fast-track lines skipped.
+* **Records:** `plans/10.plan.md` (Phase B rewritten), `digests/10.digest.md`.
+* **Yours:** unpack and push; the comment for #10, delivered in chat. The scored runs wait for motyc's answer on
+  where the gold lines may go (atrium-project#83).
+* Not pushed: files delivered as per-repo archives.
+

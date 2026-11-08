@@ -1,0 +1,156 @@
+{
+  "name": "line_quality",
+  "version": 1,
+  "generated_by": "tools/decide_lines.py --write-question-sets",
+  "state": {
+    "task": "Judge the OCR text of `line`, one line recognised from a scanned page of an archaeological report or related material from a Czech archive (1920–2020). `before` and `after` are its neighbours on the page."
+  },
+  "source": "#10 plan, Phase B (2026-11-08): the factors mirror the rule detectors of docs/reference/categorization_rules.md",
+  "questions": {
+    "f_symbols": {
+      "type": "noul",
+      "instructions": "Does `line` contain stray symbols or punctuation that are not part of any word (e.g. ¦ § ~ ^ |)?"
+    },
+    "f_digits": {
+      "type": "noul",
+      "instructions": "Are digits mixed into words, or is `line` mostly numbers and fragments where words are expected?"
+    },
+    "f_repeated": {
+      "type": "noul",
+      "instructions": "Does `line` contain runs of one repeated character or letter pair (e.g. `iiii`, `ididid`)?"
+    },
+    "f_few_vowels": {
+      "type": "noul",
+      "instructions": "Does `line` contain letter strings with too few vowels to be words (e.g. `HRPSTK`, `vfrbn`)?"
+    },
+    "f_gibberish": {
+      "type": "noul",
+      "instructions": "Does `line` contain letter strings that are not words in any language?"
+    },
+    "f_case": {
+      "type": "noul",
+      "instructions": "Are capital letters out of place inside words (e.g. `dalSÍ`)?"
+    },
+    "f_misread_letters": {
+      "type": "noul",
+      "instructions": "Are some letters misread in otherwise recognisable words (e.g. `fraament okraie` for `fragment okraje`, or lost diacritics)?"
+    },
+    "f_split_merged": {
+      "type": "noul",
+      "instructions": "Are words broken into fragments, or run together without spaces?"
+    },
+    "f_mirrored": {
+      "type": "noul",
+      "instructions": "Does `line` look like a mirrored or upside-down scan read as text (many w, x, q or unlikely letter shapes)?"
+    },
+    "f_handwriting": {
+      "type": "noul",
+      "instructions": "Does `line` look like handwriting that was read as print, so most letters are wrong?"
+    },
+    "f_foreign": {
+      "type": "noul",
+      "instructions": "Is `line` written in a language other than Czech or Slovak?"
+    },
+    "quality": {
+      "type": "score",
+      "criteria": [
+        "garbage: no recognisable words",
+        "mostly garbage: a few words can be recognised",
+        "damaged: readable with effort, many errors",
+        "minor errors: readable, with a few wrong letters or symbols",
+        "clean: the text is correct"
+      ],
+      "instructions": "How good is the OCR text of `line`?"
+    }
+  },
+  "degradation_factors": [
+    "f_symbols",
+    "f_digits",
+    "f_repeated",
+    "f_few_vowels",
+    "f_gibberish",
+    "f_case",
+    "f_misread_letters",
+    "f_split_merged",
+    "f_mirrored",
+    "f_handwriting"
+  ],
+  "context": [
+    "f_foreign"
+  ],
+  "rule_view": {
+    "f_symbols": {
+      "rules": [
+        "rule_garbage_density"
+      ],
+      "columns": [
+        "_strange_symbols"
+      ]
+    },
+    "f_digits": {
+      "rules": [
+        "rule_ledger_fragmentation"
+      ],
+      "columns": [
+        "ldl_fuses"
+      ]
+    },
+    "f_repeated": {
+      "rules": [
+        "rule_bigram_run"
+      ],
+      "columns": [
+        "repeated"
+      ]
+    },
+    "f_few_vowels": {
+      "rules": [
+        "rule_vowelless",
+        "rule_allcaps"
+      ],
+      "columns": [
+        "allcaps_novowel"
+      ]
+    },
+    "f_gibberish": {
+      "rules": [],
+      "columns": [
+        "gibberish"
+      ]
+    },
+    "f_case": {
+      "rules": [
+        "rule_mid_uppercase"
+      ],
+      "columns": [
+        "upper"
+      ]
+    },
+    "f_misread_letters": {
+      "rules": [
+        "rule_damaged_token"
+      ],
+      "columns": [
+        "damaged"
+      ]
+    },
+    "f_split_merged": {
+      "rules": [
+        "rule_fragment_tokens"
+      ],
+      "columns": [
+        "fused_words"
+      ]
+    },
+    "f_mirrored": {
+      "rules": [
+        "rule_inverted",
+        "rule_wqx_rot"
+      ],
+      "columns": [
+        "weird_wx"
+      ]
+    }
+  },
+  "schema_digest": "dc723b675e59d02eb206225b761a2c0f0155944726dc432bf4ab204c39dcabb6"
+}

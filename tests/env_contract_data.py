@@ -35,6 +35,9 @@ NOT_PUBLISHED: dict[str, str] = {
     # before this entry was added -- see that file's module docstring.
     "ATRIUM_TEXT_UTILS_*": "algorithmic scoring constant tuned via setup/config.txt, not a deployment-varying knob (atrium-project#60/#53)",
     "ATRIUM_CLASSIFY_*": "algorithmic scoring constant tuned via setup/config.txt, not a deployment-varying knob (atrium-project#60/#53)",
+    "DECISION_*": "defaults of the offline decision-model CLI (decision_client.py, vendored from page-classification; "
+    "tools/decide_lines.py --decide; #10): DECISION_MODEL_URL, DECISION_MODEL_NAME, DECISION_TIMEOUT_S. Not a "
+    "service setting; the server's address stays out of the repository",
 }
 
 # In .env.example but read by no Python in this repo — each with a reason.

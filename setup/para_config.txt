@@ -30,3 +30,7 @@ glm4v_9b       = glm-4           ; conditional ; GLM-4v-9b generative OCR from p
 # para_licenses does not parse SPDX `OR` expressions (either choice is permissive).
 pypdfium2          = Apache-2.0  ; conditional ; PDFium PDF text-layer reader (text-lines method, text_split.py; /process)
 charset_normalizer = MIT         ; conditional ; encoding detection for non-UTF-8 plain text (text-lines method; /process)
+# (#10, atrium-project#83) The decision models of the offline tools/decide_lines.py --decide, served at
+# POST /v1/systemone and called through decision_client.py (vendored from page-classification): Clef,
+# Clef-Flash (Cloudflare) and Strands Decider 2B, all Apache-2.0. The service and the pipeline never load them.
+decision_model     = Apache-2.0  ; conditional ; decision models (Clef, Clef-Flash, Strands Decider 2B) for the #10 experiments
