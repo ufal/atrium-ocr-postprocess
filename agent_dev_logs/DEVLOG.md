@@ -1991,4 +1991,3 @@ Documentation only; no code, test or configuration change.
 * **Yours:** unpack and push; the comment for #10, delivered in chat. The scored runs wait for motyc's answer on
   where the gold lines may go (atrium-project#83).
 * Not pushed: files delivered as per-repo archives.
-
