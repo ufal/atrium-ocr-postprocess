@@ -203,6 +203,29 @@ def test_main_needs_input(tmp_path):
     assert dl.main(["--input", str(tmp_path), "--out-dir", str(tmp_path / "o")]) == 2
 
 
+def test_config_defaults_to_langid_config_like_the_service(tmp_path, monkeypatch):
+    """--config used to default to setup/config.txt whatever LANGID_CONFIG said, so a run beside the
+    service or the batch stages could score with other constants than theirs."""
+    import tool_limits
+
+    monkeypatch.delenv("LANGID_CONFIG", raising=False)
+    assert dl.build_parser().parse_args([]).config == _ROOT / "setup" / "config.txt" == tool_limits.config_path()
+    other = tmp_path / "other_config.txt"
+    monkeypatch.setenv("LANGID_CONFIG", str(other))
+    assert dl.build_parser().parse_args([]).config == other == tool_limits.config_path()
+    assert dl.build_parser().parse_args(["--config", "given.txt"]).config == Path("given.txt")
+
+
+def test_main_scores_with_the_langid_config_file(tmp_path, monkeypatch):
+    _write_doc(tmp_path / "in")
+    config = tmp_path / "config.txt"
+    config.write_bytes((_ROOT / "setup" / "config.txt").read_bytes())
+    monkeypatch.setenv("LANGID_CONFIG", str(config))
+    assert dl.main(["--input", str(tmp_path / "in"), "--out-dir", str(tmp_path / "out")]) == 0
+    counts = json.loads((tmp_path / "out" / "decide_lines_counts.json").read_text(encoding="utf-8"))
+    assert counts["config"]["path"] == str(config)
+
+
 # ── the decision run (--decide, #10 Phase B/C) ────────────────────────────────────────────────
 
 import decision_client as dc  # noqa: E402
@@ -354,3 +377,60 @@ def test_main_decide_refuses_an_unconfigured_server(tmp_path, monkeypatch):
     monkeypatch.delenv("DECISION_MODEL_URL", raising=False)
     with pytest.raises(SystemExit):
         dl.main(["--input", str(SAMPLES), "--out-dir", str(tmp_path / "o"), "--decide", "--url", "", "--model", "m"])
+
+
+_IN_UNIT = "--accept-at and --review-below are probabilities in [0, 1]"
+
+
+@pytest.mark.parametrize(
+    ("accept_at", "review_below", "message"),
+    [
+        ("1.5", "0.5", _IN_UNIT),
+        ("0.9", "-0.1", _IN_UNIT),
+        ("nan", "0.5", _IN_UNIT),
+        ("0.6", "0.8", "--review-below must not exceed --accept-at"),
+    ],
+    ids=["accept-above-1", "review-below-0", "nan", "review-above-accept"],
+)
+def test_main_decide_refuses_bad_lane_thresholds_before_asking(tmp_path, capsys, accept_at, review_below, message):
+    """decision_client.lane() raised on the first answer only, after the model had been called."""
+    argv = ["--input", str(SAMPLES), "--out-dir", str(tmp_path / "o"), "--decide", "--model", "m"]
+    with dc.FakeSystemOne() as fake:
+        with pytest.raises(SystemExit) as exc:
+            dl.main([*argv, "--url", fake.url, "--accept-at", accept_at, "--review-below", review_below])
+        assert fake.requests == []
+    assert exc.value.code == 2
+    assert message in capsys.readouterr().err
+
+
+def test_main_decide_takes_equal_lane_thresholds(tmp_path):
+    _write_doc(tmp_path / "in")
+    argv = ["--input", str(tmp_path / "in"), "--out-dir", str(tmp_path / "o"), "--decide", "--model", "m"]
+    with dc.FakeSystemOne() as fake:
+        assert dl.main([*argv, "--url", fake.url, "--accept-at", "0.7", "--review-below", "0.7"]) == 0
+    lanes = {r["lane"] for r in _read(tmp_path / "o" / "DOC_LINE_DECIDE.csv") if r["category"]}
+    assert lanes and lanes <= {"accept", "review"}
+
+
+@pytest.mark.parametrize("rate", ["0", "-0.5", "1.5"])
+def test_main_refuses_a_sample_rate_outside_the_share(tmp_path, capsys, rate):
+    with pytest.raises(SystemExit) as exc:
+        dl.main(["--input", str(SAMPLES), "--out-dir", str(tmp_path / "o"), "--decide", "--sample-rate", rate])
+    assert exc.value.code == 2
+    assert "--sample-rate is a share in (0, 1]" in capsys.readouterr().err
+
+
+def test_main_sample_rate_asks_the_same_share_of_the_lines_each_time(tmp_path):
+    def asked(out, *extra):
+        with dc.FakeSystemOne() as fake:
+            argv = ["--input", str(SAMPLES), "--out-dir", str(out), "--decide", "--url", fake.url, "--model", "m"]
+            assert dl.main([*argv, *extra]) == 0
+        return [dl._gold_key(r) for r in _read(out / "DOC_LINE_DECIDE.csv")]
+
+    every = asked(tmp_path / "all")
+    share = asked(tmp_path / "a", "--sample-rate", "0.5", "--seed", "7")
+    assert share == asked(tmp_path / "b", "--sample-rate", "0.5", "--seed", "7")
+    assert share == [key for key in every if dl._sampled(key, 0.5, 7)]
+    assert 0 < len(share) < len(every)
+    summary = json.loads((tmp_path / "a" / "DOC_LINE_DECIDE.summary.json").read_text(encoding="utf-8"))
+    assert summary["counts"]["not_selected"] == len(every) - len(share)

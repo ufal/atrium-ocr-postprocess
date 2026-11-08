@@ -2005,3 +2005,25 @@ Documentation only; no code, test or configuration change.
   pin test with page-classification at `39a7bea` beside it. 4 passed, no skips.
 * **Yours:** push; re-run API Meta-Contract once GitHub's release downloads work.
 * Not pushed: files delivered as per-repo archives.
+
+## 2026-11-08 (round 3) — #10: review fixes to `tools/decide_lines.py` and its docs (atrium-project#83)
+
+* **Written (committed locally, not pushed):**
+  * **`tools/decide_lines.py`:**
+    * `--accept-at`/`--review-below` outside [0, 1], or `--review-below` above `--accept-at`, stop the run before
+      the first request (exit 2). `decision_client.lane()` raised only on the first answer, after the model call;
+    * `--config` defaults to `LANGID_CONFIG`, else `setup/config.txt`, as the service and the batch stages read it
+      (`default_config_path()`, the rule of `tool_limits.config_path()`, which is not imported: its import checks
+      every limit variable). `tests/env_contract_data.py` lists no readers of `LANGID_CONFIG`; unchanged;
+    * docstrings for the public functions.
+  * **Tests:** `tests/test_decide_lines.py` (44 → 55): the thresholds, the `--config` default with and without
+    `LANGID_CONFIG`, `--sample-rate` refused outside (0, 1] and asking the same share of lines through `main`.
+  * **Docs:** `docs/usage.md` gains "Ask a decision model about lines" (the tags, the questions, the options, the
+    lane rule, the outputs and the paradata) and names `DOCUMENT_SOURCE_ORIGIN` in the command-line column of
+    "Where the input came from"; a pointer in `README.md` and `docs/development.md`; the `decision_model` row in
+    `docs/reference/paradata.md`; the h4 under an h2 in `tools/quality_model/README.md` is an h3.
+* **Checked:**
+  * the fast suite without torch (the CPU wheel's index is not reachable from here): 2,390 passed, 11 skipped
+    (torch, sklearn, optuna, SALib), 2 xfailed;
+  * ruff; the hub's `docs_check.py`.
+* **Yours:** push it together with the hub re-pin (atrium-project round 3). No version bump.

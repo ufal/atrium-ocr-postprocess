@@ -56,6 +56,7 @@ only when the script that uses them records it. For this repository:
 | GLM-4v-9b (https://huggingface.co/THUDM/glm-4v-9b)                          | glm-4           | conditional | generative OCR extraction (`extract_LLM_ALTO_2_TXT.py`)       |
 | **pypdfium2** (PDFium) — PDF text layers (#31)                              | Apache-2.0 [^p] | conditional | text-lines PDF reading (`text_split.py`)                      |
 | **charset-normalizer** — encoding detection (#31)                           | MIT             | conditional | text-lines non-UTF-8 plain text (`text_split.py`)             |
+| Clef, Clef-Flash, Strands Decider 2B — decision models (#10)                | Apache-2.0      | conditional | decision-model experiments (`tools/decide_lines.py --decide`) |
 
 [^p]: pypdfium2 is dual-licensed Apache-2.0 **or** BSD-3-Clause; `para_licenses` does not parse SPDX `OR`, so it
 is recorded as Apache-2.0 (either is permissive). The text-lines readers use no other licensed component: DOCX,

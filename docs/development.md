@@ -20,6 +20,8 @@ are in [CONTRIBUTING.md](../CONTRIBUTING.md); the ATRIUM documentation rules in 
 
 [The evaluation page](evaluation/categorization.md#measuring-a-change) lists the tools:
 `tools/recategorize_from_csv.py`, `tools/corpus_change.py` and `tools/rule_coverage_report.py`.
+`tools/decide_lines.py` tags the lines the rules are least sure of and asks a decision model about them (#10,
+experimental; [usage](usage.md#ask-a-decision-model-about-lines-toolsdecide_linespy)).
 
 ## Vendored code
 

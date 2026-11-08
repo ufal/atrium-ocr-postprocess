@@ -31,6 +31,10 @@ The command line and the service read the same formats with the same code and wr
 What only one of them does, and why (the document passes, the GLM method, page statistics):
 [The command line and the service](docs/usage.md#the-command-line-and-the-service).
 
+`tools/decide_lines.py`, offline and experimental, asks a decision model about the lines the rules are least sure
+of; neither the pipeline nor the service runs it
+([docs/usage.md](docs/usage.md#ask-a-decision-model-about-lines-toolsdecide_linespy)).
+
 ## Quick start
 
 **What you need:** Docker for the service, or Python 3.11 and a checkout for the batch pipeline. Network access to

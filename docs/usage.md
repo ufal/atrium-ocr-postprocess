@@ -11,6 +11,7 @@ On this page: [Set up the environment](#set-up-the-environment) · [Run the whol
 [Step 3: extract the text](#step-3-extract-the-text) · [Step 4.1: classify lines](#step-41-classify-lines) ·
 [Step 4.2: aggregate page statistics](#step-42-aggregate-page-statistics) ·
 [Score an existing record](#score-an-existing-record-score_recordpy) ·
+[Ask a decision model about lines](#ask-a-decision-model-about-lines-toolsdecide_linespy) ·
 [Call the service instead](#call-the-service-instead) ·
 [The command line and the service](#the-command-line-and-the-service)
 
@@ -620,6 +621,105 @@ The models are the service's, without LayoutReader; `GPT2_MODEL_NAME` picks the 
 not (a file that is not a record, a page key it lacks); the others are still scored. It is 2 for a path that does not
 exist.
 
+## Ask a decision model about lines: `tools/decide_lines.py`
+
+An offline, experimental tool of [#10](https://github.com/ufal/atrium-ocr-postprocess/issues/10)
+([atrium-project#83](https://github.com/ufal/atrium-project/issues/83)). Neither the pipeline nor the service runs
+it, so it has no service counterpart. It changes no category, record, rule or default: its answers go to files of
+their own. It reads the per-line CSVs of [Step 4.1](#step-41-classify-lines) and scores every line again with the
+pipeline's scorer (`classify_TEXT.score_line`), skipping the pre-filter's `Empty` and `Non-text` lines.
+
+Without `--decide` it calls no model. It tags the lines the rules are least sure of (the figures are those of the
+shipped `setup/config.txt`):
+
+| Tag | The line                                                                                                                                                                              |
+|-----|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| S1  | has at most 3 words (`ISOLATED_CHAR_MIN_TOKENS`) and no Czech diacritics, and is stored `Clear` or `Noisy`                                                                            |
+| S2  | fired a late gate ([9a–9f](reference/categorization_rules.md)), and its own verdict is not `Trash`                                                                                    |
+| S3  | has a score, before it is clamped into its band, within `--margin` of 0.55 (`CATEG_TRASH_SCORE_MAX`), or a `valid_word_ratio` within `--margin` of 0.85 (`MOSTLY_READABLE_VALID_MIN`) |
+| S4  | is neither Czech nor Slovak to FastText, at an `orig_lang_score` of at least `--foreign-min`, and is stored `Noisy`                                                                   |
+| S5  | was changed by a document pass (`pp_dedup`, `pp_surrounded_trash`, `pp_inverted_run`, `pp_page_context`)                                                                              |
+
+"Stored" is the category in the CSV; "its own verdict" is the new score's, before any document pass.
+
+```bash
+python3 tools/decide_lines.py --input data_samples/DOC_LINE_CATEG --out-dir /tmp/select
+python3 tools/decide_lines.py --input <DOC_LINE_CATEG dir> --gold tools/gold/sidecars/issue30_gold_2067.csv \
+    --out-dir <dir> --workers 8
+```
+
+It writes two files to `--out-dir`. `DOC_LINE_DECIDE_SELECT.csv` has one row per tagged line: its key, tags, stored
+and new category, the cascade's reason, the scores, the language, the late gates that fired, the document-pass flags
+and the text. `decide_lines_counts.json` has the lines of each tag, the overlaps, and the drift: lines whose new
+category differs from the stored one with no document pass to explain it, a sign that the CSV was written by other
+code or constants. With `--gold`, only the gold documents and lines are read, and each tag's stored categories are
+compared with `gold_categ`.
+
+**`--decide`** asks a decision model at `POST /v1/systemone` on `--url`, through
+[decision_client.py](../decision_client.py) (vendored from page-classification). The model gets the text only: the
+line, its `original_text` when that differs, up to two non-empty lines before and after it on the same page, and
+FastText's raw label. No rule signal is sent. Every line asked (all scored lines, or those `--gold`, `--tags-only`
+and `--sample-rate` leave) gets the questions of [decisions/line_quality.v1.json](../decisions/line_quality.v1.json):
+
+* ten yes/no degradation factors, each a reader's view of what a rule detector measures: stray symbols, digits in
+  words, repeated characters, too few vowels, letter strings that are not words, misplaced capitals, misread letters,
+  split or merged words, a mirrored scan, handwriting read as print;
+* `f_foreign`: another language than Czech or Slovak, context for S4 rather than damage;
+* a score from 0 (garbage) to 4 (clean).
+
+A line tagged S1–S5 is also asked, in the same request, the category choice of
+[decisions/line_category.v1.json](../decisions/line_category.v1.json): `Clear`, `Noisy`, `Trash` or `Non-text`, with
+their definitions from `atrium_vocab.py`. Both files are written from the code by
+`python3 tools/decide_lines.py --write-question-sets`.
+
+```bash
+export DECISION_MODEL_URL=<server>
+python3 tools/decide_lines.py --input data_samples/DOC_LINE_CATEG --out-dir /tmp/decide \
+    --decide --model <model> --served-on ufal-endpoint
+```
+
+| Option                          | Default                                     | What it does                                                                                                                                   |
+|---------------------------------|---------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------|
+| `--input`, `--out-dir`          | required                                    | a `DOC_LINE_CATEG` folder or one CSV (`--recursive` takes subfolders too); where the outputs go                                                |
+| `--config`                      | `LANGID_CONFIG`, else `setup/config.txt`    | the constants and languages of the new score, the file the batch stages and the service read                                                   |
+| `--gold`                        | none                                        | a gold sidecar (`file,page_num,line_num,gold_categ`): only its lines                                                                           |
+| `--margin`, `--foreign-min`     | 0.05, 0.85                                  | S3 and S4                                                                                                                                      |
+| `--workers`                     | 1                                           | documents scored in parallel, without `--decide` only                                                                                          |
+| `--limit-docs`                  | every document                              | the first N documents                                                                                                                          |
+| `--tags-only`                   | off                                         | `--decide`: only the S1–S5 lines                                                                                                               |
+| `--sample-rate`, `--seed`       | every line, 420                             | `--decide`: a share in (0, 1] of the lines otherwise asked, chosen by a hash of the seed and the line's key: the same seed asks the same lines |
+| `--accept-at`, `--review-below` | none                                        | `--decide`: the category's `lane`, by its confidence (below)                                                                                   |
+| `--resume`                      | off                                         | `--decide`: continue `DOC_LINE_DECIDE.csv`, skipping the lines it has; without it, an existing file stops the run                              |
+| `--url`, `--model`              | `DECISION_MODEL_URL`, `DECISION_MODEL_NAME` | `--decide`: the server and the model; both are needed                                                                                          |
+| `--model-revision`              | empty                                       | the served build or Hugging Face revision, for the paradata                                                                                    |
+| `--served-on`                   | `local` for a loopback URL, else `other`    | `cluster-job`, `ufal-endpoint`, `local` or `other`: where the lines went, recorded instead of the URL                                          |
+| `--timeout`, `--retries`        | `DECISION_TIMEOUT_S`, else 60; 2            | seconds per request; repeats of a request the server answered with 429 or 5xx, or could not be reached                                         |
+| `--no-proxy`                    | off                                         | ignore the proxy environment variables                                                                                                         |
+
+**The lane.** With `--accept-at` and `--review-below`, the category's confidence puts each asked line in a lane:
+`accept` at or above `--accept-at`, `review` below `--review-below`, `escalate` in between. Give both or neither,
+each in [0, 1], and `--review-below` no higher than `--accept-at`. Otherwise the run stops before the first request
+(exit status 2). Set them on development data, for one model revision and one wording of the questions.
+
+The outputs of `--decide`, in `--out-dir`:
+
+* `DOC_LINE_DECIDE.csv`: one row per line asked. It holds the key, the tags, the stored, new and gold categories, the
+  rules' raw score, the rules' view of each factor (`R_*`), the model's probability of each (`P_*`), the expected
+  score `E_quality` and `quality` (`E_quality` / 4), `damage_index` (the mean probability of the ten factors), the
+  category with its probabilities, `confidence` and `lane`, the request's `status`, `error`, latency, input tokens,
+  attempts and schema digest, and the text. A server that fails is a row with its `status` (`error`, `timeout`,
+  `rejected`, `invalid`), not a stopped run.
+* `DOC_LINE_DECIDE.summary.json`: the statuses and latencies; each factor's agreement with the rules' view (not with
+  gold); the score against `gold_categ` beside the rules' raw score (Spearman, AUC); and per tag, how often the
+  category agrees with the stored one, with the gold lines it fixed and broke (McNemar's exact test).
+* `paradata/<YYMMDD-HHmmss>_ocr-postprocess.json`: the run, with the model, its revision, `served_on`, the schema
+  digests and the options, and the `decision_model` component
+  ([the components a run lists](reference/paradata.md#the-components-a-run-lists)). The URL is not recorded.
+
+Exit status: 0 when the run completed, 2 for a wrong option or an input without CSVs, 1 when `DOC_LINE_DECIDE.csv`
+exists and `--resume` was not given. Which archive text may go to which server is settled on atrium-project#83; the
+three sample documents are public.
+
 ## Call the service instead
 
 The service, `service/text_api.py`, runs the same categoriser with the same `setup/config.txt` and the same
@@ -666,7 +766,7 @@ perplexity model.
 | The perplexity model               | `[CLASSIFY] MODEL_NAME`                                                                 | `GPT2_MODEL_NAME`, else `[CLASSIFY] MODEL_NAME`                                                               |                                                                             |
 | Perplexity batch                   | `[CLASSIFY] BATCH_SIZE` (128 lines)                                                     | `PPL_BATCH_LINES` (32 lines)                                                                                  | a dedicated GPU against one shared with page-classification                 |
 | Page-relative perplexity blend     | `[CLASSIFY] PAGE_PPL_BLEND_ENABLE` (off)                                                | not applied                                                                                                   | it needs the whole page's lines; off by default                             |
-| Where the input came from          | `--source-origin`, or `[DOCUMENT] SOURCE_ORIGIN`                                        | `[DOCUMENT] SOURCE_ORIGIN` only                                                                               | a batch names its collection's origin                                       |
+| Where the input came from          | `--source-origin`, else `DOCUMENT_SOURCE_ORIGIN`, else `[DOCUMENT] SOURCE_ORIGIN`       | `[DOCUMENT] SOURCE_ORIGIN` only                                                                               | a batch names its collection's origin                                       |
 | One page per document              | `extract_JSON_2_TXT.py --force-single-page`                                             | none                                                                                                          | a batch option for legacy collections                                       |
 | The page of an upload              | the file's own page number                                                              | `page`, for an ATR page written into a born-digital record                                                    | the OCR hand-off is a service call                                          |
 | A compressed ALTO (`.alto.xml.gz`) | read by the shared reader as a document (`--method text-lines`): no reading-order model | the same (`task_type=document`)                                                                               | the same: the ALTO stages take `*.xml`                                      |

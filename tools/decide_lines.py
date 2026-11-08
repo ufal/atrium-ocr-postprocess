@@ -228,6 +228,7 @@ def _gold_key(row: Mapping[str, Any]) -> Tuple[str, int, int]:
 
 
 def read_gold(path: Path) -> Dict[Tuple[str, int, int], str]:
+    """``gold_categ`` of a gold sidecar by ``(file, page_num, line_num)``; rows without one are left out."""
     with path.open(newline="", encoding="utf-8") as handle:
         return {_gold_key(r): r["gold_categ"] for r in csv.DictReader(handle) if r.get("gold_categ")}
 
@@ -384,6 +385,7 @@ def _work(path: str) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
 
 
 def input_files(path: Path, recursive: bool = False) -> List[Path]:
+    """*path* itself if it is a file, else the ``*.csv`` under it (with *recursive*, in subfolders too), sorted."""
     if path.is_file():
         return [path]
     return sorted(path.rglob("*.csv") if recursive else path.glob("*.csv"))
@@ -551,12 +553,14 @@ def line_category_definitions() -> Dict[str, str]:
 
 
 def quality_questions() -> Dict[str, Dict[str, Any]]:
+    """The quality set asked of every line: the ten factors and ``f_foreign`` as yes/no, then the 0–4 score."""
     items: Dict[str, Dict[str, Any]] = {qid: dc.noul(text) for qid, text in {**FACTORS, **CONTEXT}.items()}
     items["quality"] = dc.score(QUALITY_INSTRUCTIONS, QUALITY_LEVELS)
     return dc.questions(items)
 
 
 def category_questions() -> Dict[str, Dict[str, Any]]:
+    """The category set, asked of the S1–S5 lines only: one choice among ``ASKED_CATEGORIES``."""
     return dc.questions({"line_category": dc.choice(CATEGORY_INSTRUCTIONS, line_category_definitions())})
 
 
@@ -594,10 +598,12 @@ def question_sets() -> Dict[Path, Dict[str, Any]]:
 
 
 def render_question_set(content: Mapping[str, Any]) -> str:
+    """One question-set file's text, as committed: indented JSON, non-ASCII kept, a final newline."""
     return json.dumps(content, indent=2, ensure_ascii=False) + "\n"
 
 
 def write_question_sets() -> List[Path]:
+    """Write ``decisions/line_quality.v1.json`` and ``decisions/line_category.v1.json``; return their paths."""
     QUESTION_DIR.mkdir(exist_ok=True)
     written = []
     for path, content in question_sets().items():
@@ -1016,7 +1022,16 @@ def _env_float(name: str, default: float) -> float:
         return default
 
 
+def default_config_path() -> Path:
+    """``LANGID_CONFIG``, else ``setup/config.txt``: the config file the service and the batch stages read."""
+    # The rule of tool_limits.config_path(), written out rather than imported: importing tool_limits
+    # checks every limit variable in the environment, and a malformed one this tool never reads would
+    # stop it. tests/test_decide_lines.py keeps the two in step.
+    return Path(os.getenv("LANGID_CONFIG", str(_ROOT / "setup" / "config.txt")))
+
+
 def build_parser() -> argparse.ArgumentParser:
+    """The command line; ``--config`` defaults to ``LANGID_CONFIG`` as read when the parser is built."""
     parser = argparse.ArgumentParser(
         description="Tag the lines a decision model would be asked about, and ask it (#10)."
     )
@@ -1024,7 +1039,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--input", type=Path, help="a DOC_LINE_CATEG directory or one CSV")
     parser.add_argument("--recursive", action="store_true")
     parser.add_argument("--out-dir", type=Path)
-    parser.add_argument("--config", type=Path, default=_ROOT / "setup" / "config.txt")
+    parser.add_argument(
+        "--config",
+        type=Path,
+        default=default_config_path(),
+        help="the constants and languages to score with ($LANGID_CONFIG, else setup/config.txt)",
+    )
     parser.add_argument("--gold", type=Path, help="a gold sidecar (file,page_num,line_num,gold_categ): only its lines")
     parser.add_argument("--workers", type=int, default=1, help="documents scored in parallel (selection only)")
     parser.add_argument("--margin", type=float, default=0.05, help="S3: distance to the band edges")
@@ -1049,6 +1069,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
+    """Write the question sets, tag the lines, or (``--decide``) ask the model; returns the exit status."""
     parser = build_parser()
     args = parser.parse_args(argv)
     if args.write_question_sets:
@@ -1059,6 +1080,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         parser.error("--input and --out-dir are required (or --write-question-sets)")
     if (args.accept_at is None) != (args.review_below is None):
         parser.error("--accept-at and --review-below go together")
+    # Checked before any request: decision_client.lane() refuses a --review-below above --accept-at only
+    # when it meets the first answer, after the model has been called, and takes a threshold outside
+    # [0, 1], where no probability lies, without a word.
+    if args.accept_at is not None:
+        if not (0 <= args.accept_at <= 1 and 0 <= args.review_below <= 1):
+            parser.error("--accept-at and --review-below are probabilities in [0, 1]")
+        if args.review_below > args.accept_at:
+            parser.error("--review-below must not exceed --accept-at")
     if args.sample_rate is not None and not 0 < args.sample_rate <= 1:
         parser.error("--sample-rate is a share in (0, 1]")
     inputs = input_files(args.input, args.recursive)
@@ -1077,6 +1106,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
 
 def main_decide(args: argparse.Namespace, parser: argparse.ArgumentParser, inputs: Sequence[Path]) -> int:
+    """The ``--decide`` run: ask the model, write the sidecar, its summary and the paradata; returns 0."""
     client = dc.DecisionClient(
         args.url, args.model, timeout_s=args.timeout, retries=args.retries, use_env_proxy=not args.no_proxy
     )

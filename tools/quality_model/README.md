@@ -111,7 +111,7 @@ python tools/quality_model/report_correction_delta.py \
     --model Qwen/Qwen2.5-0.5B --fasttext lid.176.bin
 ```
 
-#### Pointing korektor somewhere else
+### Pointing korektor somewhere else
 
 The `korektor-rest` backend is an **attachable backing service** (12-factor IV,
 [atrium-project#63](https://github.com/ufal/atrium-project/issues/63)): reach a
