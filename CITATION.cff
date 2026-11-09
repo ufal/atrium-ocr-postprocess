@@ -1,6 +1,18 @@
 cff-version: 1.2.0
 message: "If you use this software, please cite it as below."
-title: "ATRIUM's OCR-output postprocessor: a tool to extract contents, fix word splits, and categorize textlines by language & severity of OCR errors, for ALTO XML and other OCR and text-bearing formats."
+title: "ATRIUM ocr-postprocess: text-line extraction in reading order with de-hyphenation, and language and quality categorisation of lines from ALTO XML and other OCR and text-bearing formats"
+abstract: >-
+  ocr-postprocess reads the text that OCR (text recognition) produced from scanned documents, or the
+  text in other files, and splits it into lines in reading order. It gives every line a language and a
+  quality score, and labels it Clear, Noisy, Trash, Non-text or Empty. Use it to decide which pages
+  can go on to language processing, which lines need correcting, and which pages need another OCR
+  pass. It is stage 2 of the ATRIUM chain.
+keywords:
+  - "OCR post-processing"
+  - "ALTO XML"
+  - "reading order"
+  - "OCR quality estimation"
+  - "language identification"
 version: "1.15.4-beta"
 date-released: "2026-11-06"
 authors:
