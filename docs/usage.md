@@ -659,13 +659,18 @@ compared with `gold_categ`.
 [decision_client.py](../decision_client.py) (vendored from page-classification). The model gets the text only: the
 line, its `original_text` when that differs, up to two non-empty lines before and after it on the same page, and
 FastText's raw label. No rule signal is sent. Every line asked (all scored lines, or those `--gold`, `--tags-only`
-and `--sample-rate` leave) gets the questions of [decisions/line_quality.v1.json](../decisions/line_quality.v1.json):
+and `--sample-rate` leave) gets the questions of [decisions/line_quality.v2.json](../decisions/line_quality.v2.json):
 
 * ten yes/no degradation factors, each a reader's view of what a rule detector measures: stray symbols, digits in
   words, repeated characters, too few vowels, letter strings that are not words, misplaced capitals, misread letters,
-  split or merged words, a mirrored scan, handwriting read as print;
+  split or merged words, letter shapes no word uses (`f_inverted_letters`, what an upside-down or mirrored line
+  gives), nearly every letter wrong (`f_script_misread`, what handwriting read as print gives);
 * `f_foreign`: another language than Czech or Slovak, context for S4 rather than damage;
 * a score from 0 (garbage) to 4 (clean).
+
+Every question is about the text. The page's orientation and its script are its form, read from the image by
+atrium-page-classification; the two symptom factors name a pattern in the text and assert nothing about the page
+([atrium-project#83](https://github.com/ufal/atrium-project/issues/83)).
 
 A line tagged S1–S5 is also asked, in the same request, the category choice of
 [decisions/line_category.v1.json](../decisions/line_category.v1.json): `Clear`, `Noisy`, `Trash` or `Non-text`, with

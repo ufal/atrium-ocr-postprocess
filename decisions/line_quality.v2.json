@@ -1,11 +1,12 @@
 {
   "name": "line_quality",
-  "version": 1,
+  "version": 2,
   "generated_by": "tools/decide_lines.py --write-question-sets",
   "state": {
     "task": "Judge the OCR text of `line`, one line recognised from a scanned page of an archaeological report or related material from a Czech archive (1920–2020). `before` and `after` are its neighbours on the page."
   },
-  "source": "#10 plan, Phase B (2026-11-08): the factors mirror the rule detectors of docs/reference/categorization_rules.md",
+  "scope": "text quality only: what the OCR text of the line shows. The page's orientation and script are its form, read from the image by atrium-page-classification (B4 orientation, B3 elements); f_inverted_letters and f_script_misread name patterns in the text and assert nothing about the page",
+  "source": "#10 plan, Phase B (2026-11-08; v2 2026-11-09, the page-level factors reworded as text symptoms): the factors mirror the rule detectors of docs/reference/categorization_rules.md",
   "questions": {
     "f_symbols": {
       "type": "noul",
@@ -39,13 +40,13 @@
       "type": "noul",
       "instructions": "Are words broken into fragments, or run together without spaces?"
     },
-    "f_mirrored": {
+    "f_inverted_letters": {
       "type": "noul",
-      "instructions": "Does `line` look like a mirrored or upside-down scan read as text (many w, x, q or unlikely letter shapes)?"
+      "instructions": "Is `line` made of letter shapes and combinations that no word uses (many w, x, q, or symbols in place of letters), as OCR gives for text it read upside down or mirrored?"
     },
-    "f_handwriting": {
+    "f_script_misread": {
       "type": "noul",
-      "instructions": "Does `line` look like handwriting that was read as print, so most letters are wrong?"
+      "instructions": "Are nearly all letters of `line` wrong while its word lengths and spacing still look like writing, as OCR gives when it reads handwriting as print?"
     },
     "f_foreign": {
       "type": "noul",
@@ -72,8 +73,8 @@
     "f_case",
     "f_misread_letters",
     "f_split_merged",
-    "f_mirrored",
-    "f_handwriting"
+    "f_inverted_letters",
+    "f_script_misread"
   ],
   "context": [
     "f_foreign"
@@ -142,7 +143,7 @@
         "fused_words"
       ]
     },
-    "f_mirrored": {
+    "f_inverted_letters": {
       "rules": [
         "rule_inverted",
         "rule_wqx_rot"
@@ -152,5 +153,5 @@
       ]
     }
   },
-  "schema_digest": "dc723b675e59d02eb206225b761a2c0f0155944726dc432bf4ab204c39dcabb6"
+  "schema_digest": "7bac738ed2d535808b180b1a6268c414fdd252580c312a771173f2aa5a16a66a"
 }

@@ -45,16 +45,22 @@ Run it from the repository root::
 **The decision run (``--decide``, offline, shadow mode).** The model reads the text only: ``line``,
 the two lines before and after it on the same page, and FastText's raw label; no rule signal is
 sent. Every scored line (``--gold``: every gold line; ``--tags-only``: the S1–S5 lines;
-``--sample-rate``: a reproducible share) is asked ``decisions/line_quality.v1.json``:
+``--sample-rate``: a reproducible share) is asked ``decisions/line_quality.v2.json``:
 
 * ten yes/no *degradation factors* (``FACTORS``), each the reader's view of what a rule detector
   measures (``RULE_VIEW``): stray symbols, digits in words, repeated characters, too few vowels,
-  invented letter strings, misplaced capitals, misread letters, split or merged words, a mirrored
-  scan, handwriting read as print;
+  invented letter strings, misplaced capitals, misread letters, split or merged words, letter
+  shapes no word uses (what an upside-down or mirrored line gives), nearly every letter wrong (what
+  handwriting read as print gives);
 * ``f_foreign`` (another language than Czech or Slovak), context for S4, not a degradation;
 * ``quality``, a ``score`` from 0 (garbage) to 4 (clean); ``quality`` in the table is its
   expectation / 4. ``damage_index`` is the mean probability of the ten factors, computed here as a
   check on the score.
+
+**Text, never the page.** Every question is about what the OCR text shows. The page's orientation
+and its script (printed, typed, handwritten) are its form, read from the image by
+atrium-page-classification (its B4 orientation and B3 elements); the two symptom factors name a
+pattern in the text and assert nothing about the page (ufal/atrium-project#83, "Form and content").
 
 A line tagged S1–S5 is also asked ``decisions/line_category.v1.json``, the category choice
 (``Clear``, ``Noisy``, ``Trash``, ``Non-text``), in the same request. Answers go to a sidecar only::
@@ -489,7 +495,8 @@ def _report(total, inputs, config_path, gold_path, margin, foreign_min) -> Dict[
 # ── the decision questions (#10 Phase B) ──────────────────────────────────────────────────────
 
 QUESTION_DIR = _ROOT / "decisions"
-QUALITY_SET_FILE = QUESTION_DIR / "line_quality.v1.json"
+QUALITY_SET_FILE = QUESTION_DIR / "line_quality.v2.json"
+QUALITY_VERSION = 2
 CATEGORY_SET_FILE = QUESTION_DIR / "line_category.v1.json"
 
 #: What the state says about every line. The rules' signals are never sent: the model judges the text.
@@ -509,10 +516,17 @@ FACTORS: Dict[str, str] = {
     "f_misread_letters": "Are some letters misread in otherwise recognisable words "
     "(e.g. `fraament okraie` for `fragment okraje`, or lost diacritics)?",
     "f_split_merged": "Are words broken into fragments, or run together without spaces?",
-    "f_mirrored": "Does `line` look like a mirrored or upside-down scan read as text "
-    "(many w, x, q or unlikely letter shapes)?",
-    "f_handwriting": "Does `line` look like handwriting that was read as print, so most letters are wrong?",
+    "f_inverted_letters": "Is `line` made of letter shapes and combinations that no word uses (many w, x, q, "
+    "or symbols in place of letters), as OCR gives for text it read upside down or mirrored?",
+    "f_script_misread": "Are nearly all letters of `line` wrong while its word lengths and spacing still look "
+    "like writing, as OCR gives when it reads handwriting as print?",
 }
+#: What the quality set is about, recorded in it: the text, not the page (ufal/atrium-project#83).
+QUALITY_SCOPE = (
+    "text quality only: what the OCR text of the line shows. The page's orientation and script are its form, "
+    "read from the image by atrium-page-classification (B4 orientation, B3 elements); f_inverted_letters and "
+    "f_script_misread name patterns in the text and assert nothing about the page"
+)
 #: Context, not a degradation: a clean foreign line is not damaged (S4).
 CONTEXT: Dict[str, str] = {"f_foreign": "Is `line` written in a language other than Czech or Slovak?"}
 QUALITY_INSTRUCTIONS = "How good is the OCR text of `line`?"
@@ -529,7 +543,7 @@ CATEGORY_INSTRUCTIONS = "Which category describes `line`?"
 ASKED_CATEGORIES = ("Clear", "Noisy", "Trash", "Non-text")
 
 #: Which fired rules and detector columns make a factor "seen by the rules". Not gold: the rules'
-#: view, to measure agreement against. ``f_handwriting`` has none.
+#: view, to measure agreement against. ``f_script_misread`` has none.
 RULE_VIEW: Dict[str, Tuple[Tuple[str, ...], Tuple[str, ...]]] = {
     # factor: (rules that fired, detector columns > 0 or true)
     "f_symbols": (("rule_garbage_density",), ("_strange_symbols",)),
@@ -540,7 +554,7 @@ RULE_VIEW: Dict[str, Tuple[Tuple[str, ...], Tuple[str, ...]]] = {
     "f_case": (("rule_mid_uppercase",), ("upper",)),
     "f_misread_letters": (("rule_damaged_token",), ("damaged",)),
     "f_split_merged": (("rule_fragment_tokens",), ("fused_words",)),
-    "f_mirrored": (("rule_inverted", "rule_wqx_rot"), ("weird_wx",)),
+    "f_inverted_letters": (("rule_inverted", "rule_wqx_rot"), ("weird_wx",)),
 }
 
 
@@ -576,10 +590,11 @@ def question_sets() -> Dict[Path, Dict[str, Any]]:
     return {
         QUALITY_SET_FILE: {
             "name": "line_quality",
-            "version": 1,
+            "version": QUALITY_VERSION,
             **common,
-            "source": "#10 plan, Phase B (2026-11-08): the factors mirror the rule detectors of "
-            "docs/reference/categorization_rules.md",
+            "scope": QUALITY_SCOPE,
+            "source": "#10 plan, Phase B (2026-11-08; v2 2026-11-09, the page-level factors reworded as text "
+            "symptoms): the factors mirror the rule detectors of docs/reference/categorization_rules.md",
             "questions": quality,
             "degradation_factors": list(FACTORS),
             "context": list(CONTEXT),
@@ -603,7 +618,7 @@ def render_question_set(content: Mapping[str, Any]) -> str:
 
 
 def write_question_sets() -> List[Path]:
-    """Write ``decisions/line_quality.v1.json`` and ``decisions/line_category.v1.json``; return their paths."""
+    """Write ``decisions/line_quality.v2.json`` and ``decisions/line_category.v1.json``; return their paths."""
     QUESTION_DIR.mkdir(exist_ok=True)
     written = []
     for path, content in question_sets().items():

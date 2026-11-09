@@ -256,6 +256,18 @@ def test_the_quality_set_has_the_factors_the_context_and_a_five_level_score():
     assert len(dl.line_questions(True)) == len(quality) + 1 <= dc.MAX_QUESTIONS
 
 
+def test_the_quality_set_asks_about_the_text_never_the_page():
+    # atrium-project#83: the page's orientation and script are its form, read from the image by
+    # page-classification; this tool reads text, so its questions name patterns in the text only
+    content = dl.question_sets()[dl.QUALITY_SET_FILE]
+    assert content["version"] == 2 and content["scope"].startswith("text quality only")
+    assert "f_mirrored" not in dl.FACTORS and "f_handwriting" not in dl.FACTORS
+    for qid, text in dl.FACTORS.items():
+        assert not text.startswith("Does `line` look like"), qid
+        assert "scan" not in text and "page" not in text, qid
+    assert sorted(p.name for p in dl.QUESTION_DIR.glob("line_quality.v*.json")) == [dl.QUALITY_SET_FILE.name]
+
+
 def test_the_category_choice_is_the_vocabularys_without_empty():
     import atrium_vocab
 
@@ -274,13 +286,13 @@ def test_every_rule_view_names_real_rules_and_columns():
             assert f'_fire("{rule}")' in source, rule
         for column in columns:
             assert column == "_strange_symbols" or column in sample, column
-    assert set(dl.FACTORS) - set(dl.RULE_VIEW) == {"f_handwriting"}
+    assert set(dl.FACTORS) - set(dl.RULE_VIEW) == {"f_script_misread"}
 
 
 def test_rule_view_reads_fired_rules_detector_columns_and_the_language():
     clean = {"text": "pohled na sondu", "original_lang": "ces_Latn", "orig_lang_score": "0.99"}
     view = dl.rule_view(clean, [])
-    assert view["f_handwriting"] == "" and set(view.values()) <= {"0", ""}
+    assert view["f_script_misread"] == "" and set(view.values()) <= {"0", ""}
     assert dl.rule_view(clean, ["rule_bigram_run"])["f_repeated"] == "1"
     assert dl.rule_view({**clean, "fused_words": "2"}, [])["f_split_merged"] == "1"
     assert dl.rule_view({**clean, "damaged": "True"}, [])["f_misread_letters"] == "1"

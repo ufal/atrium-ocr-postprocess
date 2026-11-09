@@ -2027,3 +2027,24 @@ Documentation only; no code, test or configuration change.
     (torch, sklearn, optuna, SALib), 2 xfailed;
   * ruff; the hub's `docs_check.py`.
 * **Yours:** push it together with the hub re-pin (atrium-project round 3). No version bump.
+
+## 2026-11-09 — #10: text quality only; the quality set v2 (atrium-project#83)
+
+* **Asked (K4TEL):** terms about a document's form and terms about its content are two groups, never mixed. This
+  repository gets text only, page-classification images only. The schemes are to suit a historical documentary
+  archive.
+* **Found:** two of v1's factors asked a text-only model about the page: `f_mirrored` ("a mirrored or upside-down
+  scan") and `f_handwriting` ("handwriting read as print"). The page's orientation and script are its form,
+  page-classification's B4 and B3 answers from the image.
+* **Written (not pushed):**
+  * **`tools/decide_lines.py`:** the two become text symptoms, `f_inverted_letters` (letter shapes no word uses)
+    and `f_script_misread` (nearly every letter wrong, word shapes kept); `RULE_VIEW` follows; `QUALITY_SCOPE`, written
+    into the set as `scope`; the docstring.
+  * **`decisions/line_quality.v2.json`** (digest `7bac738e…`), from `--write-question-sets`; v1 (`dc723b67…`, never
+    run) deleted. `decisions/line_category.v1.json` is byte for byte unchanged.
+  * **Tests:** `tests/test_decide_lines.py`, the renamed factor and a new test that the set asks about the text and
+    never the page, with one quality set committed.
+  * **Docs:** `docs/usage.md`, the factor list and a note on the page's form.
+* **Checked:** the full suite, 2,396 passed, 13 skipped, 2 xfailed; ruff check and format.
+* **Records:** `plans/10.plan.md`, `digests/10.digest.md`.
+* Committed locally, not pushed; files delivered as per-repo archives.

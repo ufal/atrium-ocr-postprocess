@@ -2,14 +2,13 @@ cff-version: 1.2.0
 message: "If you use this software, please cite it as below."
 title: "ATRIUM ocr-postprocess"
 abstract: >-
-  ocr-postprocess reads the text that OCR (text recognition) produced from scanned documents, or the
-  text in other files, and splits it into lines in reading order. It gives every line a language and a
-  quality score, and labels it Clear, Noisy, Trash, Non-text or Empty. Use it to decide which pages
-  can go on to language processing, which lines need correcting, and which pages need another OCR
-  pass. It is stage 2 of the ATRIUM chain.
+  ocr-postprocess reads the text that text recognition (OCR) produced from scanned documents, or the
+  text of other files, and splits it into lines in reading order. It gives every line a language and a
+  quality category, so that readable text can go on to language processing, while lines that need
+  correcting and pages that need another recognition pass can be found.
 keywords:
   - "OCR post-processing"
-  - "ALTO XML"
+  - "historical documents"
   - "reading order"
   - "OCR quality estimation"
   - "language identification"
