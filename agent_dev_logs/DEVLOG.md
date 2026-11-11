@@ -1,5 +1,5 @@
 # 📓 atrium-ocr-postprocess — agent_dev_logs/DEVLOG.md (timeline index)
-> _OCR/ALTO post-processing and line categorization; the successor of atrium-alto-postprocess since 2026-10-01 (#56 there; the open issues were transferred and renumbered). Open issues: #4 (fine-tuning the quality model, deferred past the pilot) and #10 (decision models on ambiguous lines, opened 2026-11-06; a sub-issue of atrium-project#83). #9 (the scheduled-smoke failure of 11-04, scipy) closed 2026-11-04; #8 closed 2026-10-26, #2 2026-10-22, #5 2026-10-20, #1 2026-10-16, #3 2026-10-13 and #6 2026-10-07. **Pilot release: v1.15.3-beta** (`9ab887a`, 2026-11-04; immutable, with `images.json`; atrium-project#77). Hub workflows pinned to `51aad6c` (`v1`). Latest entry: 2026-11-06 (evening). #3's parameter stages after 2026-10-09, up to `v1.11.0-beta`, are recorded in its digest and plan, not here. Entries before 2026-10-01 use atrium-alto-postprocess's issue numbers._
+> _OCR/ALTO post-processing and line categorization; the successor of atrium-alto-postprocess since 2026-10-01 (#56 there; the open issues were transferred and renumbered). Open issues: #4 (fine-tuning the quality model, deferred past the pilot phase) and #10 (decision models on ambiguous lines, opened 2026-11-06; a sub-issue of atrium-project#83; parked during the pilot phase since 2026-11-11). This repository's part of doc-schema-v2 (atrium-project, issue to be opened): `plans/doc-schema-v2.plan.md`. #9 (the scheduled-smoke failure of 11-04, scipy) closed 2026-11-04; #8 closed 2026-10-26, #2 2026-10-22, #5 2026-10-20, #1 2026-10-16, #3 2026-10-13 and #6 2026-10-07. **Starting set of the pilot phase: v1.15.3-beta** (`9ab887a`, 2026-11-04; immutable, with `images.json`; atrium-project#77). Hub workflows pinned to `51aad6c` (`v1`). Latest entry: 2026-11-11. #3's parameter stages after 2026-10-09, up to `v1.11.0-beta`, are recorded in its digest and plan, not here. Entries before 2026-10-01 use atrium-alto-postprocess's issue numbers._
 > _Per-issue detail: `digests/{id}.digest.md` · `plans/{id}.plan.md` · `issues/` exports (source of truth). Cross-repo/hub history lives in `ufal/atrium-project/agent_dev_logs/DEVLOG.md` (deduplicated out of this file)._
 
 ## 2026-03-13
@@ -2048,3 +2048,36 @@ Documentation only; no code, test or configuration change.
 * **Checked:** the full suite, 2,396 passed, 13 skipped, 2 xfailed; ruff check and format.
 * **Records:** `plans/10.plan.md`, `digests/10.digest.md`.
 * Committed locally, not pushed; files delivered as per-repo archives.
+
+## 2026-11-11 — The output contract: this repository's part of doc-schema-v2 (atrium-project, issue to be opened)
+
+* **Asked (K4TEL):** the logs after the meeting of 11 November (ARÚP's output contract,
+  [meeting digest](https://github.com/ufal/atrium-project/blob/test/agent_dev_logs/digests/project_state_1111.md)):
+  this repository's slice of the consolidated schema issue, #10 and #4 refreshed, superseded statements marked. ATR's
+  output is to be accepted as JSON with content blocks, read in the correct order and processed as usual text.
+* **Decided in session:** plans only this round; the schema issue is not opened yet (placeholder name
+  `doc-schema-v2`); page classification runs on every PDF and image, bundled with the ATR call; digital-convert's
+  text-layer verdicts become a marker set of their own (`decode`, `decode_score`), and `categ` is this repository's
+  only.
+* **Found:**
+  * no docproc reader exists; the generic JSON reader keeps no geometry and no order, and `TextPage` has no geometry;
+  * ALTO TextLine boxes are read and dropped (`service/utils.py`); `pages[].ocr.engine` is run data (D9);
+  * digital-convert's `Garbage`/`Inverted` lines are never re-scored (`DECODE_VERDICTS`, `document_hook.py:538`);
+  * the page merge replaces every line of a `needs_ocr` page (`replace_page_rows()`, called at
+    `document_hook.py:519`); D14 replaces only the lines that do not decode;
+  * `source.sha256` and SHA-256 file entities; `cleaned_lines.json` named in the paradata although not stored;
+  * `trimmed`/`skipped` limit notes and the `partial` batch status, which D13 turns into refusals; the 99999
+    placeholder for a line that cannot be scored is `text_util.PPL_FAILED` (Q7).
+* **Written here (not pushed):**
+  * **`plans/doc-schema-v2.plan.md`:** new; the fields written here, seven tasks with their code (the docproc
+    reader, the record from ATR, the D14 merge, every line scored, SHA-512, limits, run data), the paradata of both
+    actions, what it depends on (hub tasks, Q1–Q5, Q7), the superseded statements (closed issues' files listed, not
+    edited), what is parked.
+  * **`plans/10.plan.md`, `digests/10.digest.md`:** parked during the pilot phase; Phase A's "proceeds" and the next
+    step marked superseded; the existing content kept as the record.
+  * **`plans/4.plan.md`, `digests/4.digest.md`:** still deferred; the licence-ranking note marked superseded (D2); a
+    fine-tuned scorer would score born-digital lines too (D17).
+  * **`DEVLOG.md`:** the header (open issues, the starting set of the pilot phase, the latest entry, stale since
+    11-06) and this entry.
+* **Not posted:** nothing on #4 or #10; the questions are in the hub plan's list (Q2–Q5, Q7).
+* Plans only; no code changed. Files delivered as full files.
