@@ -1,5 +1,5 @@
 # 📓 atrium-ocr-postprocess — agent_dev_logs/DEVLOG.md (timeline index)
-> _OCR/ALTO post-processing and line categorization; the successor of atrium-alto-postprocess since 2026-10-01 (#56 there; the open issues were transferred and renumbered). Open issues: #4 (fine-tuning the quality model, deferred past the pilot phase) and #10 (decision models on ambiguous lines, opened 2026-11-06; a sub-issue of atrium-project#83; parked during the pilot phase since 2026-11-11). This repository's part of doc-schema-v2 (atrium-project, issue to be opened): `plans/doc-schema-v2.plan.md`. #9 (the scheduled-smoke failure of 11-04, scipy) closed 2026-11-04; #8 closed 2026-10-26, #2 2026-10-22, #5 2026-10-20, #1 2026-10-16, #3 2026-10-13 and #6 2026-10-07. **Starting set of the pilot phase: v1.15.3-beta** (`9ab887a`, 2026-11-04; immutable, with `images.json`; atrium-project#77). Hub workflows pinned to `51aad6c` (`v1`). Latest entry: 2026-11-11. #3's parameter stages after 2026-10-09, up to `v1.11.0-beta`, are recorded in its digest and plan, not here. Entries before 2026-10-01 use atrium-alto-postprocess's issue numbers._
+> _OCR/ALTO post-processing and line categorization; the successor of atrium-alto-postprocess since 2026-10-01 (#56 there; the open issues were transferred and renumbered). Open issues: #4 (fine-tuning the quality model, deferred past the pilot phase) and #10 (decision models on ambiguous lines, opened 2026-11-06; a sub-issue of atrium-project#83; parked during the pilot phase since 2026-11-11). This repository's part of doc-schema-v2 (atrium-project#84, opened 2026-11-12): `plans/84.plan.md` — the record builder and scorer from 12 November. #9 (the scheduled-smoke failure of 11-04, scipy) closed 2026-11-04; #8 closed 2026-10-26, #2 2026-10-22, #5 2026-10-20, #1 2026-10-16, #3 2026-10-13 and #6 2026-10-07. **Starting set of the pilot phase: v1.15.3-beta** (`9ab887a`, 2026-11-04; immutable, with `images.json`; atrium-project#77). Hub workflows pinned to `51aad6c` (`v1`). Latest entry: 2026-11-12. #3's parameter stages after 2026-10-09, up to `v1.11.0-beta`, are recorded in its digest and plan, not here. Entries before 2026-10-01 use atrium-alto-postprocess's issue numbers._
 > _Per-issue detail: `digests/{id}.digest.md` · `plans/{id}.plan.md` · `issues/` exports (source of truth). Cross-repo/hub history lives in `ufal/atrium-project/agent_dev_logs/DEVLOG.md` (deduplicated out of this file)._
 
 ## 2026-03-13
@@ -2080,4 +2080,28 @@ Documentation only; no code, test or configuration change.
   * **`DEVLOG.md`:** the header (open issues, the starting set of the pilot phase, the latest entry, stale since
     11-06) and this entry.
 * **Not posted:** nothing on #4 or #10; the questions are in the hub plan's list (Q2–Q5, Q7).
+* Plans only; no code changed. Files delivered as full files.
+
+## 2026-11-12 — atrium-project#84: ocr-postprocess becomes the record builder; rules 1–8
+
+* **Asked (K4TEL):** align the logs with ARÚP's output contract of 12 November (the .docx of that day, replacing the
+  meeting document of 10 November) and with David Novák's comments of 11-12 (atrium-project#84 opened, #13, #16,
+  #78); `test` fetched first (all seven working branches = `test`).
+  Anchor: [contract digest](https://github.com/ufal/atrium-project/blob/test/agent_dev_logs/digests/project_state_1211.md) · [hub plan of #84](https://github.com/ufal/atrium-project/blob/test/agent_dev_logs/plans/84.plan.md).
+* **Decided in session:** the tool slices are named `plans/84.plan.md`; the translator keeps `amcr-fields.txt` as a
+  documented example that nothing loads (no default list, D34); the hub's #84 plan carries a reply draft agreeing on
+  points 1 and 2.
+* **Found:**
+  * the document passes the evaluated batch runs — `apply_page_perplexity_blend()` (`classify_TEXT.py:700`) and
+    `apply_document_postprocessing()` (835) — are called only in the batch's `process_document()` (1166, 1173), not
+    by the service or `record_scoring.py` (rule 4);
+  * `record_scoring.py:144` and `document_hook.py:591` still skip `Garbage`/`Inverted` lines (rule 2);
+  * `POSITIONAL_BLOCKS` (`document_hook.py:69`) includes `tables`, which leaves the record (D26).
+* **Written here (not pushed):**
+  * **`plans/84.plan.md`** (was `plans/doc-schema-v2.plan.md`, rewritten): the docproc reader, the record builder
+    with H15's page check, the merge of two outputs (H6, D21), scoring rules 1–8, ALTO out of the pipeline path, the
+    PCSS converter's owner as a hub question;
+  * **`plans/4.plan.md`, `digests/4.digest.md`:** 11-12 sections: rule 8 freezes the scorer for the pilot;
+  * **`DEVLOG.md`:** the header and this entry.
+* **Not posted:** nothing on GitHub; questions stay on the hub's list for the next meeting.
 * Plans only; no code changed. Files delivered as full files.
