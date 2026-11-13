@@ -1,10 +1,10 @@
 """tests/test_score_record.py — `POST /score_record` and `document_hook.write_scores()`.
 
-atrium-digital-convert#4 W3: the common line-quality model scores a record another tool
-originated. A born-digital record's lines are digital-convert's; whether their text reads is
-this repository's question, and the pilot wants one answer for scanned and born-digital
-documents alike. The record gets the scoring fields only (`atrium_document.SCORING_FIELDS`),
-on the rows it already has; digital-convert's decode verdict (`Garbage`, `Inverted`) stands.
+atrium-digital-convert#4 W3, atrium-project#84 (D18): the common line-quality model scores a
+record's lines, one model and one band scheme whatever their text source. The record gets the
+scoring fields only (`atrium_document.SCORING_FIELDS`), on the rows it already has, and every line
+with text is scored: digital-convert's decode verdict is a docproc flag, not a reason to skip a
+line (rule 2). An empty page gets no page score (rule 7).
 
 The classifier is patched (`text_manager.classify_line_texts`), so no model is loaded; what
 is under test is the plumbing: which lines are scored, how answers map back onto rows, what
@@ -27,7 +27,7 @@ from service.text_api import app
 
 client = TestClient(app)
 _SPEC = atrium_openapi.load(Path(__file__).resolve().parent.parent / "service" / "openapi.json")
-SHA256 = "9" * 64
+SHA512 = "9" * 128
 
 
 def _answer(text: str, category: str, score: float) -> dict:
@@ -57,28 +57,37 @@ def _fake_classifier(texts, notes=None):
     return [_answer(t, "Clear", 0.9) if "ok" in t else _answer(t, "Trash", 0.1) for t in texts]
 
 
-def _digital_record(needs_ocr: bool = False) -> dict:
-    """A born-digital record as digital-convert writes it (built by the digital-convert originator)."""
-    doc = DocumentRecord("C-202000543A-DT-27", "digital-convert")
-    doc.set_source(SHA256, filename="report.pdf", media_type="application/pdf", origin="digital-born-pdf")
+def _line(page: str, line: int, text: str, block: str, bbox=None) -> dict:
+    row = {"page": page, "line": line, "text": text, "block": block, "text_source": "text-layer"}
+    row["bbox_precision"] = "measured" if bbox else "absent"
+    if bbox:
+        row["bbox"] = bbox
+    return row
+
+
+def _digital_record() -> dict:
+    """A born-digital record as the record builder writes it (`build_record.py`, atrium-project#84):
+    four pages, the last one empty."""
+    doc = DocumentRecord("C-202000543A-DT-27", "ocr-postprocess")
+    doc.set_source(sha512=SHA512, filename="report.pdf", media_type="application/pdf", origin="digital", page_count=4)
     doc.merge_block(
         "pages",
         [
-            {"page": "i", "page_index": 1, "needs_ocr": needs_ocr},
-            {"page": "1", "page_index": 2},
-            {"page": "2", "page_index": 3},
+            {"page_index": 1, "page": "i", "content_status": "text"},
+            {"page_index": 2, "page": "1", "content_status": "text"},
+            {"page_index": 3, "page": "2", "content_status": "text"},
+            {"page_index": 4, "page": "3", "content_status": "empty"},
         ],
-        key_fields=["page"],
     )
     doc.merge_block(
         "lines",
         [
-            {"page": "i", "line": 0, "text": "ok: Zpráva o výzkumu", "bbox": [72, 64, 388, 80]},
-            {"page": "i", "line": 1, "text": "sondI", "categ": "Garbage"},
-            {"page": "i", "line": 2, "text": "xx#&@"},
-            {"page": "1", "line": 0, "text": "ok: Hradiště"},
-            {"page": "1", "line": 1, "text": "   "},
-            {"page": "2", "line": 0, "text": "Ä‚Ä", "categ": "Inverted"},
+            _line("i", 1, "ok: Zpráva o výzkumu", "p1-b1", bbox=[72, 64, 388, 80]),
+            _line("i", 2, "sondI", "p1-b2"),  # digital-convert flagged it Garbage in docproc
+            _line("i", 3, "xx#&@", "p1-b2"),
+            _line("1", 1, "ok: Hradiště", "p2-b1"),
+            _line("1", 2, "   ", "p2-b1"),
+            _line("2", 1, "Ä‚Ä", "p3-b1"),  # flagged Inverted in docproc
         ],
         key_fields=["page", "line"],
     )
@@ -102,52 +111,58 @@ def classifier():
 # ── the endpoint ──────────────────────────────────────────────────────────────────────────────
 
 
-def test_a_born_digital_record_gets_the_scoring_fields_only(classifier):
+def test_every_line_with_text_gets_the_scoring_fields_only(classifier):
     record = _digital_record()
     response = _post(record)
     assert response.status_code == 200, response.text
     body = response.json()
     atrium_openapi.validate_response(_SPEC, "/score_record", "post", 200, body)
 
-    # exactly the lines with text and no decode verdict, in record order, as they are
-    assert classifier.call_args.args[0] == ["ok: Zpráva o výzkumu", "xx#&@", "ok: Hradiště"]
+    # every line with text, flagged or not (D18 rule 2), in record order, as it is
+    assert classifier.call_args.args[0] == ["ok: Zpráva o výzkumu", "sondI", "xx#&@", "ok: Hradiště", "Ä‚Ä"]
     assert [(e["page"], e["line"], e["category"]) for e in body["cleaned_lines"]] == [
-        ("i", 0, "Clear"),
+        ("i", 1, "Clear"),
         ("i", 2, "Trash"),
-        ("1", 0, "Clear"),
+        ("i", 3, "Trash"),
+        ("1", 1, "Clear"),
+        ("2", 1, "Trash"),
     ]
-    assert [e["line_num"] for e in body["cleaned_lines"]] == [1, 2, 1], "per page"
-    assert {p["page"]: (p["lines_scored"], p["skipped_decode_verdict"], p["skipped_empty"]) for p in body["pages"]} == {
-        "i": (2, 1, 0),
-        "1": (1, 0, 1),
-        "2": (0, 1, 0),
+    assert [e["line_num"] for e in body["cleaned_lines"]] == [1, 2, 3, 1, 1], "per page"
+    assert {p["page"]: (p["lines_scored"], p["skipped_empty"]) for p in body["pages"]} == {
+        "i": (3, 0),
+        "1": (1, 1),
+        "2": (1, 0),
     }
+    assert all("skipped_decode_verdict" not in p for p in body["pages"])
 
     out = body["document_json"]
     validate_document(out)
     lines = {(r["page"], r["line"]): r for r in out["lines"]}
-    assert lines[("i", 0)]["categ"] == "Clear" and lines[("i", 0)]["lang"] == "ces"
-    assert lines[("i", 0)]["text"] == "ok: Zpráva o výzkumu" and lines[("i", 0)]["bbox"] == [72, 64, 388, 80]
-    assert lines[("i", 1)] == {"page": "i", "line": 1, "text": "sondI", "categ": "Garbage"}, "the verdict stands"
-    assert lines[("2", 0)]["categ"] == "Inverted"
-    assert "categ" not in lines[("1", 1)], "a line without text is not scored"
+    assert lines[("i", 1)]["categ"] == "Clear" and lines[("i", 1)]["lang"] == "ces"
+    assert lines[("i", 1)]["text"] == "ok: Zpráva o výzkumu" and lines[("i", 1)]["bbox"] == [72, 64, 388, 80]
+    assert lines[("i", 2)]["categ"] == "Trash" and lines[("2", 1)]["categ"] == "Trash"
+    assert lines[("i", 2)]["block"] == "p1-b2" and lines[("i", 2)]["text_source"] == "text-layer"
+    assert "categ" not in lines[("1", 2)], "a line without text is not scored"
     assert len(out["lines"]) == len(record["lines"]) and len(out["pages"]) == len(record["pages"])
-    pages = {p["page"]: p for p in out["pages"]}
-    assert pages["1"]["quality_band"] == "Clear" and pages["i"]["page_index"] == 1
-    assert "quality_score" not in pages["2"], "nothing scored there, nothing written"
+    pages = {p["page_index"]: p for p in out["pages"]}
+    assert pages[2]["quality_band"] == "Clear" and pages[1]["page"] == "i"
+    assert pages[3]["quality_band"] == "Trash" and "quality_score" not in pages[3], "no Clear or Noisy line"
+    assert not {"quality_score", "quality_band"} & set(pages[4]), "an empty page has no page score (rule 7)"
     assert out["source"] == record["source"] and out["doc_id"] == record["doc_id"]
+    assert "assembled" not in out, "record 2.0: run data is the paradata's"
 
-    stamp = out["assembled"]["blocks"]["lines"]
-    assert (stamp["program"], stamp["contribution"]) == ("ocr-postprocess", "scoring")
-    assert body["paradata"]["@id"] == stamp["run_uuid"]
+    action = body["paradata"]
+    names = [entity.get("name") for entity in action["object"] + action["result"]]
+    assert names == ["atrium/document-json", "atrium/document-json"]
+    assert all(len(entity["sha512"]) == 128 for entity in action["object"] + action["result"])
 
 
 def test_the_pages_field_selects_by_the_records_own_keys(classifier):
     body = _post(_digital_record(), pages="1").json()
-    assert [(e["page"], e["line"]) for e in body["cleaned_lines"]] == [("1", 0)]
+    assert [(e["page"], e["line"]) for e in body["cleaned_lines"]] == [("1", 1)]
     assert [p["page"] for p in body["pages"]] == ["1"]
     lines = {(r["page"], r["line"]): r for r in body["document_json"]["lines"]}
-    assert "categ" not in lines[("i", 0)]
+    assert "categ" not in lines[("i", 1)]
 
 
 def test_a_page_key_the_record_does_not_have_is_422(classifier):
@@ -157,19 +172,23 @@ def test_a_page_key_the_record_does_not_have_is_422(classifier):
     classifier.assert_not_called()
 
 
-def test_an_ocr_record_is_re_scored_as_its_own(classifier):
+def test_a_scored_record_is_re_scored(classifier):
     doc = DocumentRecord("CTX01", "ocr-postprocess")
-    doc.set_source(SHA256, filename="CTX01.alto.xml", origin="ABBYY-ALTO")
-    doc.merge_block("lines", [{"page": "1", "line": 1, "text": "ok", "categ": "Noisy", "quality_score": 0.5}])
+    doc.set_source(sha512=SHA512, filename="CTX01.alto.xml", origin="legacy")
+    doc.merge_block("pages", [{"page_index": 1, "page": "1", "content_status": "text"}])
+    doc.merge_block(
+        "lines",
+        [{"page": "1", "line": 1, "text": "ok", "text_source": "legacy", "categ": "Noisy", "quality_score": 0.5}],
+    )
     body = _post(doc.to_dict()).json()
     line = body["document_json"]["lines"][0]
     assert (line["categ"], line["quality_score"]) == ("Clear", 0.9)
-    assert "contribution" not in body["document_json"]["assembled"]["blocks"]["lines"]
+    assert "assembled" not in body["document_json"]
 
 
 def test_a_record_with_nothing_to_score_comes_back_as_sent(classifier):
     record = _digital_record()
-    record["lines"] = [row for row in record["lines"] if row.get("categ") in ("Garbage", "Inverted")]
+    record["lines"] = [row for row in record["lines"] if not row["text"].strip()]
     body = _post(record).json()
     classifier.assert_not_called()
     assert body["cleaned_lines"] == [] and body["document_json"] == record
@@ -210,7 +229,7 @@ def test_more_pages_than_max_pages_is_413(classifier, monkeypatch):
 def test_a_classifier_that_loses_lines_is_a_500_not_a_misaligned_record(classifier):
     classifier.side_effect = lambda texts, notes=None: _fake_classifier(texts)[:-1]
     response = _post(_digital_record())
-    assert response.status_code == 500 and "answered 2 lines for 3" in response.json()["detail"]
+    assert response.status_code == 500 and "answered 4 lines for 5" in response.json()["detail"]
 
 
 def test_info_lists_the_endpoint():
@@ -226,47 +245,54 @@ def _write(tmp_path, record) -> str:
     return record["doc_id"]
 
 
-def test_write_scores_never_adds_a_row_and_respects_the_verdict(tmp_path):
+def test_write_scores_never_adds_a_row_and_leaves_an_empty_page_unscored(tmp_path):
     record = _digital_record()
     doc_id = _write(tmp_path, record)
     written = document_hook.write_scores(
         str(tmp_path),
         doc_id,
-        "run",
-        pages=[{"page": "i", "quality_score": 0.5}, {"page": "zz", "quality_score": 0.1}],
+        pages=[
+            {"page": "i", "quality_score": 0.5},
+            {"page": "zz", "quality_score": 0.1},
+            {"page": "3", "quality_score": 0.2},  # the empty page
+        ],
         lines=[
-            {"page": "i", "line": 1, "categ": "Clear"},  # Garbage: stands
+            {"page": "i", "line": 2, "categ": "Clear"},
             {"page": "i", "line": 9, "categ": "Clear"},  # no such row
-            {"page": "1", "line": 0, "categ": "Noisy", "quality_score": 0.5},
+            {"page": "1", "line": 1, "categ": "Noisy", "quality_score": 0.5},
         ],
     )
     out = json.loads(Path(written).read_text(encoding="utf-8"))
     lines = {(r["page"], r["line"]): r for r in out["lines"]}
-    assert lines[("i", 1)]["categ"] == "Garbage" and ("i", 9) not in lines
-    assert lines[("1", 0)]["categ"] == "Noisy"
-    assert [p["page"] for p in out["pages"]] == ["i", "1", "2"]
+    assert lines[("i", 2)]["categ"] == "Clear" and ("i", 9) not in lines
+    assert lines[("1", 1)]["categ"] == "Noisy"
+    pages = {p["page_index"]: p for p in out["pages"]}
+    assert list(pages) == [1, 2, 3, 4]
+    assert pages[1]["quality_score"] == 0.5 and "quality_score" not in pages[4]
 
 
 def test_write_scores_refuses_to_write_text(tmp_path):
     doc_id = _write(tmp_path, _digital_record())
     before = (tmp_path / f"{doc_id}.document.json").read_bytes()
     with pytest.raises(ValueError, match=r"not \['text'\]"):
-        document_hook.write_scores(str(tmp_path), doc_id, "run", lines=[{"page": "1", "line": 0, "text": "new"}])
+        document_hook.write_scores(str(tmp_path), doc_id, lines=[{"page": "1", "line": 1, "text": "new"}])
     with pytest.raises(ValueError, match=r"not \['ocr'\]"):
-        document_hook.write_scores(str(tmp_path), doc_id, "run", pages=[{"page": "1", "ocr": {"engine": "x"}}])
+        document_hook.write_scores(str(tmp_path), doc_id, pages=[{"page": "1", "ocr": {"engine": "x"}}])
     assert (tmp_path / f"{doc_id}.document.json").read_bytes() == before
 
 
 def test_write_scores_needs_a_record(tmp_path):
-    assert document_hook.write_scores(str(tmp_path), "absent", "run", lines=[{"page": "1", "line": 0}]) is None
-    assert document_hook.write_scores("", "absent", "run") is None
+    assert document_hook.write_scores(str(tmp_path), "absent", lines=[{"page": "1", "line": 1}]) is None
+    assert document_hook.write_scores("", "absent") is None
 
 
-def test_the_scoring_fields_are_the_shared_modules():
-    from atrium_document import SCORING_FIELDS
+def test_the_scoring_fields_are_record_fields():
+    """The fields /score_record writes are the record builder's (D18: it owns the line scores)."""
+    from atrium_document import BLOCK_FIELD_OWNERS, RECORD_BUILDER
 
-    assert set(document_hook.SCORE_LINE_FIELDS) == SCORING_FIELDS["lines"]
-    assert set(document_hook.SCORE_PAGE_FIELDS) == SCORING_FIELDS["pages"]
+    assert RECORD_BUILDER == document_hook.PROGRAM_NAME
+    assert set(document_hook.SCORE_LINE_FIELDS) <= set(BLOCK_FIELD_OWNERS["lines"][RECORD_BUILDER])
+    assert set(document_hook.SCORE_PAGE_FIELDS) <= set(BLOCK_FIELD_OWNERS["pages"][RECORD_BUILDER])
 
 
 # ── 2026-10-16: the CPU pre-filter's answers, the limits as /info reports them, the licence ─────
@@ -280,12 +306,12 @@ def _prefiltered(text: str, category: str = "Non-text") -> dict:
 
 
 def test_a_line_the_prefilter_settled_gets_no_language_and_no_weight_in_the_page_score(classifier):
-    doc = DocumentRecord("C-202000543A-DT-27", "digital-convert")
-    doc.set_source(SHA256, filename="report.pdf", media_type="application/pdf", origin="digital-born-pdf")
-    doc.merge_block("pages", [{"page": "1", "page_index": 1}], key_fields=["page"])
+    doc = DocumentRecord("C-202000543A-DT-27", "ocr-postprocess")
+    doc.set_source(sha512=SHA512, filename="report.pdf", media_type="application/pdf", origin="digital")
+    doc.merge_block("pages", [{"page_index": 1, "page": "1", "content_status": "text"}])
     doc.merge_block(
         "lines",
-        [{"page": "1", "line": 0, "text": "ok: Hradiště"}, {"page": "1", "line": 1, "text": "1998"}],
+        [_line("1", 1, "ok: Hradiště", "p1-b1"), _line("1", 2, "1998", "p1-b2")],
         key_fields=["page", "line"],
     )
     record = doc.to_dict()
@@ -297,9 +323,9 @@ def test_a_line_the_prefilter_settled_gets_no_language_and_no_weight_in_the_page
     assert response.status_code == 200, response.text
     out = response.json()["document_json"]
     lines = {r["line"]: r for r in out["lines"]}
-    assert lines[1]["categ"] == "Non-text" and lines[1]["quality_score"] == 0.0
-    assert "lang" not in lines[1], "'N/A' is not a language: the batch path leaves it out of the record"
-    assert lines[0]["lang"] == "ces"
+    assert lines[2]["categ"] == "Non-text" and lines[2]["quality_score"] == 0.0
+    assert "lang" not in lines[2], "'N/A' is not a language: the batch path leaves it out of the record"
+    assert lines[1]["lang"] == "ces"
     page = out["pages"][0]
     assert page["quality_score"] == 0.9, "the 0.0 placeholder of a pre-filter answer is not evidence of low quality"
     assert page["quality_band"] == "Clear"

@@ -117,7 +117,7 @@ def test_merge_paradata_records_skipped_stages(tmp_path):
     )
     data = json.loads(out.read_text(encoding="utf-8"))
     assert data["skipped_stages"] == ["3. extract text", "1. page_split"]
-    assert "EXECUTED stages only" in data["license_note"]
+    assert not {"license", "license_note", "license_detail"} & set(data), "no calculated licence (#84 D2)"
 
 
 def test_resolve_extract_outdir():
@@ -371,16 +371,16 @@ def test_document_json_bridge_chains_stages_onto_a_seed_keyed_unlike_the_input(t
 
     seed_id = "C-202000543A-DT-27"
     with DocumentRecord(seed_id, "page-classification", out_dir=str(tmp_path)) as doc:
-        doc.set_source(sha256="a" * 64, filename="scan.alto.xml", origin="ABBYY-ALTO")
-        doc.merge_block("pages", [{"page": "1", "category": "Text", "category_confidence": 0.91}])
+        doc.set_source(sha512="a" * 128, filename="scan.alto.xml")
+        doc.merge_block("pages", [{"page_index": 1, "category": "Text", "category_confidence": 0.91}])
 
     scratch = _prepare_document_json_bridge(str(tmp_path / f"{seed_id}.document.json"), "scan")
     try:
         # Two stages, each a separate process in a real run, sharing only the directory.
         lines = [{"page": "1", "line": 1, "text": "a line", "categ": "Clear", "quality_score": 0.9}]
-        write_document_block(str(scratch), "scan", run_id="r1", merge_blocks={"lines": lines})
+        write_document_block(str(scratch), "scan", merge_blocks={"lines": lines})
         pages = [{"page": "1", "quality_score": 0.9, "quality_band": "Clear"}]
-        write_document_block(str(scratch), "scan", run_id="r2", merge_blocks={"pages": pages})
+        write_document_block(str(scratch), "scan", merge_blocks={"pages": pages})
 
         out_path = tmp_path / "out" / "3_alto.json"
         _collect_document_json_output(scratch, "scan", str(out_path))
@@ -392,6 +392,14 @@ def test_document_json_bridge_chains_stages_onto_a_seed_keyed_unlike_the_input(t
     assert record["doc_id"] == seed_id
     assert record["lines"][0]["text"] == "a line"  # stage 1 survived stage 2
     assert record["pages"] == [
-        {"page": "1", "category": "Text", "category_confidence": 0.91, "quality_score": 0.9, "quality_band": "Clear"}
+        {
+            "page_index": 1,
+            "category": "Text",
+            "category_confidence": 0.91,
+            "page": "1",
+            "quality_score": 0.9,
+            "quality_band": "Clear",
+            "content_status": "text",
+        }
     ]
     assert left_in_scratch == ["scan.document.json"]  # no second, seed-named copy

@@ -14,6 +14,11 @@ once, pointing them all at the same directory of `<doc_id>.document.json` files.
 empty (the default), every function below is a no-op — standalone runs are
 unaffected, matching rule 3 of the accretion contract.
 
+Record schema 2.0 (atrium-project#84): this repo is the record builder (`atrium_document.RECORD_BUILDER`):
+it writes the positional blocks of every record, whatever its origin, and is the only scorer of lines.
+The record carries no run data and no licence; a stage that passes its ParadataLogger (`logger=`) has
+the record read and written named in its paradata, by distribution name and SHA-512.
+
 Ownership note: every write here uses PROGRAM_NAME = "ocr-postprocess" (named "alto-postprocess" until
 2026-10-01; `atrium_document.PROGRAM_SUCCESSORS` treats the two as one writer), the current name
 `atrium_document.BLOCK_OWNERS` lists for this repo's blocks. Every stage's
@@ -46,9 +51,7 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 from atrium_document import (
     DocumentRecord,
     load_document,
-    ocr_handoff_pages,
     quality_summary,
-    resolve_originator,
     validate_baseline,
     validate_document,
 )
@@ -63,24 +66,35 @@ PROGRAM_NAME = "ocr-postprocess"
 #: run emits. Loud once is the point; loud 5000 times is noise that gets filtered.
 _VALIDATION_UNAVAILABLE_WARNED = False
 
-#: (#31) The blocks whose WRITER is decided by `source.origin` (atrium_document
-#: BLOCK_OWNERS lists two originators for each — this repo and llm-enrich's
-#: digital-convert — and Issue #18 §1a lets the record's origin pick one).
-POSITIONAL_BLOCKS = ("pages", "content", "lines", "tables")
+#: The AMČR distribution name of the record (atrium-project#84): what the paradata name it by.
+RECORD_DISTRIBUTION = "atrium/document-json"
 
-#: (#31) doc_ids already warned about by the origin guard in this process — one line
-#: per document, not one per stage call.
-_FOREIGN_ORIGIN_WARNED: set = set()
+#: How an input's origin maps onto record schema 2.0's descriptive `source.origin` (#84 §1;
+#: prefix match, case-insensitive; the hub's own migration table): the born-digital spellings
+#: (`digital-born-pdf`, ...), the PCSS (ABBYY) ALTO route, and OCR/VLM engines (`ocr:pero`).
+RECORD_ORIGINS: Tuple[Tuple[str, str], ...] = (
+    ("digital", "digital"),
+    ("docx", "digital"),
+    ("pdf", "digital"),
+    ("abbyy", "legacy"),
+    ("alto", "legacy"),
+    ("ocr:", "atr"),
+    ("vlm:", "atr"),
+    ("atr", "atr"),
+    ("legacy", "legacy"),
+)
 
-#: (#31 Phase 4) The text-lines kinds atrium-digital-convert can read (its
-#: api_util/digital_to_json.py sniffs content, not the extension: a PDF or a
-#: WordprocessingML package since llm-enrich#18; ODT, ODS, XLSX and RTF through this
-#: repository's own text_formats.py, which it vendors, since its v1.1.0-beta — #2 W2; DOC
-#: and XLS too, which are no reader kind here). A `digital-born-<kind>` origin for any
-#: OTHER kind (PPTX, EPUB, ...) hands the positional plane to an originator that cannot
-#: produce it, so the record keeps `source` only — which is what
-#: `[DOCUMENT].SOURCE_ORIGIN_BY_KIND` exists to let an operator decide.
-DIGITAL_CONVERT_KINDS = frozenset({"pdf", "docx", "odt", "ods", "xlsx", "rtf"})
+#: A line's `text_source` per record origin (D25).
+TEXT_SOURCE_FOR_ORIGIN = {"digital": "text-layer", "atr": "atr", "legacy": "legacy"}
+
+
+def record_origin(origin: Optional[str]) -> Optional[str]:
+    """`digital`, `atr` or `legacy` for an input's origin, or None when it maps to none."""
+    if not isinstance(origin, str) or not origin.strip():
+        return None
+    folded = origin.strip().casefold()
+    return next((new for prefix, new in RECORD_ORIGINS if folded.startswith(prefix)), None)
+
 
 _ORIGIN_BY_KIND_KEY = "[DOCUMENT] SOURCE_ORIGIN_BY_KIND"
 
@@ -91,7 +105,7 @@ def parse_origin_by_kind(raw: str, known_kinds: Iterable[str]) -> Dict[str, str]
     Entries are separated by commas or newlines. A malformed entry, a kind no reader
     registers, a kind given twice, an empty value, or an origin no ORIGIN_ORIGINATORS
     prefix recognises raises ValueError naming the key: a typo must fail the run, not
-    quietly switch the §1a ownership check off for that kind.
+    quietly write a record without an origin for that kind.
     """
     known = {k.lower() for k in known_kinds}
     out: Dict[str, str] = {}
@@ -108,10 +122,10 @@ def parse_origin_by_kind(raw: str, known_kinds: Iterable[str]) -> Dict[str, str]
             raise ValueError(f"{_ORIGIN_BY_KIND_KEY}: kind {kind!r} is given twice")
         if not origin:
             raise ValueError(f"{_ORIGIN_BY_KIND_KEY}: kind {kind!r} has an empty origin")
-        if resolve_originator(origin) is None:
+        if record_origin(origin) is None:
             raise ValueError(
-                f"{_ORIGIN_BY_KIND_KEY}: origin {origin!r} for {kind!r} matches no known originator prefix "
-                f"(ocr:…, vlm:…, ABBYY-ALTO, digital-born-…)"
+                f"{_ORIGIN_BY_KIND_KEY}: origin {origin!r} for {kind!r} matches no known origin prefix "
+                f"(ocr:…, vlm:…, ABBYY-ALTO, digital-born-…, atr, legacy)"
             )
         out[kind] = origin
     return out
@@ -244,128 +258,6 @@ def document_path(document_json_dir: str, doc_id: str) -> str:
     return os.path.join(document_json_dir, f"{doc_id}.document.json")
 
 
-def paradata_ref_for(logger) -> str:
-    """Best-effort path to the paradata JSON this stage's ParadataLogger will emit.
-
-    A plain function of the logger's own attributes, so callers that run inside a
-    multiprocessing worker (which never sees the logger object itself — it isn't
-    passed across the process boundary) can compute it once in the parent process
-    and pass the resulting string down instead.
-    """
-    return os.path.join(logger.paradata_dir, f"{logger.run_id}_{logger.program}.json")
-
-
-def _read_record(path: str) -> Dict[str, Any]:
-    """The record at `path`, or {} when there is none or it cannot be read."""
-    if path and os.path.exists(path):
-        try:
-            return load_document(path) or {}
-        except Exception:
-            return {}
-    return {}
-
-
-def foreign_origin(path: str, source: Optional[Dict[str, Any]] = None) -> Optional[str]:
-    """The record's `source.origin` when it authorises ANOTHER originator, else None (#31).
-
-    Reads the baseline record at `path` (its `source` is first-writer-wins, so it is
-    the one that counts), falling back to the `source` this call is about to write.
-    Returns None — "nothing to hold back" — when there is no origin, when the origin
-    matches no ORIGIN_ORIGINATORS prefix (§1a abstains; so do we), and when it authorises
-    this repo. A record that carries digital-convert's `pages[].needs_ocr` hand-off is still
-    foreign: since W4 (atrium-digital-convert#4) `write_document_block()` writes such a record
-    page by page (`handoff_pages`), never as a whole.
-    """
-    record = _read_record(path)
-    origin = (record.get("source") or {}).get("origin") or (source or {}).get("origin")
-    if not origin:
-        return None
-    if resolve_originator(origin) in (None, PROGRAM_NAME):
-        return None
-    return origin
-
-
-def handoff_pages(record: Optional[Dict[str, Any]]) -> List[str]:
-    """The record's page keys that digital-convert flagged `needs_ocr`: the pages this repo is
-    asked to re-originate from OCR (atrium-digital-convert#4 W4; `atrium_document.OCR_HANDOFF`)."""
-    return ocr_handoff_pages((record or {}).get("pages"))
-
-
-def record_page_key(record: Optional[Dict[str, Any]], key: Any) -> Optional[str]:
-    """The record's own key for the page an OCR file calls `key`, or None (W4).
-
-    An ALTO page is named by its `PHYSICAL_IMG_NR` (or its 1-based position: `page_split`'s
-    labels, `service/utils.parse_alto_page_labels`) — a PHYSICAL position. A born-digital record
-    names its pages by their labels (`i`, `ii`, `1`, `A-1`) and carries the position in
-    `pages[].page_index`. So when every page row has a `page_index`, a numeric key is looked up
-    by position and never matched to a label by its number (position 3 of `i, ii, 1` is `1`, not
-    a page labelled `3`) — page-classification's rule for the same records. Without page_index
-    (an ALTO record), the key must be one of the record's labels.
-    """
-    if key is None:
-        return None
-    wanted = str(key).strip()
-    rows = [r for r in (record or {}).get("pages") or [] if isinstance(r, dict) and r.get("page") is not None]
-    if rows and all(isinstance(r.get("page_index"), int) and not isinstance(r.get("page_index"), bool) for r in rows):
-        if wanted.isdigit():
-            return next((str(r["page"]) for r in rows if r["page_index"] == int(wanted)), None)
-    labels = [str(r["page"]) for r in rows]
-    return wanted if wanted in labels else None
-
-
-#: (W4) What this repo writes into a flagged page's `pages[]` row of a born-digital record: the
-#: page's quality and that an engine ran. `page_index`, `canvas`, `needs_ocr` and its reason stay
-#: the converter's (an ALTO's own canvas is in another unit, and `needs_ocr` is the request).
-HANDOFF_PAGE_FIELDS = ("quality_score", "quality_band", "ocr")
-
-
-def _handoff_writes(
-    record: Dict[str, Any],
-    set_blocks: Optional[Dict[str, Any]],
-    merge_blocks: Optional[Dict[str, List[Dict[str, Any]]]],
-) -> Tuple[Dict[str, List[Dict[str, Any]]], Dict[str, List[Dict[str, Any]]], List[str]]:
-    """This call's writes into a born-digital record that flags pages for OCR, page by page (W4).
-
-    Returns (merge_blocks, replace_lines, notes): the `pages` rows and the `lines` rows of the
-    flagged pages, keyed by the record's own page labels (`record_page_key`), and why anything
-    else was held back. The `lines` of a flagged page REPLACE the converter's (they are what the
-    OCR read on it); the `pages` rows merge `HANDOFF_PAGE_FIELDS` into the converter's, which
-    keep `page_index`, `canvas`, `needs_ocr`, `text_layer` and page-classification's `category`.
-    `content`, `tables` and every row of an unflagged page are held back: the shared module
-    refuses them.
-    """
-    flagged = set(handoff_pages(record))
-    notes: List[str] = []
-    held = sorted(set(set_blocks or {}) & set(POSITIONAL_BLOCKS))
-    if held:
-        notes.append(f"not writing {', '.join(held)} (a whole-document block; the hand-off is per page)")
-    merges: Dict[str, List[Dict[str, Any]]] = {}
-    replace: Dict[str, List[Dict[str, Any]]] = {}
-    for block, rows in (merge_blocks or {}).items():
-        if block not in POSITIONAL_BLOCKS:
-            merges[block] = rows
-            continue
-        if block not in ("pages", "lines"):
-            notes.append(f"not writing {block}")
-            continue
-        kept, outside = [], set()
-        for row in rows or []:
-            key = record_page_key(record, row.get("page"))
-            if key is None or key not in flagged:
-                outside.add(str(row.get("page")))
-                continue
-            if block == "pages":
-                row = {field: value for field, value in row.items() if field in HANDOFF_PAGE_FIELDS}
-                if not row:
-                    continue
-            kept.append({**row, "page": key})
-        if outside:
-            notes.append(f"not writing {block}[] of page(s) {sorted(outside)}: no flagged page of the record")
-        if kept:
-            (replace if block == "lines" else merges)[block] = kept
-    return merges, replace, notes
-
-
 def _set_quality_summary(doc: DocumentRecord) -> None:
     """(atrium-project#73 R6) The record's `quality_summary`, recomputed from its pages and lines."""
     doc.set_block(
@@ -374,197 +266,192 @@ def _set_quality_summary(doc: DocumentRecord) -> None:
     )
 
 
+def record_source(source: Dict[str, Any]) -> Dict[str, Any]:
+    """`source` as record schema 2.0 holds it: the origin mapped to `digital`/`atr`/`legacy`
+    (dropped when it maps to none), no SHA-256, no empty value."""
+    out = {k: v for k, v in source.items() if v not in (None, "") and k != "sha256"}
+    if "origin" in out:
+        mapped = record_origin(out.pop("origin"))
+        if mapped:
+            out["origin"] = mapped
+    return out
+
+
+def _page_index(row: Dict[str, Any], position: int) -> int:
+    """A page row's `page_index`: its own, else its numeric label, else its position."""
+    index = row.get("page_index")
+    if isinstance(index, int) and not isinstance(index, bool) and index > 0:
+        return index
+    label = str(row.get("page", "")).strip()
+    return int(label) if label.isdigit() and int(label) > 0 else position
+
+
+def _page_rows(rows: List[Dict[str, Any]], known: Optional[Dict[str, int]] = None) -> List[Dict[str, Any]]:
+    """Page rows keyed by `page_index`, the 2.0 key (BLOCK_KEY_FIELDS["pages"]): a label the record
+    already has (`known`, label → page_index) keeps its row, so `iv` lands on its own page."""
+    known = known or {}
+    out = []
+    for n, row in enumerate(rows, start=1):
+        label = str(row.get("page", ""))
+        index = row.get("page_index") if isinstance(row.get("page_index"), int) else known.get(label)
+        out.append({**row, "page_index": index or _page_index(row, n)})
+    return out
+
+
+def _known_pages(doc: DocumentRecord) -> Dict[str, int]:
+    """label → page_index of the record's page rows that carry both."""
+    return {
+        str(row["page"]): row["page_index"]
+        for row in doc.get_block("pages") or []
+        if isinstance(row, dict) and row.get("page") is not None and isinstance(row.get("page_index"), int)
+    }
+
+
+def _line_rows(rows: List[Dict[str, Any]], origin: Optional[str]) -> List[Dict[str, Any]]:
+    """Line rows with the builder's 2.0 fields: `text_source` from the record's origin, and
+    `bbox_precision: measured` for a line with its own box (D16, D25)."""
+    out = []
+    for row in rows:
+        row = dict(row)
+        if "text" in row and "text_source" not in row and origin in TEXT_SOURCE_FOR_ORIGIN:
+            row["text_source"] = TEXT_SOURCE_FOR_ORIGIN[origin]
+        if row.get("bbox") and "bbox_precision" not in row:
+            row["bbox_precision"] = "measured"
+        out.append(row)
+    return out
+
+
+def _content_status(doc: DocumentRecord) -> None:
+    """`pages[].content_status` (D29), when the record has lines: `text` for a page with a line
+    (whatever it said before), `empty` for a row without a status and without a line; an empty
+    page keeps no page score (rule 7). A row is matched by its label, else (a row page-classification
+    wrote before it was labelled) by its `page_index`."""
+    lines = doc.get_block("lines")
+    if not lines:
+        return
+    with_lines = {str(row.get("page")) for row in lines if isinstance(row, dict)}
+    updates = []
+    for row in doc.get_block("pages") or []:
+        if not isinstance(row, dict) or not isinstance(row.get("page_index"), int):
+            continue
+        key = str(row["page"]) if row.get("page") is not None else str(row["page_index"])
+        status = "text" if key in with_lines else ("empty" if "content_status" not in row else None)
+        if status and row.get("content_status") != status:
+            updates.append({"page_index": row["page_index"], "content_status": status})
+    if updates:
+        doc.merge_block("pages", updates)
+
+
 def write_document_block(
     document_json_dir: str,
     doc_id: str,
-    run_id: Optional[str],
-    paradata_ref: str = "",
     *,
     source: Optional[Dict[str, Any]] = None,
     set_blocks: Optional[Dict[str, Any]] = None,
     merge_blocks: Optional[Dict[str, List[Dict[str, Any]]]] = None,
-    run_uuid: Optional[str] = None,
-    ocr_pages: Optional[List[str]] = None,
+    logger: Optional[Any] = None,
 ) -> Optional[str]:
     """Open `<doc_id>.document.json` under `document_json_dir` (if configured and if
     it already exists), apply this stage's own contribution, and write it back in
     place. A missing baseline is safe (rule 3): the record then holds just this
     stage's part. No-ops entirely when `document_json_dir` is falsy.
 
-    On a born-digital record that flags pages `needs_ocr` (digital-convert's OCR hand-off,
-    atrium-digital-convert#4 W4) the write is made page by page: the `pages`/`lines` rows of the
-    flagged pages, keyed by the record's own labels (`record_page_key`), with each flagged page's
-    `lines` REPLACED (`DocumentRecord.replace_page_rows`), so the page holds what the OCR read and
-    nothing of the converter's undecodable layer. Rows of other pages, `content`, `tables` and an
-    OCR input's `source` are held back, with one warning. `ocr_pages` names flagged pages this
-    call re-acquires even when it has no line for them (an OCR pass that found no text).
+    Record schema 2.0 (atrium-project#84): ocr-postprocess is the record builder, so it writes
+    the positional blocks of every record, whatever its origin, and the record carries no run
+    data (no stamps, no licence). `source.origin` is written as `digital`/`atr`/`legacy`
+    (`record_source`), page rows are keyed by `page_index`, each line gets its `text_source`
+    and `bbox_precision`, and each page its `content_status` (`_content_status`). Until #84 a
+    born-digital record was digital-convert's to originate, and this hook wrote only the pages
+    it flagged `needs_ocr` (the OCR hand-off, now gone: the mixed merge is the builder's, H6).
+
+    With `logger` (the stage's ParadataLogger), the record version read and the record written
+    go into its paradata, by distribution name and SHA-512, the output with the blocks and fields
+    written (`DocumentRecord.written()`).
 
     Returns the path written, or None when nothing was written. Callers read the
-    record back from that path (atrium-project#68).
+    record back from that path (atrium-project#68). "In place" is literal: the record goes back
+    to `path`, not to finalize()'s default `<record doc_id>.document.json` (an AMČR seed carries
+    the AMČR file id).
 
-    `run_uuid` is the stage's `ParadataLogger.run_uuid` (atrium-project#71): stamped with every
-    block and the contributor entry, and the `@id` of the run's CreateAction.
-
-    "In place" is literal: the record goes back to `path`, not to finalize()'s default
-    `<record doc_id>.document.json`. The two differ whenever the baseline is keyed by
-    another id than the one derived here (an AMČR seed carries the AMČR file id), and
-    DocumentRecord keeps the baseline's id. Writing to the default name left the file
-    every stage and caller looks up untouched, so the next stage re-read the seed, the
-    last stage's write replaced all earlier ones, and /process returned the seed.
-
-    This is the repo's single document-write chokepoint — every stage script routes
-    through it — so it is also where the two Layer D guarantees are enforced once
-    for all of them (atrium-project#10 D4/D8):
-
-      * the inherited baseline is validated and a failure WARNED about (see
-        `_baseline_is_invalid`);
-      * every `merge_block()` is followed by `assert_fields_survived()`, which
-        RAISES when a field the caller handed in was filtered away;
-      * this stage's own output is validated before `finalize()`, and a failure
-        RAISES so nothing is emitted (see `_validate_own_output`).
+    This is the repo's single document-write chokepoint, so it is also where the Layer D
+    guarantees are enforced once (atrium-project#10 D4/D8): the inherited baseline is
+    validated and a failure WARNED about; every `merge_block()` is followed by
+    `assert_fields_survived()`; this stage's own output is validated before `finalize()`.
     """
     if not document_json_dir:
-        return
-    if not any([source, set_blocks, merge_blocks, ocr_pages]):
-        return
+        return None
+    if not any([source, set_blocks, merge_blocks]):
+        return None
 
     path = document_path(document_json_dir, doc_id)
-
-    # (#31) The §1a originator check in atrium_document only WARNS when not strict
-    # and then writes the block anyway — so without this guard every stage of this
-    # repo (the unchanged classify/aggregate included) would put OCR-path fields and
-    # categories into a record that digital-convert originates, the half-OCR/half-
-    # digital plane §1a exists to refuse. `source` is still written; the CSV outputs
-    # of the run are unaffected. (W4) A record that flags pages `needs_ocr` is the one
-    # exception, and it is written page by page (`_handoff_writes`).
-    replace_lines: List[Dict[str, Any]] = []
-    replace_pages: List[str] = []
-    if set_blocks or merge_blocks or ocr_pages or source:
-        foreign = foreign_origin(path, source)
-        record = _read_record(path) if foreign else {}
-        source_note = None
-        recorded = resolve_originator((record.get("source") or {}).get("origin"))
-        if source and recorded and resolve_originator(source.get("origin")) != recorded:
-            # The record's `source` is the original's (first writer wins). This stage read another
-            # file — an OCR of the original's pages — whose sha256 and origin describe that file.
-            source_note = "not writing source: the record's is the original's, and this stage read another file"
-            source = None
-        if foreign and handoff_pages(record):
-            # (W4) The hand-off: the flagged pages only, the converter's other pages untouched.
-            merge_blocks, replace, notes = _handoff_writes(record, set_blocks, merge_blocks)
-            set_blocks = {k: v for k, v in (set_blocks or {}).items() if k not in POSITIONAL_BLOCKS} or None
-            replace_lines = replace.get("lines", [])
-            flagged = handoff_pages(record)
-            replace_pages = [
-                p for p in flagged if p in set(ocr_pages or []) or any(r["page"] == p for r in replace_lines)
-            ]
-            refused = sorted(set(ocr_pages or []) - set(flagged))
-            if refused:
-                raise ValueError(
-                    f"{doc_id}: page(s) {refused} are not flagged needs_ocr in the record (flagged: {flagged})"
-                )
-            if source_note:
-                notes.append(source_note)
-            if notes and doc_id not in _FOREIGN_ORIGIN_WARNED:
-                _FOREIGN_ORIGIN_WARNED.add(doc_id)
-                _warn(
-                    f"{doc_id}: the needs_ocr hand-off of a {foreign!r} record covers page(s) {flagged} "
-                    f"(atrium_document OCR_HANDOFF) — " + "; ".join(notes) + ". The CSV outputs are unaffected."
-                )
-            merge_blocks = merge_blocks or None
-        elif foreign and (set_blocks or merge_blocks or ocr_pages):
-            dropped = sorted((set(set_blocks or {}) | set(merge_blocks or {})) & set(POSITIONAL_BLOCKS))
-            if ocr_pages:
-                raise ValueError(f"{doc_id}: the record flags no page needs_ocr, so no page of it can be re-acquired")
-            if dropped and doc_id not in _FOREIGN_ORIGIN_WARNED:
-                _FOREIGN_ORIGIN_WARNED.add(doc_id)
-                _warn(
-                    f"{doc_id}: source.origin {foreign!r} is originated by {resolve_originator(foreign)!r}, "
-                    f"not {PROGRAM_NAME!r} — not writing {', '.join(dropped)} into its record "
-                    f"(atrium_document §1a){'; ' + source_note if source_note else ''}. The CSV outputs are unaffected."
-                )
-            set_blocks = {k: v for k, v in (set_blocks or {}).items() if k not in POSITIONAL_BLOCKS} or None
-            merge_blocks = {k: v for k, v in (merge_blocks or {}).items() if k not in POSITIONAL_BLOCKS} or None
-        if not any([source, set_blocks, merge_blocks, replace_pages]):
-            return
+    if logger is not None and os.path.exists(path):
+        logger.add_input(RECORD_DISTRIBUTION, path=path, media_type="application/json")
 
     baseline_was_invalid = _baseline_is_invalid(path)
-    with DocumentRecord.open(
-        doc_id,
-        PROGRAM_NAME,
-        baseline=path,
-        run_id=run_id,
-        run_uuid=run_uuid,
-        paradata_ref=paradata_ref,
-        out_dir=document_json_dir,
-    ) as doc:
+    with DocumentRecord.open(doc_id, PROGRAM_NAME, baseline=path, out_dir=document_json_dir) as doc:
         if source:
-            doc.set_source(**source)
+            doc.set_source(**record_source(source))
+        origin = (doc.to_dict().get("source") or {}).get("origin")
         for block, payload in (set_blocks or {}).items():
             doc.set_block(block, payload)
         for block, records in (merge_blocks or {}).items():
-            if records:
-                doc.merge_block(block, records)
-                # (#10 D8) merge_block()'s field filtering is silent by design, and
-                # that silence is how a wrong grant produced rows stripped down to
-                # their key that still validated (only page+line are required). This
-                # is deliberately the raising form, not `warn_dropped_fields=True`:
-                # it fires only when THIS repo hands over a field its own declared
-                # grant in BLOCK_FIELD_OWNERS does not cover, which is a code bug in
-                # the caller, not data variance — so every call site must pass only
-                # fields it owns, plus the block's key fields.
-                doc.assert_fields_survived(block, records)
-        if replace_pages:
-            # (W4) The flagged pages' lines are what the OCR read on them, and nothing else.
-            doc.replace_page_rows("lines", replace_pages, replace_lines)
-            doc.assert_fields_survived("lines", replace_lines)
+            if not records:
+                continue
+            if block == "pages":
+                records = _page_rows(records, _known_pages(doc))
+            elif block == "lines":
+                records = _line_rows(records, origin)
+            doc.merge_block(block, records)
+            # (#10 D8) merge_block()'s field filtering is silent by design: the raising form
+            # fires only when THIS repo hands over a field its own grant in BLOCK_FIELD_OWNERS
+            # does not cover, which is a code bug in the caller, not data variance.
+            doc.assert_fields_survived(block, records)
         wrote = set(set_blocks or {}) | {block for block, rows in (merge_blocks or {}).items() if rows}
-        if replace_pages or wrote & {"pages", "lines"}:
+        if wrote & {"pages", "lines"}:
+            _content_status(doc)
             _set_quality_summary(doc)
         _validate_own_output(doc, baseline_was_invalid)
         # Explicitly, and to `path` (#68): see the docstring. __exit__ then has nothing left to do.
-        return doc.finalize(path)
+        written = doc.finalize(path)
+        if logger is not None:
+            logger.add_output(
+                RECORD_DISTRIBUTION, path=written, media_type="application/json", record_fields=doc.written()
+            )
+        return written
 
 
-#: (atrium-digital-convert#4 W3) What `write_scores()` writes: the common line-quality
-#: model's fields, exactly `atrium_document.SCORING_FIELDS` — the one write this repo may make
-#: into a positional plane another tool originated (a born-digital record's).
+#: What `write_scores()` writes: the line-quality model's fields (`atrium_document`'s grant).
 SCORE_LINE_FIELDS = ["categ", "quality_score", "lang"]
 SCORE_PAGE_FIELDS = ["quality_score", "quality_band"]
-
-#: Line categories this repo never overwrites: digital-convert's decode verdict on a born-digital
-#: line (atrium_vocab.LINE_CATEGORY_ORIGINATORS). Its own Clear/Noisy/Trash/Non-text/Empty are a
-#: disjoint set, so a verdict that a text layer does not decode is never re-scored as text.
-DECODE_VERDICTS = frozenset({"Garbage", "Inverted"})
 
 
 def write_scores(
     document_json_dir: str,
     doc_id: str,
-    run_id: Optional[str],
-    paradata_ref: str = "",
     *,
     pages: Optional[List[Dict[str, Any]]] = None,
     lines: Optional[List[Dict[str, Any]]] = None,
-    run_uuid: Optional[str] = None,
+    logger: Optional[Any] = None,
 ) -> Optional[str]:
     """Score an EXISTING record in place: lines[] categ/quality_score/lang, pages[] quality.
 
-    The scoring-only write path (atrium-digital-convert#4 W3, `POST /score_record`): unlike
-    `write_document_block()`, it writes into any record — an OCR record this repo originated
-    (a re-score) and a born-digital one digital-convert originated, where the shared module
-    treats a merge limited to `atrium_document.SCORING_FIELDS` as a co-contribution. It never
-    writes `text`, `bbox` or any other positional field, never `source`, and never a row:
+    The scoring-only write path (`POST /score_record`, `score_record.py`). Since record schema
+    2.0 (atrium-project#84, D18 rules 1–3) this repo scores every line of every record, whatever
+    its text source, with one model and one band scheme; until #84 a line carrying
+    digital-convert's decode verdict was left out. It never writes `text`, `bbox` or any other
+    positional field, never `source`, and never a row:
 
       * a row carrying any other field (`text`, `bbox`, ...) is refused with ValueError
         before anything is opened — a caller bug, never data to drop in silence;
       * rows whose key is not in the record are left out (a score cannot invent a line);
-      * a line carrying digital-convert's decode verdict (`DECODE_VERDICTS`) is left out;
-      * every merge is followed by `assert_fields_survived()`, as in `write_document_block()`;
-      * the output is validated before it is written, as in `write_document_block()`.
+      * page rows name the page by its label (`page`) and are written under its `page_index`;
+        an empty page (`content_status: empty`) carries no page score (rule 7);
+      * every merge is followed by `assert_fields_survived()`, and the output is validated
+        before it is written, as in `write_document_block()`.
 
-    Returns the path written, or None when there is no record at `<doc_id>.document.json` or
-    nothing to write.
+    With `logger`, the record read and written go into its paradata, as in
+    `write_document_block()`. Returns the path written, or None when there is no record at
+    `<doc_id>.document.json` or nothing to write.
     """
     for block, rows, allowed in (
         ("lines", lines, ["page", "line", *SCORE_LINE_FIELDS]),
@@ -580,39 +467,40 @@ def write_scores(
         return None
     record = load_document(path) or {}
     known_lines = {
-        (str(row.get("page")), row.get("line")): row for row in record.get("lines") or [] if isinstance(row, dict)
+        (str(row.get("page")), row.get("line")) for row in record.get("lines") or [] if isinstance(row, dict)
     }
-    known_pages = {str(row.get("page")) for row in record.get("pages") or [] if isinstance(row, dict)}
-
-    line_rows = [
-        row
-        for row in lines or []
-        if (str(row.get("page")), row.get("line")) in known_lines
-        and known_lines[(str(row.get("page")), row.get("line"))].get("categ") not in DECODE_VERDICTS
+    index_of = {
+        str(row.get("page")): row
+        for row in record.get("pages") or []
+        if isinstance(row, dict) and isinstance(row.get("page_index"), int)
+    }
+    line_rows = [row for row in lines or [] if (str(row.get("page")), row.get("line")) in known_lines]
+    page_rows = [
+        {"page_index": index_of[str(row["page"])]["page_index"], **{k: v for k, v in row.items() if k != "page"}}
+        for row in pages or []
+        if str(row.get("page")) in index_of and index_of[str(row["page"])].get("content_status") != "empty"
     ]
-    page_rows = [row for row in pages or [] if str(row.get("page")) in known_pages]
     if not line_rows and not page_rows:
         return None
 
+    if logger is not None:
+        logger.add_input(RECORD_DISTRIBUTION, path=path, media_type="application/json")
     baseline_was_invalid = _baseline_is_invalid(path)
-    with DocumentRecord.open(
-        doc_id,
-        PROGRAM_NAME,
-        baseline=path,
-        run_id=run_id,
-        run_uuid=run_uuid,
-        paradata_ref=paradata_ref,
-        out_dir=document_json_dir,
-    ) as doc:
+    with DocumentRecord.open(doc_id, PROGRAM_NAME, baseline=path, out_dir=document_json_dir) as doc:
         if line_rows:
             doc.merge_block("lines", line_rows, key_fields=["page", "line"], own_fields=SCORE_LINE_FIELDS)
             doc.assert_fields_survived("lines", line_rows)
         if page_rows:
-            doc.merge_block("pages", page_rows, key_fields=["page"], own_fields=SCORE_PAGE_FIELDS)
+            doc.merge_block("pages", page_rows, own_fields=SCORE_PAGE_FIELDS)
             doc.assert_fields_survived("pages", page_rows)
         _set_quality_summary(doc)
         _validate_own_output(doc, baseline_was_invalid)
-        return doc.finalize(path)
+        written = doc.finalize(path)
+        if logger is not None:
+            logger.add_output(
+                RECORD_DISTRIBUTION, path=written, media_type="application/json", record_fields=doc.written()
+            )
+        return written
 
 
 def group_tasks_by_doc(tasks: Iterable[Sequence[Any]]) -> "OrderedDict[str, List[Any]]":
@@ -706,48 +594,36 @@ def pages_and_content_from_text(
     output_text_dir: str,
     file_id: str,
     page_ids: Sequence[Any],
-    engine: str,
     force_single_page: bool = False,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
-    """Build the `pages[].ocr` records + the doc-level `content.text` for one
-    document from its already-written page .txt files. Pages whose text could not
-    be read back are skipped rather than guessed at.
+    """Build the `pages[]` rows + the doc-level `content.text` for one document from its
+    already-written page .txt files. Pages whose text could not be read back are skipped rather
+    than guessed at.
+
+    Each row is keyed by `page_index` (the page id of the OCR file: its physical position) and
+    carries `content_status` (`text`, or `empty` for a page without text; D29). Since record
+    schema 2.0 no row carries the engine (`pages[].ocr` is gone, D9): the caller records it as a
+    paradata parameter.
 
     `content.text` is always the full document (every readable page concatenated,
     in source-page order, joined on a blank line) regardless of `force_single_page` —
-    that flag is purely a `pages[]` assembly policy (issue #37 / D4): it does not
-    change what text is extracted, only how many `pages[]` rows describe it.
-
-    force_single_page=False (default): one `pages[]` row per source page, as before.
-    force_single_page=True: every source page for this document collapses into a
-    SINGLE `pages[]` row (`page: "1"`), whose `ocr.source_pages` lists the original
-    page labels in the order they were concatenated — so the mapping back to
-    individual source pages is preserved rather than lost.
+    that flag is purely a `pages[]` assembly policy (issue #37 / D4): every source page
+    for this document collapses into a SINGLE `pages[]` row (`page: "1"`).
     """
     page_records: List[Dict[str, Any]] = []
     texts: List[str] = []
-    source_pages: List[str] = []
-    for page_id in page_ids:
+    for position, page_id in enumerate(page_ids, start=1):
         text = read_page_text(output_text_dir, file_id, page_id)
         if text is None:
             continue
-        source_pages.append(str(page_id))
         texts.append(text)
         if not force_single_page:
-            page_records.append({"page": str(page_id), "ocr": {"engine": engine}})
+            row = {"page": str(page_id), "content_status": "text" if text.strip() else "empty"}
+            page_records.append({"page_index": _page_index(row, position), **row})
     joined = "\n\n".join(t for t in texts if t)
 
-    if force_single_page and source_pages:
-        page_records = [
-            {
-                "page": "1",
-                "ocr": {
-                    "engine": engine,
-                    "source_pages": source_pages,
-                    "force_single_page": True,
-                },
-            }
-        ]
+    if force_single_page and texts:
+        page_records = [{"page_index": 1, "page": "1", "content_status": "text" if joined.strip() else "empty"}]
 
     return page_records, {"text": joined or None}
 

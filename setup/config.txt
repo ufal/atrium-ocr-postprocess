@@ -5,11 +5,11 @@
 # the DOCUMENT_JSON_DIR env var (see document_hook.resolve_document_json_dir).
 JSON_DIR =
 # atrium-project#10 (D5): how the ORIGINAL input was acquired, written once by
-# page_split.py / text_split.py as `source.origin`. Since Issue #18 §1a that value is what
-# AUTHORISES this repo to write the positional blocks (pages/content/lines/tables),
-# so it must start with an ORIGIN_ORIGINATORS prefix this repo owns — ABBYY-ALTO,
-# ocr:<engine> or vlm:<engine>; anything else makes the mixed-plane check abstain
-# in silence, which is the state D5 found it in.
+# page_split.py / text_split.py as `source.origin`. Record schema 2.0 (atrium-project#84)
+# holds it as `digital`, `atr` or `legacy` (document_hook.record_origin: digital-born-*
+# -> digital, ocr:/vlm: -> atr, ABBYY-ALTO -> legacy), and each line gets the matching
+# `text_source`; an origin that maps to none is warned about and leaves the record
+# without one. This repo writes the positional blocks of every record, whatever its origin.
 # Empty = use the per-format default (ABBYY-ALTO for ALTO XML input, ocr:generic for
 # generic JSON OCR input). Set it when the engine is known, e.g. `ocr:pero`.
 # Overridable per-run via --source-origin or the DOCUMENT_SOURCE_ORIGIN env var.
@@ -17,21 +17,17 @@ JSON_DIR =
 # when this is empty: ocr:page-xml / ocr:hocr / ABBYY-ALTO / ocr:pdf-text-layer (a PDF
 # whose text is an invisible OCR layer) / ocr:generic (TXT, MD, CSV, JSON, TEI, XML)
 # for OCR output, and digital-born-<kind> for DOCX, ODT, XLSX, PPTX, EPUB, RTF, HTML
-# and visible-text PDF. A digital-born record belongs to atrium-digital-convert: this
-# path then writes only `source` into it (document_hook guard; POST /score_record adds
-# line-quality scores only); CSV outputs are unaffected. A value set HERE overrides that default for every text-lines input too.
+# and visible-text PDF. A value set HERE overrides that default for every text-lines input too.
 SOURCE_ORIGIN =
 # (#31 Phase 4) Per-kind origin for text-lines inputs (text_split.py and /process):
 # `<kind> = <origin>` pairs separated by commas, kinds as in text_formats.READERS
 # (txt, md, csv, tsv, json, jsonl, xml, tei, html, docx, xlsx, pptx, odt, ods, odp,
 # epub, rtf, eml, mbox, srt, vtt, …). Precedence: --source-origin > the
 # DOCUMENT_SOURCE_ORIGIN env var > this key > SOURCE_ORIGIN > the truthful default.
-# The use case: atrium-digital-convert reads PDF, DOCX, ODT, ODS, XLSX, RTF, DOC and XLS
-# (since its v1.1.0-beta), so a digital-born PPTX/ODP/EPUB/HTML/e-mail record ends up
-# with `source` only. When files of such a kind are really OCR or transcription exports, say so,
-# e.g. `xlsx = ocr:generic, pptx = ocr:generic`, and this repo writes their
-# pages/content/lines. Keep it truthful: `source.origin` is provenance other tools
-# read. An unknown kind or an origin no originator claims stops the run (exit 2).
+# The use case: files of a kind that are really OCR or transcription exports, e.g.
+# `xlsx = ocr:generic, pptx = ocr:generic`, so their record says `atr` and their lines
+# `text_source: atr`. Keep it truthful: `source.origin` is provenance other tools
+# read. An unknown kind or an origin that matches no known prefix stops the run (exit 2).
 SOURCE_ORIGIN_BY_KIND =
 
 [EXTRACT]

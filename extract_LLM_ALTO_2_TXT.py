@@ -235,7 +235,6 @@ def main(argv=None):
     _doc_cfg = configparser.ConfigParser()
     _doc_cfg.read(CONFIG_PATH, encoding="utf-8")
     _document_json_dir = document_hook.resolve_document_json_dir(_doc_cfg.get("DOCUMENT", "JSON_DIR", fallback=""))
-    _doc_paradata_ref = document_hook.paradata_ref_for(_logger)
 
     try:
         for _, row in tqdm(df.iterrows(), total=len(df)):
@@ -280,18 +279,16 @@ def main(argv=None):
                 _logger.log_skip(str(image_path), "failed to extract text with GLM")
 
         _tasks = list(zip(df["file"], df["page"], strict=False))
+        # The engine is the producer's paradata (record schema 2.0 has no `pages[].ocr`, D9).
+        _logger.set_parameter("ocr_engine", f"glm:{MODEL_PATH}")
         for doc_id, page_ids in document_hook.group_tasks_by_doc(_tasks).items():
-            pages, content = document_hook.pages_and_content_from_text(
-                OUTPUT_TEXT_DIR, doc_id, page_ids, engine=f"glm:{MODEL_PATH}"
-            )
+            pages, content = document_hook.pages_and_content_from_text(OUTPUT_TEXT_DIR, doc_id, page_ids)
             document_hook.write_document_block(
                 _document_json_dir,
                 doc_id,
-                _logger.run_id,
-                _doc_paradata_ref,
-                run_uuid=_logger.run_uuid,
                 merge_blocks={"pages": pages} if pages else None,
                 set_blocks={"content": content} if pages else None,
+                logger=_logger,
             )
 
         print("Done.")

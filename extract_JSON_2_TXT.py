@@ -244,7 +244,6 @@ def main(argv: Optional[list] = None) -> None:
     _doc_cfg = configparser.ConfigParser()
     _doc_cfg.read(CONFIG_PATH, encoding="utf-8")
     _document_json_dir = document_hook.resolve_document_json_dir(_doc_cfg.get("DOCUMENT", "JSON_DIR", fallback=""))
-    _doc_paradata_ref = document_hook.paradata_ref_for(_logger)
 
     try:
         print(f"Extracting with {MAX_WORKERS} workers...")
@@ -260,18 +259,18 @@ def main(argv: Optional[list] = None) -> None:
             else:
                 _logger.log_skip(t[2], "json extraction failed")
 
+        # The engine is the producer's paradata (record schema 2.0 has no `pages[].ocr`, D9).
+        _logger.set_parameter("ocr_engine", "json-keys")
         for doc_id, page_ids in document_hook.group_tasks_by_doc(tasks).items():
             pages, content = document_hook.pages_and_content_from_text(
-                OUTPUT_TEXT_DIR, doc_id, page_ids, engine="json-keys", force_single_page=force_single_page
+                OUTPUT_TEXT_DIR, doc_id, page_ids, force_single_page=force_single_page
             )
             document_hook.write_document_block(
                 _document_json_dir,
                 doc_id,
-                _logger.run_id,
-                _doc_paradata_ref,
-                run_uuid=_logger.run_uuid,
                 merge_blocks={"pages": pages} if pages else None,
                 set_blocks={"content": content} if pages else None,
+                logger=_logger,
             )
         print("Done.")
     finally:

@@ -120,8 +120,8 @@ def test_accretion_preserves_unrelated_metadata_and_co_owned_fields(tmp_path: Pa
     # already run: page-classification's block, nlp-enrich's entities, and the
     # first-writer-wins `source` block.
     with DocumentRecord("CTX99", "page-classification", out_dir=str(doc_dir)) as doc:
-        doc.set_source(sha256="a" * 64, filename="CTX99.json", origin="ocr:generic")
-        doc.merge_block("pages", [{"page": "1", "category": "Text", "category_confidence": 0.91}])
+        doc.set_source(sha512="a" * 128, filename="CTX99.json")
+        doc.merge_block("pages", [{"page_index": 1, "category": "Text", "category_confidence": 0.91}])
         doc.set_block("page_categories", {"1": "Text"})
     with DocumentRecord.open(
         "CTX99", "nlp-enrich", baseline=str(doc_dir / "CTX99.document.json"), out_dir=str(doc_dir)
@@ -137,12 +137,10 @@ def test_accretion_preserves_unrelated_metadata_and_co_owned_fields(tmp_path: Pa
     (txt_dir / "CTX99").mkdir()
     (txt_dir / "CTX99" / "CTX99-1.txt").write_text("Extracted page text", encoding="utf-8")
 
-    pages, content = document_hook.pages_and_content_from_text(str(txt_dir), "CTX99", [1], engine="json-keys")
+    pages, content = document_hook.pages_and_content_from_text(str(txt_dir), "CTX99", [1])
     document_hook.write_document_block(
         str(doc_dir),
         "CTX99",
-        run_id="r3",
-        paradata_ref="paradata/r3_ocr-postprocess.json",
         merge_blocks={"pages": pages},
         set_blocks={"content": content},
     )
@@ -160,7 +158,8 @@ def test_accretion_preserves_unrelated_metadata_and_co_owned_fields(tmp_path: Pa
     row = after["pages"][0]
     assert row["category"] == "Text"
     assert row["category_confidence"] == 0.91
-    assert row["ocr"] == {"engine": "json-keys"}
+    assert (row["page_index"], row["page"], row["content_status"]) == (1, "1", "text")
+    assert "ocr" not in row, "the engine is a paradata parameter since record schema 2.0"
 
     # This run's own block, freshly written.
     assert after["content"] == {"text": "Extracted page text"}
@@ -184,13 +183,11 @@ def test_json_keys_accretion_output_is_schema_valid(tmp_path, document_schema, f
 
     doc_dir = tmp_path / "doc"
     pages, content = document_hook.pages_and_content_from_text(
-        str(txt_dir), "CTXschema", [1, 2], engine="json-keys", force_single_page=force_single_page
+        str(txt_dir), "CTXschema", [1, 2], force_single_page=force_single_page
     )
     document_hook.write_document_block(
         str(doc_dir),
         "CTXschema",
-        run_id="r1",
-        paradata_ref="paradata/r1_ocr-postprocess.json",
         merge_blocks={"pages": pages},
         set_blocks={"content": content},
     )

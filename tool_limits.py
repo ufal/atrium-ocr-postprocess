@@ -34,7 +34,7 @@ MAX_UPLOAD = upload_limit(25)
 
 # ── [TEXT_INGEST]: caps applied before and while a document is read ─────────────────────
 #: Largest file (or decompressed stream) a reader takes. Over it → 413 ``too_large``; a ZIP
-#: bundle member over it is skipped instead → ``skipped`` note.
+#: bundle member over it would be skipped → the run fails (``skipped``, D13: atrium-project#84).
 MAX_FILE_MB = limit("ATRIUM_TEXT_INGEST_MAX_FILE_MB", 256, unit="MB", kind=float, key="max_file_mb", minimum=0.001)
 #: Most members a ZIP container may have. Over it → 413 ``zip_limits_exceeded``.
 ZIP_MAX_MEMBERS = limit("ATRIUM_TEXT_INGEST_ZIP_MAX_MEMBERS", 10000, unit="members", key="zip_max_members", minimum=1)
@@ -66,8 +66,8 @@ READER_TIMEOUT_S = limit(
 MAX_LINE_CHARS = limit("ATRIUM_TEXT_INGEST_MAX_LINE_CHARS", 1000, unit="chars", key="max_line_chars")
 
 # ── reader caps that were hardcoded in text_formats.py ──────────────────────────────────
-#: Most times an ODS/ODT cell or row is repeated (``number-*-repeated``); the rest is not
-#: read → ``trimmed`` note.
+#: Most times an ODS/ODT cell or row is repeated (``number-*-repeated``); the rest would not
+#: be read → the run fails (``trimmed``, D13).
 ODF_REPEAT_CAP = limit("ATRIUM_TEXT_INGEST_ODF_REPEAT_CAP", 100, unit="repeats", key="odf_repeat_cap", minimum=1)
 #: Most objects of one PDF page scanned to judge its text layer (the text itself is always
 #: read in full); a page with more is judged on the first N → ``sampled`` note.
@@ -78,12 +78,12 @@ PDF_OBJECT_CAP = limit("ATRIUM_TEXT_INGEST_PDF_OBJECT_CAP", 20000, unit="objects
 #: is ordered window by window and the windows joined in document order → ``split`` note.
 LR_CHUNK_SIZE = limit("LR_CHUNK_SIZE", 350, unit="lines", minimum=1)
 #: Smallest window the out-of-memory fallback halves down to; below it the page keeps its
-#: document order unordered by the model → ``skipped`` note.
+#: document order unordered by the model → the run fails (``skipped``, D13).
 LR_MIN_CHUNK_SIZE = limit("LR_MIN_CHUNK_SIZE", 50, unit="lines", minimum=1)
 #: Lines per perplexity forward pass (one batch is padded to its longest line). A batch
 #: that runs out of memory is split in halves and retried, down to one line
 #: (text_util.calculate_perplexity_batch); a line that fails even on its own scores 99999
-#: (worst quality) → ``skipped`` note. 32 since 2026-10-15: a batch's logits (lines × padded
+#: (worst quality), so the run fails (``skipped``, D13). 32 since 2026-10-15: a batch's logits (lines × padded
 #: tokens × the 152k vocabulary) were copied up to three times, and at 128 the service
 #: peaked at 23.3 GB and ran out of memory on a 24 GB card shared with page-classification;
 #: 32 peaked at 9.5 GB with the same categories (atrium-digital-convert#5; both figures
@@ -136,8 +136,8 @@ def set_ppl_max_tokens(tokens: Optional[int]) -> None:
 
 def ppl_max_tokens() -> Optional[int]:
     """Tokens of one line the perplexity model reads (its context window, from
-    ``GPT2_MODEL_NAME``, else ``[CLASSIFY] MODEL_NAME``); a longer line is scored on its first N →
-    ``trimmed`` note.
+    ``GPT2_MODEL_NAME``, else ``[CLASSIFY] MODEL_NAME``); a longer line would be scored on its first
+    N → the run fails (``trimmed``, D13).
     ``None`` until the model is loaded."""
     return _PPL_WINDOW["tokens"]
 

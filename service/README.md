@@ -86,7 +86,8 @@ Every request and response field, and the error body, is typed in [`openapi.json
 | `GET`  | `/info`         | service identity and capabilities: `service`, `version`, `endpoints`, `limits` (every [limit](#limits)), `limits_meta` (the variable behind each), status, device, line fields, quality categories                                          |
 | `GET`  | `/health`       | liveness probe: 200 always, even mid-shutdown; `?deep=true` also checks that the quality and language models are loaded (503 on failure or while draining)                                                                                  |
 | `GET`  | `/ready`        | readiness probe: 503 until the models are loaded, 200 while serving, 503 as soon as `SIGTERM` arrives; the Kubernetes `readinessProbe` and `startupProbe` target                                                                            |
-| `POST` | `/process`      | scores the lines of an upload (layout analysis, cleaning, line classification); with a born-digital record, an ALTO page re-acquires a page the record flags `needs_ocr` ([OCR hand-off](#merging-an-ocrd-page-into-a-born-digital-record)) |
+| `POST` | `/process`      | scores the lines of an upload (layout analysis, cleaning, line classification)                                                                                                                                                              |
+| `POST` | `/build_record` | builds the ATRIUM record from docproc and scores its lines: the pipeline's record builder ([Building the record](#building-the-record-post-build_record))                                                                                    |
 | `POST` | `/score_record` | scores the lines of an existing ATRIUM record with the same quality model, in place ([Scoring a record](#scoring-a-record-post-score_record))                                                                                               |
 
 ### Request example
@@ -111,16 +112,16 @@ Every request and response field, and the error body, is typed in [`openapi.json
   See [Errors](#errors).
 * `document_json` (optional): a baseline ATRIUM document record, or an AMČR seed (`doc_id`, `source`). The
   response then carries `document_json`: the record with this tool's `pages` and `lines` fields merged in, its
-  `quality_summary` recomputed from them (numbers only), and `source` given what it lacks. This service reads the
-  source, so it records `source.origin`. Every value the record already has is kept (first writer wins), and the
-  upload's `sha256` never joins a seed's `sha512`, since the ALTO is not the archive's original. A record that
+  `quality_summary` recomputed from them (numbers only), and `source` given what it lacks. As the record builder
+  it records `source.origin` (`digital`, `atr` or `legacy`; record schema 2.0). Every value the record already has
+  is kept (first writer wins): a seed's `sha512` names the archive's original, and the upload's SHA-512 (an ALTO is
+  not the original) is not written over it. A record that
   cannot be opened (not JSON, not an object, a newer `schema_version` major) is a `422` `invalid_record`; an empty
   part counts as none.
 * `document_record` (optional, **deprecated**): an alias of `document_json`; its record comes back as
   `document_json_out`. Both names keep working; send one of them, not both (`422`).
 * `include_record` (optional, default `false`): with no record sent, `document_json` comes back anyway, a new
   record holding this upload's `source`, `pages` and `lines`, as the batch pipeline writes one without a baseline.
-  A born-digital upload (DOCX, visible-text PDF, …) gets none: its record is digital-convert's to originate.
   The CreateAction lists the new record as an output only.
 * `reading_order` (optional, ALTO only): `layoutreader` (default) reorders the lines with LayoutReader, as the
   batch `--method layoutreader`. `alto` reads the page with alto-tools, as `--method alto-tools`: the ALTO's own
@@ -158,14 +159,14 @@ A `document` result also carries `format` (the detected kind), `origin` (the tru
 `page_label` on every line. A line's `line_num` restarts per page, as in the batch `DOC_LINE_CATEG`. A text upload
 with form feeds and a JSON upload of several pages come back the same way (their `page_label`, `text_layer` and
 `needs_ocr_reason` are null), and each page goes into the record under its own key. One page comes back without
-`page`.
+`page`. The reader's page verdict is in the response only; the record carries none (record schema 2.0).
 
 Lines are read and shaped by the same `text_formats.py` code as the batch text-lines method: blank lines are dropped
 unless `[TEXT_INGEST] KEEP_BLANK_LINES` is set, and lines over 1000 characters are wrapped. With a record
-(`document_json`), lines accrete per page. There are two exceptions. A born-digital upload (DOCX, visible-text PDF,
-…) belongs to digital-convert (`atrium_document` §1a) and comes back as it was sent. A born-digital record's
-`needs_ocr` pages are re-acquired from an ALTO of that page ([the OCR
-hand-off](#merging-an-ocrd-page-into-a-born-digital-record)).
+(`document_json`), lines accrete per page, keyed by `page_index`, each with its `text_source` (`text-layer`, `atr`
+or `legacy`, from the origin) and, when it has a box, `bbox_precision: measured`. Since record schema 2.0 this
+service writes the lines of every record, a born-digital one too (atrium-project#84): the OCR hand-off into a
+born-digital record is gone, and the merge of a mixed document is the record builder's (H6, not built yet).
 
 Each item in `cleaned_lines` carries the fields used by the classification pipeline. Every field is typed in
 [`openapi.json`](openapi.json) (`ProcessResponse`, `AltoLine`, `AltoPage`); the table below is the short form.
@@ -230,80 +231,80 @@ Each item in `cleaned_lines` carries the fields used by the classification pipel
 | `quality_score` | float  | Composite quality score `[0, 1]`; weighted sum of nine signals (valid-word ratio, word-weirdness, perplexity, length, garbage density, vowel quality, language confidence, gibberish, fused-word ratio); higher = cleaner. |
 | `category`      | string | One of: `Clear`, `Noisy`, `Trash`, `Non-text`, `Empty`.                                                                                                                                                                    |
 
+### Building the record (`POST /build_record`)
+
+Since ARÚP's output contract of 12 November 2026 ([atrium-project#84](https://github.com/ufal/atrium-project/issues/84)
+§1, D20) this service is the record builder: it builds every record from the stored docproc (`atr/docproc-json`),
+whichever producer wrote it, the ATR for a scanned document or atrium-digital-convert for a born-digital one, and
+is the only scorer of its lines.
+
+```bash
+curl -X POST "http://localhost:8000/build_record" \
+  -F "docproc=@C-202000543A-DT-27.docproc.json" \
+  -F "document_json=@C-202000543A-DT-27.seed.json"     # or: -F "doc_id=C-202000543A-DT-27"
+```
+
+* **In:** `docproc` (required): the ATR's schema as delivered (#84 comment 1) or atrium-digital-convert's (the same
+  schema with asks 3 and 13 applied); `document_json` (optional): the AMČR seed; `doc_id` when no seed is sent;
+  `score` (default `true`).
+* **Read** ([`docproc.py`](../docproc.py)): pages by `pageNumber`, blocks in `readingOrder`. A block's own
+  `lines[]` are its lines, each with its box (`bbox_precision: measured`); otherwise its `content` split at line
+  breaks, each line with the block's box (`derived`), and a block without a line break is one line. A table gives
+  one line per `cellGrid` row, its cells joined by a tab. An image block without text gives no line.
+* **Written:** `source` (the seed's identity, and `origin`, `page_count`, `language`), `pages[]` (a row for every
+  page of the original: `page_index`, `page`, `content_status`, and `canvas` when docproc gives the page a size),
+  `lines[]` (from 1 per page in reading order, each with its docproc `block`, `text_source` and `bbox_precision`)
+  and `content.text`; with `score`, every line's `categ`, `quality_score` and `lang`, each page's `quality_score`
+  and `quality_band`, and `quality_summary`, as `/score_record` writes them. A page routed `empty` has
+  `content_status: empty` and no score (D18 rule 7).
+* **Refused (`422`, `cause` the reader's code), nothing returned (D13):** a docproc that cannot be read
+  (`invalid_docproc`), a page neither in `pages[]` nor routed `empty` (`unread_pages`, H15), a block whose text could
+  not be read (`all_engines_failed`), and a page flagged `needsAtr` (`needs_atr`): its text comes in the ATR's
+  docproc, and the merge of a mixed document (H6) is not built yet.
+* **Out** (`BuildRecordResponse`): `document_json`, `limits_applied` and `paradata`: `object` the docproc and the
+  seed, `result` the record with the blocks and fields written, each by SHA-512.
+
+**On the command line:** `python3 build_record.py DOC.docproc.json --seed SEED.json --out-dir records/`
+(`--doc-id` without a seed, `--no-score`, `--paradata-dir`) runs the same code
+([build_record.py](../build_record.py)). A failed build exits 1, writes no record, and its paradata say
+`action_status: failed`.
+
 ### Scoring a record (`POST /score_record`)
 
-A born-digital record (PDF, DOCX, ODT, … read by atrium-digital-convert) has its lines from the document's own text
-layer, so `/process` contributes nothing to it (§1a). Whether that text reads is still this service's question, and
-the pilot wants one quality answer for scanned and born-digital documents alike. `/score_record` answers it on the
-record itself:
+`/score_record` scores the lines of an existing record with the common quality model, in place: one model, one set
+of constants and one band scheme for every text source (D18 rules 1–3). `/build_record` scores as it builds; this
+endpoint re-scores a record, and is what the batch stages and a record built elsewhere use.
 
 ```bash
 curl -X POST "http://localhost:8000/score_record" \
   -F "document_json=@report.document.json"          # optional: -F "pages=i,ii,3"
 ```
 
-* **In:** `document_json` (required) — any record, born-digital or OCR; `pages` (optional) — the record's own page
-  keys, comma-separated (a key the record lacks is refused, `422`).
-* **Scored:** each `lines[]` row with text, **exactly as it is** — not re-read, split or reordered, so every answer
-  maps back onto its row — in batches of `PPL_BATCH_LINES`, by the same scorer as every other path. A line carrying
-  atrium-digital-convert's decode verdict (`categ` `Garbage` or `Inverted`: the embedded text layer does not decode)
-  is left as it is; a line without text is not scored.
+* **In:** `document_json` (required): any record; `pages` (optional): the record's own page keys, comma-separated
+  (a key the record lacks is refused, `422`).
+* **Scored:** each `lines[]` row with text, **exactly as it is**: not re-read, split or reordered, so every answer
+  maps back onto its row, in batches of `PPL_BATCH_LINES`, by the same scorer as every other path. Every line with
+  text is scored, whatever its text source; until #84 a line carrying atrium-digital-convert's decode verdict was
+  left out, and that verdict is now a docproc flag, not a category. A line without text is not scored.
 * **Written into the record** (`document_hook.write_scores()`): `lines[].categ` / `quality_score` / `lang` and
-  `pages[].quality_score` / `quality_band`, on rows the record already has — never `text`, never `bbox`, never a new
-  row, never `source`. On a born-digital record that is the shared module's scoring co-contribution
-  (`atrium_document.SCORING_FIELDS`): the record stays atrium-digital-convert's, and the block's stamp reads
-  `"program": "ocr-postprocess", "contribution": "scoring"`. The record's `quality_summary` block, this tool's on
-  every origin, is recomputed from the scored record: page and line totals, the mean, median, minimum and maximum of
-  the pages' `quality_score`, and the lines per `categ`, the decode verdicts included.
-* **Out** (`ScoreRecordResponse`): `cleaned_lines` (every `AltoLine` field plus the record's `page` and `line`; `line_num`
-  restarts per page), `pages` (`lines_scored`, `skipped_decode_verdict`, `skipped_empty`, `quality_score`,
-  `quality_band`), `limits_applied`, `document_json` (the record, scored; as sent when nothing was scored) and
-  `paradata`.
+  `pages[].quality_score` / `quality_band`, on rows the record already has: never `text`, never `bbox`, never a new
+  row, never `source`, and no page score on an empty page. The record's `quality_summary` is recomputed from the
+  scored record: page totals (empty pages counted apart), the mean, median, minimum and maximum of the pages'
+  `quality_score`, and the lines per `categ`.
+* **Out** (`ScoreRecordResponse`): `cleaned_lines` (every `AltoLine` field plus the record's `page` and `line`;
+  `line_num` restarts per page), `pages` (`lines_scored`, `skipped_empty`, `quality_score`, `quality_band`),
+  `limits_applied`, `document_json` (the record, scored; as sent when nothing was scored) and `paradata`.
 * **Limits:** `MAX_UPLOAD_MB` for the record part, `ATRIUM_TEXT_INGEST_MAX_PAGES` for the pages scored and
   `ATRIUM_TEXT_INGEST_MAX_LINES_PER_PAGE` for the lines of one page (`413 limit_exceeded`). A record that cannot be
   opened, or has no `doc_id`, is `422 invalid_record`.
 
-atrium-digital-convert's `POST /describe` calls this endpoint when `OCR_POSTPROCESS_URL` is set (and falls back
-to `/process` page by page against an older version of this service).
+atrium-digital-convert's `POST /describe` (parked, H11) still calls this endpoint when `OCR_POSTPROCESS_URL` is set.
 
 **On the command line:** `python3 score_record.py <record or folder> [--pages i,ii] [--out-dir DIR] [--scores]`
 runs the same code ([record_scoring.py](../record_scoring.py)) over `*.document.json` files, in place unless
 `--out-dir` is given, without the two page and line limits; `--scores` writes the answer without the record as
-`<doc>.scores.json` ([usage](../docs/usage.md#score-an-existing-record-score_recordpy)).
-
-### Merging an OCR'd page into a born-digital record
-
-atrium-digital-convert flags a page of a born-digital PDF `needs_ocr` when its embedded text layer is missing, does
-not decode, or is an earlier OCR run (`pages[].needs_ocr_reason`, `pages[].text_layer`). The AMČR pipeline renders
-that page, runs ATR on it, and sends the page's ALTO here **with the record**. The page's lines come back into the
-same record, and the document's born-digital pages stay as the converter wrote them.
-
-```bash
-curl -X POST "http://localhost:8000/process" \
-  -F "file=@C-202000543A-DT-27-ii.alto.xml" \
-  -F "document_json=@C-202000543A-DT-27.document.json" \
-  -F "page=ii"                                        # the record's key for the page
-```
-
-* **Which page:** `page`, the record's own key (`ii`, `A-1`, …). Without it, the ALTO page's `PHYSICAL_IMG_NR` is
-  read as a physical position and mapped through the record's `pages[].page_index` (position 3 of a PDF labelled
-  `i, ii, 1` is the page `1`; a number is never matched to a label). One ALTO page per request.
-* **Refused before any model runs (`422`):** a page the record lacks, a page it does not flag `needs_ocr`, a
-  multi-page ALTO, a text with form feeds or a JSON of several pages with `page`, `page` without `document_json`
-  or with a document upload, and `page` on a born-digital record that flags nothing. A JSON or text upload names no
-  page of its own, so on a record that flags pages it needs `page`; without it nothing is written.
-* **Written:** the page's `lines[]` are **replaced** by the classified lines (`text`, `categ`, `quality_score`,
-  `lang`) — the converter's undecodable rows of that page go, in the record's page order. The page's `pages[]` row
-  gets `quality_score`, `quality_band` and `ocr.engine` (the engine the ALTO names, e.g. `ocr:pero`, else the
-  configured ALTO origin) and keeps `page_index`, `canvas`, `needs_ocr`, `text_layer` and page-classification's
-  `category`. `source` (the original's), `content` and every other page are left as they are. Both stamps read
-  `"program": "ocr-postprocess", "contribution": "ocr-handoff"`, the shared module's hand-off
-  (`atrium_document.OCR_HANDOFF`), which `merge_document_records()` accepts while the record flags a page.
-* **Out:** the usual `/process` response, plus `ocr_handoff` (`page`, `lines_replaced`, `lines_written`).
-
-The batch stages make the same write through `document_hook.write_document_block()`: on a record that flags pages,
-only those pages' rows are written (page keys mapped the same way), their lines replaced; `content`, `tables`, other
-pages' rows and an OCR input's `source` are held back with one warning.
+`<doc>.scores.json` ([usage](../docs/usage.md#score-an-existing-record-score_recordpy)). The record file it writes
+is byte for byte the one its paradata name by SHA-512.
 
 ## Errors
 
@@ -339,13 +340,14 @@ variable that sets it in `limits_meta`. The `[TEXT_INGEST]` caps are also keys o
 (`LANGID_CONFIG`, `setup/config.txt`), which the batch pipeline reads: the variable wins over the file, and the
 file over the default below. A malformed value stops the service at startup, naming it. Over a limit the
 service **refuses** (`reason: "limit_exceeded"`) or **processes the input in full** and says how the limit
-shaped the result, in the response's `limits_applied` (and the paradata). `tests/test_limits_contract.py`
+shaped the result, in the response's `limits_applied` (and the paradata). A limit that would trim, skip or stop
+content refuses: nothing partial is returned (D13, atrium-project#84). `tests/test_limits_contract.py`
 checks this table against `tool_limits.py` and `.env.example`.
 
 | Key (`/info`)        | Variable                                | Default | Unit    | Over the limit                                                                                              |
 |----------------------|-----------------------------------------|---------|---------|-------------------------------------------------------------------------------------------------------------|
 | `max_upload_mb`      | `MAX_UPLOAD_MB`                         | 25      | MB      | 413 `limit_exceeded` — per part: the file and the document record                                           |
-| `max_file_mb`        | `ATRIUM_TEXT_INGEST_MAX_FILE_MB`        | 256     | MB      | 413 `limit_exceeded` (`too_large`); a ZIP member over it is not read — `skipped` note                       |
+| `max_file_mb`        | `ATRIUM_TEXT_INGEST_MAX_FILE_MB`        | 256     | MB      | 413 `limit_exceeded` (`too_large`); a ZIP member over it: 422 `limit_exceeded` (D13)                          |
 | `zip_max_members`    | `ATRIUM_TEXT_INGEST_ZIP_MAX_MEMBERS`    | 10000   | members | 413 `limit_exceeded` (`zip_limits_exceeded`)                                                                |
 | `zip_max_total_mb`   | `ATRIUM_TEXT_INGEST_ZIP_MAX_TOTAL_MB`   | 1024    | MB      | 413 `limit_exceeded`                                                                                        |
 | `zip_max_member_mb`  | `ATRIUM_TEXT_INGEST_ZIP_MAX_MEMBER_MB`  | 256     | MB      | 413 `limit_exceeded`                                                                                        |
@@ -354,12 +356,12 @@ checks this table against `tool_limits.py` and `.env.example`.
 | `max_lines_per_page` | `ATRIUM_TEXT_INGEST_MAX_LINES_PER_PAGE` | 100000  | lines   | a paged format: 413 `limit_exceeded`; any other: split onto continuation pages, read in full — `split` note |
 | `reader_timeout_s`   | `ATRIUM_TEXT_INGEST_READER_TIMEOUT_S`   | 300     | s       | 422 `limit_exceeded` (`timeout`, PDF reader) — a per-input budget, a retry will not help                    |
 | `max_line_chars`     | `ATRIUM_TEXT_INGEST_MAX_LINE_CHARS`     | 1000    | chars   | wrapped at a word boundary, classified in full as several lines — `split` note                              |
-| `odf_repeat_cap`     | `ATRIUM_TEXT_INGEST_ODF_REPEAT_CAP`     | 100     | repeats | repeated ODS/ODT cells or rows past it are not read — `trimmed` note                                        |
+| `odf_repeat_cap`     | `ATRIUM_TEXT_INGEST_ODF_REPEAT_CAP`     | 100     | repeats | repeated ODS/ODT cells or rows past it would not be read: 422 `limit_exceeded` (D13)                        |
 | `pdf_object_cap`     | `ATRIUM_TEXT_INGEST_PDF_OBJECT_CAP`     | 20000   | objects | the text layer is judged on the first N objects (the text is read in full) — `sampled` note                 |
 | `lr_chunk_size`      | `LR_CHUNK_SIZE`                         | 350     | lines   | an ALTO page is ordered window by window — `split` note                                                     |
-| `lr_min_chunk_size`  | `LR_MIN_CHUNK_SIZE`                     | 50      | lines   | out of memory below it: the page keeps its document order — `skipped` note                                  |
-| `ppl_batch_lines`    | `PPL_BATCH_LINES`                       | 32      | lines   | lines per perplexity pass; out of memory splits it; 99999 only if one line fails alone — `skipped` note     |
-| `ppl_max_tokens`     | — (derived from `GPT2_MODEL_NAME`)      | —       | tokens  | the perplexity model reads the first N tokens of a line — `trimmed` note (`null` until the model loads)     |
+| `lr_min_chunk_size`  | `LR_MIN_CHUNK_SIZE`                     | 50      | lines   | out of memory below it: 422 `limit_exceeded` (D13), the page is not left unordered                          |
+| `ppl_batch_lines`    | `PPL_BATCH_LINES`                       | 32      | lines   | lines per perplexity pass; out of memory splits it; a line that fails alone: 422 `limit_exceeded` (D13)     |
+| `ppl_max_tokens`     | — (derived from `GPT2_MODEL_NAME`)      | —       | tokens  | a line longer than N tokens: 422 `limit_exceeded` (D13; `null` until the model loads)                       |
 
 Platform limits (not settings): libxml2's default limits (parsed without `huge_tree`); Starlette's multipart
 defaults.
@@ -368,15 +370,15 @@ defaults.
 
 A 200 can be a result a limit or a reader shaped. It says so in three places:
 
-- **`limits_applied`** (also in the paradata): `split` (a long line or page read in pieces, classified in full),
-  `trimmed` (repeated spreadsheet cells, or a line's tokens past the perplexity model's length), `sampled` (a PDF's
-  text layer judged on its first objects) and `skipped` (a ZIP member over the size limit, a page kept in document
-  order after layout ordering ran out of memory, or a line that failed perplexity even alone and was scored 99999).
-  [Limits](#limits) says which limit produces which note.
+- **`limits_applied`** (also in the paradata): `split` (a long line or page read in pieces, classified in full) and
+  `sampled` (a PDF's text layer judged on its first objects). [Limits](#limits) says which limit produces which
+  note. Since atrium-project#84 (D13) a limit that would trim, skip or stop content fails the call instead
+  (`422 limit_exceeded`, nothing returned): repeated spreadsheet cells over the cap, a line's tokens past the
+  perplexity model's length, a ZIP member over the size limit, a page layout ordering could not order for lack of
+  memory, a line that failed perplexity even alone.
 - **A document's `pages`**: per page, a PDF's `text_layer` and its `needs_ocr_reason` when the page's text should
   come from OCR instead.
-- **`/score_record`'s `pages`**: `lines_scored`, `skipped_decode_verdict` (lines the converter marked `Garbage` or
-  `Inverted`, left as they are) and `skipped_empty`.
+- **`/score_record`'s `pages`**: `lines_scored` and `skipped_empty`.
 
 The batch pipeline has the same notes in its paradata, and a text-lines input read with a possible loss is
 `partial` in its `ingest_report.csv`.
@@ -441,12 +443,14 @@ the service and from the batch pipeline. What the categories mean and how they a
 Inference runs in a worker thread, and the GPU work of concurrent requests takes turns under one lock.
 `POST /score_record` scores the lines of a record as they are, in batches of `PPL_BATCH_LINES`.
 
-Every `/process` response carries **`paradata`**, the call's provenance: one Process Run Crate `CreateAction`, built
-by `atrium_rocrate.create_action()`. Its `@id` is the call's `run_uuid`, which also stamps every block the call
-wrote into the record. `object` is the upload (by content hash) and the record sent; `result` is the blocks written
-and the classified lines (`cleaned_lines.json`); `agent` is `ATRIUM_RUN_AGENT` when set. The service writes no
-paradata file. Hub [`docs/rocrate_export.md`](https://github.com/ufal/atrium-project/blob/main/docs/rocrate_export.md)
-§5 describes it.
+Every `/process`, `/build_record` and `/score_record` response carries **`paradata`**, the call's provenance
+(paradata 3.0, atrium-project#84): one Process Run Crate `CreateAction`, built by
+`atrium_rocrate.action_from_paradata()`. `object` names what the call read, by AMČR distribution name and SHA-512:
+the upload as `original` (AMČR's name for that distribution is still open), the docproc as `atr/docproc-json`, the
+record or seed sent as `atrium/document-json`. `result` names the record written, with the blocks and fields the
+call wrote. The classified lines are the answer, not a stored output, so they are not named. `agent` is
+`ATRIUM_RUN_AGENT` when set. The record itself carries no run data, and the service writes no paradata file. Hub
+[`docs/rocrate_export.md`](https://github.com/ufal/atrium-project/blob/main/docs/rocrate_export.md) §5 describes it.
 
 ## Shutdown behaviour
 
@@ -568,7 +572,7 @@ The fast lane needs no model, GPU or network:
 ```bash
 pip install -r setup/requirements-test.txt
 pytest -m "not slow" tests/test_service_api.py tests/test_api_contract.py tests/test_openapi_contract.py \
-       tests/test_service_hardening.py tests/test_score_record.py tests/test_ocr_handoff.py \
+       tests/test_service_hardening.py tests/test_score_record.py tests/test_build_record.py \
        tests/test_limits_contract.py tests/test_env_contract.py          # the service and its contracts
 pytest -m "not slow"                                                    # the whole fast lane
 ```
@@ -579,8 +583,9 @@ pytest -m "not slow"                                                    # the wh
   is stale.
 - `tests/test_limits_contract.py` and `tests/test_env_contract.py` check the [Limits](#limits) table and the
   [Configuration](#configuration-environment) table against the code and `.env.example`.
-- `tests/test_service_hardening.py`, `tests/test_score_record.py` and `tests/test_ocr_handoff.py` cover the shutdown,
-  the record scoring and the OCR hand-off.
+- `tests/test_service_hardening.py`, `tests/test_score_record.py` and `tests/test_build_record.py` cover the shutdown,
+  the record scoring and the record builder (the docproc reader, `build_record.py` and `/build_record`, on docproc
+  fixtures in the ATR's shape and from atrium-digital-convert).
 - `tests/test_cli_service_parity.py` pins what the command line and the service answer alike, and what differs on
   purpose ([the table](../docs/usage.md#the-command-line-and-the-service)).
 

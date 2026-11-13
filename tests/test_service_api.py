@@ -238,14 +238,15 @@ def test_process_document_accretes_per_page(mock_process, tmp_path, monkeypatch)
 
 
 @patch("service.text_api.text_manager.process_document", create=True)
-def test_process_born_digital_document_contributes_nothing_to_the_record(mock_process, tmp_path, monkeypatch, caplog):
-    """A born-digital upload (DOCX, visible-text PDF) is digital-convert's to originate
-    (atrium_document §1a): the lines are returned, the record gets no pages/lines."""
+def test_process_born_digital_document_builds_its_lines_too(mock_process, tmp_path, monkeypatch):
+    """A born-digital upload (DOCX, visible-text PDF) was digital-convert's to originate until
+    record schema 2.0; this repo now builds every record (atrium-project#84), so its lines are
+    written, with their text source."""
     monkeypatch.chdir(tmp_path)
     result = json.loads(json.dumps(_DOC_RESULT))
     result["origin"] = "digital-born-docx"
     mock_process.return_value = result
-    baseline_path = _real_baseline(tmp_path, pages=("1",))
+    baseline_path = _real_baseline(tmp_path, pages=("1", "2"))
 
     response = client.post(
         "/process",
@@ -258,8 +259,12 @@ def test_process_born_digital_document_contributes_nothing_to_the_record(mock_pr
     assert response.status_code == 200
     body = response.json()
     assert len(body["cleaned_lines"]) == 2
-    assert "lines" not in body["document_json_out"]
-    assert "born-digital upload" in caplog.text
+    record = body["document_json_out"]
+    assert record["source"]["origin"] == "digital"
+    assert [(line["page"], line["text_source"]) for line in record["lines"]] == [
+        ("1", "text-layer"),
+        ("2", "text-layer"),
+    ]
 
 
 # ── (atrium-project#10 J1 + D2) the `document_record` accretion parameter ─────
@@ -310,9 +315,9 @@ _CLASSIFIED_LINES = [
         "lang_score": 0.11,
         "perplexity": 9000.0,
         "quality_score": 0.1,
-        # A load-bearing value: json_to_md's DROP_CATEGORIES keys off this exact
-        # spelling, so it has to survive the mapping verbatim.
-        "category": "Garbage",
+        # A load-bearing value: downstream filters key off this exact spelling, so it
+        # has to survive the mapping verbatim.
+        "category": "Trash",
         "line_num": 2,
     },
 ]
@@ -321,13 +326,18 @@ _DOC_ID = "CTX000000001"
 
 
 def _real_baseline(tmp_path, pages=("7", "8", "9"), doc_id=_DOC_ID):
-    """A baseline as the pipeline would really hand it over: page-classification's own
-    block plus its fields on the shared `pages` rows, and the immutable `source`."""
-    with DocumentRecord(doc_id, "page-classification", out_dir=str(tmp_path)) as doc:
-        doc.set_source(sha256="a" * 64, filename=f"{doc_id}.alto.xml", origin="ABBYY-ALTO")
-        doc.merge_block("pages", [{"page": p, "category": "Text", "category_confidence": 0.91} for p in pages])
+    """A baseline as the pipeline would really hand it over: the record builder's page rows,
+    page-classification's own block plus its fields on those rows, and the immutable `source`."""
+    path = tmp_path / f"{doc_id}.document.json"
+    with DocumentRecord(doc_id, "ocr-postprocess", out_dir=str(tmp_path)) as doc:  # the record builder's pages
+        doc.set_source(sha512="a" * 128, filename=f"{doc_id}.alto.xml")
+        doc.merge_block("pages", [{"page_index": int(p), "page": p} for p in pages])
+    with DocumentRecord.open(doc_id, "page-classification", baseline=str(path), out_dir=str(tmp_path)) as doc:
+        doc.merge_block(
+            "pages", [{"page_index": int(p), "category": "Text", "category_confidence": 0.91} for p in pages]
+        )
         doc.set_block("page_categories", {p: "Text" for p in pages})
-    return tmp_path / f"{doc_id}.document.json"
+    return path
 
 
 @patch("service.text_api.text_manager.process_alto", create=True)
@@ -367,7 +377,7 @@ def test_process_accretes_real_lines_and_pages_onto_a_baseline(mock_process, tmp
     assert [line["line"] for line in lines] == [1, 2]
     # `category` in the inference layer, `categ` in the schema — and the load-bearing
     # value passes through unchanged.
-    assert [line["categ"] for line in lines] == ["Clear", "Garbage"]
+    assert [line["categ"] for line in lines] == ["Clear", "Trash"]
     assert lines[0]["lang"] == "ces"
     assert lines[0]["quality_score"] == 0.9
     # Attributed to the page the ALTO itself names, not to a fabricated "1".
@@ -378,9 +388,9 @@ def test_process_accretes_real_lines_and_pages_onto_a_baseline(mock_process, tmp
     assert [page["page"] for page in record["pages"]] == ["7", "8", "9"]
     page7 = next(page for page in record["pages"] if page["page"] == "7")
     # Real metrics, computed from the real lines: the mean of the Clear and Noisy lines (the one Clear
-    # line here; the 0.1 `Garbage` line is not one), as the batch aggregation takes it, never 1.0.
+    # line here; the 0.1 `Trash` line is not one), as the batch aggregation takes it, never 1.0.
     assert page7["quality_score"] == 0.9
-    assert page7["quality_band"] == "Clear"  # 1 Clear vs 0 Noisy / 0 Trash
+    assert page7["quality_band"] == "Clear"  # 1 Clear vs 1 Trash: the tie goes to Clear
     assert all("quality_score" not in page for page in record["pages"] if page["page"] != "7")
 
     # Co-owned fields on the row this run touched survive untouched.
@@ -393,10 +403,13 @@ def test_process_accretes_real_lines_and_pages_onto_a_baseline(mock_process, tmp
     # the upload only fills in what it lacks (atrium-project#71).
     assert {key: record["source"][key] for key in baseline_before["source"]} == baseline_before["source"]
 
-    # Rule 4: this contribution is stamped, and the baseline is acknowledged.
-    assert record["assembled"]["blocks"]["lines"]["program"] == "ocr-postprocess"
-    assert record["assembled"]["blocks"]["page_categories"]["program"] == "page-classification"
-    assert record["assembled"]["had_baseline"] is True
+    # Record schema 2.0: no run data in the record; the call's paradata name the record read and
+    # written by SHA-512 (atrium-project#84).
+    assert "assembled" not in record
+    action = response.json()["paradata"]
+    assert [e["name"] for e in action["object"]] == ["original", "atrium/document-json"]
+    assert [e["name"] for e in action["result"]] == ["atrium/document-json"]
+    assert "lines" in action["result"][0]["recordFields"]
 
 
 @patch("service.text_api.text_manager.process_text_file", create=True)
@@ -421,7 +434,7 @@ def test_process_text_upload_accretes_under_the_single_page_label(mock_process, 
     # No lines classified -> no rows invented on either block, and the baseline's own
     # single page row is left exactly as it was.
     assert "lines" not in record
-    assert record["pages"] == [{"page": "1", "category": "Text", "category_confidence": 0.91}]
+    assert record["pages"] == [{"page_index": 1, "page": "1", "category": "Text", "category_confidence": 0.91}]
 
 
 @patch("service.text_api.text_manager.process_alto", create=True)
@@ -533,7 +546,7 @@ def test_process_accretes_onto_a_seed_keyed_unlike_the_upload(mock_process, tmp_
 
     assert record["doc_id"] == _SEED_ID
     assert [line["text"] for line in record["lines"]] == [entry["text"] for entry in _CLASSIFIED_LINES]
-    assert record["assembled"]["blocks"]["lines"]["program"] == "ocr-postprocess"
+    assert "assembled" not in record
     page7 = record["pages"][0]
     assert page7["quality_score"] == 0.9
     assert page7["category"] == "Text"  # the seed's own field on the same row

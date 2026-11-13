@@ -19,7 +19,7 @@ import xml.etree.ElementTree as ET
 import pytest
 
 import document_hook
-from atrium_document import load_document, resolve_originator
+from atrium_document import load_document
 from page_split import (
     _doc_id_from_filename,
     main,
@@ -492,22 +492,11 @@ def test_main_survives_malformed_json_document(workdir):
     assert not (workdir / "out" / "aaa_broken").exists()
 
 
-# ── (atrium-project#10) the document-json path, which had zero coverage here ──
+# ── (atrium-project#10) the document-json path ──
 #
-# This file covered splitting and paradata only, so neither D5 (source.origin never
-# written, leaving the §1a mixed-plane guard permanently deferred) nor D6 (the
-# ParadataLogger OBJECT passed where a run_id string belongs) was visible from any
-# test. tests/test_document_hook.py exercises only the already-correct string form,
-# which is exactly why D6 went unnoticed.
-
-
-class _FakeParadataLogger:
-    """Only the three attributes document_hook.paradata_ref_for() reads."""
-
-    def __init__(self, run_id, program="ocr-postprocess", paradata_dir="paradata"):
-        self.run_id = run_id
-        self.program = program
-        self.paradata_dir = paradata_dir
+# page_split is the record's first writer of `source` (D5). Record schema 2.0
+# (atrium-project#84) holds the origin as `digital`, `atr` or `legacy`
+# (`document_hook.record_origin`), names the original by SHA-512, and stamps no run.
 
 
 @pytest.fixture
@@ -535,15 +524,14 @@ def test_doc_id_from_filename_delegates_to_canonical_doc_id():
     assert _doc_id_from_filename("CTX1.alto.xml", "json") == _doc_id_from_filename("CTX1.alto.xml", "xml")
 
 
-def test_resolve_source_origin_defaults_per_format_resolve_to_this_repo(monkeypatch):
-    """(D5) The value is only useful if ORIGIN_ORIGINATORS maps it back to this repo:
-    an unmatched prefix makes _assert_origin_consistent() abstain in silence, which is
-    the state that had the guard switched off."""
+def test_resolve_source_origin_defaults_per_format_map_onto_the_record(monkeypatch):
+    """(D5) The value is only useful if it maps onto one of the record's origins: one that
+    maps to none leaves the record without `source.origin`."""
     monkeypatch.delenv("DOCUMENT_SOURCE_ORIGIN", raising=False)
-    assert resolve_originator(resolve_source_origin("xml")) == "ocr-postprocess"
-    assert resolve_originator(resolve_source_origin("json")) == "ocr-postprocess"
     assert resolve_source_origin("xml") == "ABBYY-ALTO"
     assert resolve_source_origin("json").startswith("ocr:")
+    assert document_hook.record_origin(resolve_source_origin("xml")) == "legacy"
+    assert document_hook.record_origin(resolve_source_origin("json")) == "atr"
 
 
 def test_resolve_source_origin_precedence(monkeypatch):
@@ -555,22 +543,20 @@ def test_resolve_source_origin_precedence(monkeypatch):
     assert resolve_source_origin("xml", "ocr:from-config") == "ocr:from-config"
 
 
-def test_resolve_source_origin_warns_when_the_override_disables_the_guard(monkeypatch, capsys):
-    """A misspelled or foreign origin must not fail quietly: `docx` resolves to
-    digital-convert, which would make §1a REFUSE every write this repo makes, and
-    `nonsense` matches nothing at all, which makes it abstain."""
+def test_resolve_source_origin_warns_when_the_override_maps_to_no_origin(monkeypatch, capsys):
+    """A misspelled origin must not fail quietly: it maps to none of the record's origins, so
+    the record would carry none."""
     monkeypatch.delenv("DOCUMENT_SOURCE_ORIGIN", raising=False)
     resolve_source_origin("xml", override="docx")
+    assert capsys.readouterr().err == ""
     resolve_source_origin("xml", override="nonsense")
-    err = capsys.readouterr().err
-    assert "digital-convert" in err
-    assert "abstain" in err
+    assert "maps to none of the record's origins" in capsys.readouterr().err
 
 
-def test_main_writes_source_origin_that_resolves_to_this_repo(workdir, docdir):
+def test_main_writes_the_source_of_the_original(workdir, docdir):
     """(D5) The real call site, end to end: page_split is the record's first writer of
-    `source`, so if it omits `origin` nothing downstream can supply it — set_source() is
-    first-writer-wins — and the §1a check defers forever."""
+    `source`, so if it omits `origin` nothing downstream can supply it (set_source() is
+    first-writer-wins)."""
     src = workdir / "in" / "doc.alto.xml"
     src.write_text(_TWO_PAGE_DOC, encoding="utf-8")
 
@@ -578,26 +564,25 @@ def test_main_writes_source_origin_that_resolves_to_this_repo(workdir, docdir):
 
     record = load_document(str(docdir / "doc.document.json"))
     source = record["source"]
-    assert source["origin"] == "ABBYY-ALTO"
-    assert resolve_originator(source["origin"]) == "ocr-postprocess"
+    assert source["origin"] == "legacy"
     assert source["page_count"] == 2
     assert source["filename"] == "doc.alto.xml"
-    assert source["sha256"] == hashlib.sha256(src.read_bytes()).hexdigest()
+    assert source["sha512"] == hashlib.sha512(src.read_bytes()).hexdigest() and "sha256" not in source
     assert record["doc_id"] == "doc"
+    assert "assembled" not in record and "provenance" not in record
 
 
-def test_main_json_input_records_an_ocr_origin(workdir, docdir):
-    """The JSON path describes generic OCR/Doc-AI output (#31), so its origin carries
-    the `ocr:` prefix — `source.origin` says how the ORIGINAL input was acquired, not
-    that this stage happened to read JSON."""
+def test_main_json_input_records_an_atr_origin(workdir, docdir):
+    """The JSON path describes generic OCR/Doc-AI output (#31), so its origin is `atr`:
+    `source.origin` says how the ORIGINAL input was acquired, not that this stage happened
+    to read JSON."""
     doc = {"pages": [{"pageNumber": 1, "text": "a"}, {"pageNumber": 2, "text": "b"}]}
     (workdir / "in" / "doc.json").write_text(json.dumps(doc), encoding="utf-8")
 
     main([str(workdir / "in"), str(workdir / "out")])
 
     source = load_document(str(docdir / "doc.document.json"))["source"]
-    assert source["origin"].startswith("ocr:")
-    assert resolve_originator(source["origin"]) == "ocr-postprocess"
+    assert source["origin"] == "atr"
     assert source["media_type"] == "application/json"
 
 
@@ -607,58 +592,38 @@ def test_main_source_origin_cli_override_is_recorded(workdir, docdir):
     main([str(workdir / "in"), str(workdir / "out"), "--source-origin", "ocr:pero"])
 
     source = load_document(str(docdir / "doc.document.json"))["source"]
-    assert source["origin"] == "ocr:pero"
-    assert resolve_originator(source["origin"]) == "ocr-postprocess"
+    assert source["origin"] == "atr"
 
 
-def test_main_passes_a_run_id_string_and_a_paradata_ref_to_the_hook(workdir, docdir, monkeypatch):
-    """(D6) Pins the SHAPE of the production call. This site used to pass the
-    ParadataLogger object where every one of the seven sibling call sites passes
-    `_logger.run_id`, and never passed a paradata_ref at all."""
+def test_main_passes_its_logger_to_the_hook(workdir, docdir, monkeypatch):
+    """(D6) Pins the SHAPE of the production call: the stage's ParadataLogger goes to the hook,
+    which names the record read and written in the paradata (#84); no run id reaches the record."""
+    from atrium_paradata import ParadataLogger
+
     seen = {}
 
-    def _spy(document_json_dir, doc_id, run_id, paradata_ref="", **kwargs):
-        seen.update(
-            document_json_dir=document_json_dir,
-            doc_id=doc_id,
-            run_id=run_id,
-            paradata_ref=paradata_ref,
-            kwargs=kwargs,
-        )
+    def _spy(document_json_dir, doc_id, **kwargs):
+        seen.update(document_json_dir=document_json_dir, doc_id=doc_id, kwargs=kwargs)
 
     monkeypatch.setattr(document_hook, "write_document_block", _spy)
     (workdir / "in" / "doc.alto.xml").write_text(_TWO_PAGE_DOC, encoding="utf-8")
 
     main([str(workdir / "in"), str(workdir / "out")])
 
-    assert isinstance(seen["run_id"], str) and seen["run_id"]
-    assert seen["paradata_ref"].endswith("_ocr-postprocess.json")
+    assert isinstance(seen["kwargs"]["logger"], ParadataLogger)
     assert seen["doc_id"] == "doc"
     assert seen["kwargs"]["source"]["origin"] == "ABBYY-ALTO"
+    assert set(seen["kwargs"]) == {"source", "logger"}
 
 
-def test_write_document_block_with_source_and_a_block_in_one_call(workdir, docdir):
-    """(D6) The landmine itself: `source=` together with a block, which is the shape
-    the sibling stages use and the shape this call site would take the day it starts
-    contributing one. `set_source()` never stamps, so a non-serialisable run_id stayed
-    invisible while only `source` was written; _stamp() embeds it, json.dump() raises
-    TypeError, and DocumentRecord.__exit__ swallows that — leaving NO record at all,
-    `source` included, plus a stray .tmp."""
-    run_id = "260805-101112"
-    document_hook.write_document_block(
-        str(docdir),
-        "CTXpair",
-        run_id,
-        document_hook.paradata_ref_for(_FakeParadataLogger(run_id)),
-        source={"sha256": "c" * 64, "filename": "CTXpair.alto.xml", "origin": "ABBYY-ALTO"},
-        merge_blocks={"pages": [{"page": "1", "quality_score": 0.5, "quality_band": "Noisy"}]},
-    )
+def test_main_names_the_record_in_its_paradata(workdir, docdir):
+    """The record page_split wrote is the run's `result`, by SHA-512 and with the fields written."""
+    (workdir / "in" / "doc.alto.xml").write_text(_TWO_PAGE_DOC, encoding="utf-8")
 
-    record_path = docdir / "CTXpair.document.json"
-    assert record_path.exists()  # a TypeError here would leave only CTXpair.document.json.tmp
-    assert not (docdir / "CTXpair.document.json.tmp").exists()
-    record = load_document(str(record_path))
-    assert record["assembled"]["blocks"]["pages"]["run_id"] == run_id
-    assert record["assembled"]["blocks"]["pages"]["paradata_ref"].endswith(f"{run_id}_ocr-postprocess.json")
-    # The §1a guard is live for this write rather than deferred, and it authorises it.
-    assert resolve_originator(record["source"]["origin"]) == "ocr-postprocess"
+    main([str(workdir / "in"), str(workdir / "out")])
+
+    (para,) = sorted((workdir / "paradata").glob("*.json"))
+    outputs = json.loads(para.read_text(encoding="utf-8"))["outputs"]
+    records = [o for o in outputs if o["name"] == "atrium/document-json"]
+    assert len(records) == 1 and len(records[0]["sha512"]) == 128
+    assert set(records[0]["record_fields"]["source"]) >= {"sha512", "filename", "origin", "page_count"}

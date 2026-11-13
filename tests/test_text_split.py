@@ -18,7 +18,6 @@ from tests.text_format_fixtures import (
     docx_bytes,
     make_zip,
     pdf_bytes,
-    pptx_bytes,
     w_p,
     w_t,
     xlsx_bytes,
@@ -207,12 +206,21 @@ def test_document_record_origin_and_page_count_per_class(workdir, monkeypatch):
     t = load_document(str(docs / "t.document.json"))["source"]
     w = load_document(str(docs / "w.document.json"))["source"]
     p = load_document(str(docs / "p.document.json"))["source"]
-    assert (t["origin"], t["media_type"]) == ("ocr:generic", "text/plain")
+    # The record holds record schema 2.0's three origins (atrium-project#84); the report keeps
+    # the reader's own spelling.
+    assert (t["origin"], t["media_type"]) == ("atr", "text/plain")
     assert "page_count" not in t
     # DOCX: born-digital, and no invented page_count (llm-enrich records DOCX as one page).
-    assert w["origin"] == "digital-born-docx" and "page_count" not in w
-    assert (p["origin"], p["page_count"]) == ("ocr:page-xml", 1)
-    assert "born-digital origin" in _report(out)["w.docx"]["notes"]
+    assert w["origin"] == "digital" and "page_count" not in w
+    assert (p["origin"], p["page_count"]) == ("atr", 1)
+    assert [_report(out)[name]["origin"] for name in ("t.txt", "w.docx", "p.xml")] == [
+        "ocr:generic",
+        "digital-born-docx",
+        "ocr:page-xml",
+    ]
+    # Since record schema 2.0 this repo builds every record (atrium-project#84): a born-digital
+    # document is no longer held back to its source (its lines come with the extract stage).
+    assert "born-digital" not in _report(out)["w.docx"]["notes"]
 
 
 def test_source_origin_override_precedence(workdir, monkeypatch):
@@ -222,11 +230,12 @@ def test_source_origin_override_precedence(workdir, monkeypatch):
     inp, out = workdir / "in", workdir / "out"
     (inp / "a.docx").write_bytes(docx_bytes(w_p(w_t("x"))))
     text_split.main([str(inp), str(out), "--source-origin", "ocr:tesseract"])
-    assert load_document(str(docs / "a.document.json"))["source"]["origin"] == "ocr:tesseract"
+    assert _report(out)["a.docx"]["origin"] == "ocr:tesseract"
+    assert load_document(str(docs / "a.document.json"))["source"]["origin"] == "atr"
 
     (docs / "a.document.json").unlink()
     text_split.main([str(inp), str(out)])
-    assert load_document(str(docs / "a.document.json"))["source"]["origin"] == "ocr:from-config"
+    assert _report(out)["a.docx"]["origin"] == "ocr:from-config"
 
 
 def test_paradata_records_the_pdf_component(workdir, monkeypatch):
@@ -329,7 +338,8 @@ def test_source_origin_by_kind_and_its_precedence(workdir, monkeypatch):
     (inp / "w.docx").write_bytes(docx_bytes(w_p(w_t("x"))))
 
     def origin(name):
-        return load_document(str(docs / f"{name}.document.json"))["source"]["origin"]
+        """The origin the run resolved (the report's; the record holds it as `atr`/`digital`)."""
+        return {"s": _report(out)["s.xlsx"], "w": _report(out)["w.docx"]}[name]["origin"]
 
     text_split.main([str(inp), str(out)])
     assert origin("s") == "ocr:generic"  # the per-kind entry beats [DOCUMENT].SOURCE_ORIGIN
@@ -349,24 +359,6 @@ def test_source_origin_by_kind_and_its_precedence(workdir, monkeypatch):
 def test_a_bad_source_origin_by_kind_exits_2(workdir, monkeypatch, value):
     _config(workdir, monkeypatch, by_kind=value)
     assert text_split.main([str(workdir / "in"), str(workdir / "out")]) == 2
-
-
-def test_the_born_digital_note_needs_a_record_and_names_the_override(workdir, monkeypatch):
-    """A kind digital-convert cannot originate (PPTX) is pointed at the override; the kinds it
-    reads (DOCX, and XLSX since its v1.1.0-beta) are not."""
-    inp, out = workdir / "in", workdir / "out"
-    (inp / "p.pptx").write_bytes(pptx_bytes([["snímek"]]))
-    (inp / "s.xlsx").write_bytes(xlsx_bytes([("S", [["buňka"]])]))
-    (inp / "w.docx").write_bytes(docx_bytes(w_p(w_t("x"))))
-    _config(workdir, monkeypatch)
-    text_split.main([str(inp), str(out)])
-    assert "born-digital" not in _report(out)["p.pptx"]["notes"]  # no record, nothing held back
-    _config(workdir, monkeypatch, json_dir=str(workdir / "docs"))
-    text_split.main([str(inp), str(out)])
-    report = _report(out)
-    assert "SOURCE_ORIGIN_BY_KIND" in report["p.pptx"]["notes"]
-    for name in ("s.xlsx", "w.docx"):
-        assert "born-digital origin" in report[name]["notes"] and "SOURCE_ORIGIN_BY_KIND" not in report[name]["notes"]
 
 
 def test_paradata_records_the_reader_options(workdir, monkeypatch):

@@ -135,8 +135,8 @@ def test_accretion_preserves_unrelated_metadata_and_co_owned_fields(tmp_path):
         # `vlm:` is an ORIGIN_ORIGINATORS prefix this repo owns — the truthful origin for
         # a page whose text came out of a vision model rather than an OCR engine, and the
         # value that authorises this stage to write the positional blocks (Issue #18 §1a).
-        doc.set_source(sha256="d" * 64, filename="CTX77.alto.xml", origin="vlm:glm-4v")
-        doc.merge_block("pages", [{"page": "1", "category": "Text", "category_confidence": 0.77}])
+        doc.set_source(sha512="d" * 128, filename="CTX77.alto.xml")
+        doc.merge_block("pages", [{"page_index": 1, "category": "Text", "category_confidence": 0.77}])
         doc.set_block("page_categories", {"1": "Text"})
     with DocumentRecord.open(
         "CTX77", "nlp-enrich", baseline=str(doc_dir / "CTX77.document.json"), out_dir=str(doc_dir)
@@ -150,12 +150,10 @@ def test_accretion_preserves_unrelated_metadata_and_co_owned_fields(tmp_path):
     (txt_dir / "CTX77").mkdir(parents=True)
     (txt_dir / "CTX77" / "CTX77-1.txt").write_text("Transcribed page text", encoding="utf-8")
 
-    pages, content = document_hook.pages_and_content_from_text(str(txt_dir), "CTX77", [1], engine="glm:THUDM/glm-4v-9b")
+    pages, content = document_hook.pages_and_content_from_text(str(txt_dir), "CTX77", [1])
     document_hook.write_document_block(
         str(doc_dir),
         "CTX77",
-        "r7",
-        "paradata/r7_ocr-postprocess.json",
         merge_blocks={"pages": pages},
         set_blocks={"content": content},
     )
@@ -170,6 +168,7 @@ def test_accretion_preserves_unrelated_metadata_and_co_owned_fields(tmp_path):
     row = after["pages"][0]
     assert row["category"] == "Text"
     assert row["category_confidence"] == 0.77
-    assert row["ocr"] == {"engine": "glm:THUDM/glm-4v-9b"}
+    assert (row["page_index"], row["page"], row["content_status"]) == (1, "1", "text")
+    assert "ocr" not in row, "the engine is a paradata parameter since record schema 2.0"
 
     assert after["content"] == {"text": "Transcribed page text"}

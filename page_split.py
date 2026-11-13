@@ -35,7 +35,7 @@ import xml.etree.ElementTree as ET  # For parsing and creating XML
 from typing import Any, Iterable, List, Optional, Tuple
 
 import document_hook
-from atrium_document import canonical_doc_id, resolve_originator
+from atrium_document import canonical_doc_id
 from atrium_paradata import ParadataLogger
 
 DOCUMENT_CONFIG_PATH = os.getenv("LANGID_CONFIG", os.path.join("setup", "config.txt"))
@@ -98,29 +98,26 @@ def resolve_source_origin(fmt: str, configured: str = "", override: str = "") ->
     the field is then simply absent (the pre-D5 behaviour) rather than present and
     empty, which would look like a deliberate "unknown acquisition".
 
-    An origin that resolves to no originator, or to a DIFFERENT one, is warned about
-    loudly: both cases disable the §1a check (the first abstains, the second refuses
-    every write this repo makes), and a silently-disabled guard is exactly what D5 is.
+    An origin that maps to none of record schema 2.0's (`digital`, `atr`, `legacy`;
+    `document_hook.record_origin`) is warned about loudly: the record then has no origin.
     """
     origin = override or os.getenv("DOCUMENT_SOURCE_ORIGIN", "") or configured or DEFAULT_SOURCE_ORIGIN.get(fmt, "")
     origin = origin.strip()
     if not origin:
         return None
-    originator = resolve_originator(origin)
-    if originator != document_hook.PROGRAM_NAME:
+    if document_hook.record_origin(origin) is None:
         print(
-            f"[document] WARNING – source.origin {origin!r} resolves to {originator!r}, "
-            f"not {document_hook.PROGRAM_NAME!r}: the Issue #18 §1a originator check will "
-            f"{'abstain' if originator is None else 'REFUSE this repo every pages/lines write'} "
-            f"for these documents. Use an ORIGIN_ORIGINATORS prefix owned by this repo "
-            f"(ABBYY-ALTO, ocr:<engine>, vlm:<engine>).",
+            f"[document] WARNING – source.origin {origin!r} maps to none of the record's origins "
+            f"(digital, atr, legacy): the record will have no origin. Use a known prefix "
+            f"(ABBYY-ALTO, ocr:<engine>, vlm:<engine>, digital-born-<kind>).",
             file=sys.stderr,
         )
     return origin
 
 
-def _sha256_of(path: str) -> str:
-    h = hashlib.sha256()
+def _sha512_of(path: str) -> str:
+    """The original's SHA-512, the only digest a record names it by (atrium-project#84)."""
+    h = hashlib.sha512()
     with open(path, "rb") as fh:
         for chunk in iter(lambda: fh.read(1 << 20), b""):
             h.update(chunk)
@@ -566,10 +563,6 @@ def main(argv=None):
         config_dir=os.path.join(os.path.dirname(os.path.abspath(__file__)), "setup"),
     )
 
-    # (#10 D6) Resolved once, like every sibling stage script does, so the record
-    # points at the paradata JSON this run will emit.
-    _doc_paradata_ref = document_hook.paradata_ref_for(_logger)
-
     # (#10) Track documents (the unit of input) and pages (the unit of output)
     # separately. input_files_total counts source documents; the per-page count
     # feeds the per-format output total for throughput; successfully_processed
@@ -603,29 +596,21 @@ def main(argv=None):
                     # original input, so it is the natural first writer of `source`
                     # — set_source() is itself a no-op if a baseline already has one.
                     #
-                    # (#10 D6) `_logger.run_id` and `paradata_ref_for(_logger)`, matching
-                    # all seven sibling call sites. Passing the ParadataLogger OBJECT here
-                    # was harmless ONLY while this call wrote `source=` and no block:
-                    # set_source() never stamps, so the object was never serialised. The
-                    # moment a block joined this call, _stamp() would embed it, json.dump()
-                    # would raise TypeError, DocumentRecord.__exit__ would swallow that —
-                    # and the ENTIRE record, `source` included, would silently never be
-                    # written, leaving a stray .tmp behind.
+                    # Record schema 2.0 (atrium-project#84): the record carries no run data; the
+                    # stage's paradata name the record read and written (`logger=`).
                     doc_id = _doc_id_from_filename(filename, fmt)
                     document_hook.write_document_block(
                         document_json_dir,
                         doc_id,
-                        _logger.run_id,
-                        _doc_paradata_ref,
-                        run_uuid=_logger.run_uuid,
                         source={
-                            "sha256": _sha256_of(input_file_path),
+                            "sha512": _sha512_of(input_file_path),
                             "filename": filename,
                             "media_type": "application/alto+xml" if fmt == "xml" else "application/json",
                             "page_count": page_count,
-                            # (#10 D5) Without this the §1a mixed-plane guard defers forever.
+                            # mapped to the record's `digital`/`atr`/`legacy` (record_source)
                             "origin": resolve_source_origin(fmt, _configured_origin, args.source_origin),
                         },
+                        logger=_logger,
                     )
             except Exception as e:
                 print(f"  -> Failed: {e}. Skipping.")

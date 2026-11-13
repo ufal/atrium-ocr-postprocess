@@ -242,7 +242,7 @@ _ONE_PAGE_ALTO = (
 )
 _SEED_ID = "C-202000543A-DT-27"
 #: A #67 R1 seed: the AMČR file id and the source, nothing else.
-_SEED = {"doc_id": _SEED_ID, "source": {"sha256": "a" * 64, "filename": "scan.alto.xml", "origin": "ABBYY-ALTO"}}
+_SEED = {"doc_id": _SEED_ID, "source": {"sha512": "a" * 128, "filename": "scan.alto.xml"}}
 
 
 def _conforms(status, response, path="/process", method="post"):
@@ -258,11 +258,13 @@ def test_an_alto_response_conforms_to_the_published_schema(mock_process):
     body = _conforms(200, client.post("/process", files={"file": ("p.alto.xml", _ONE_PAGE_ALTO, "application/xml")}))
     assert body["type"] == "alto_xml" and body["limits_applied"] == []
     assert "document_json" not in body and "document_json_out" not in body
-    # The run comes back as its CreateAction (atrium-project#71): the upload in, the lines out.
+    # The run comes back as its CreateAction (paradata 3.0, atrium-project#84): the upload in, by its
+    # distribution name and SHA-512; the classified lines are the answer, not a stored output.
     action = body["paradata"]
     assert atrium_rocrate.action_problems(action) == []
-    assert [entity["name"] for entity in action["object"]] == ["p.alto.xml"]
-    assert [entity["name"] for entity in action["result"]] == ["cleaned_lines.json"]
+    assert [entity["name"] for entity in action["object"]] == ["original"]
+    assert len(action["object"][0]["sha512"]) == 128
+    assert not action.get("result"), "nothing stored was written"
 
 
 @patch("service.text_api.text_manager.process_document", create=True)
@@ -349,8 +351,9 @@ _AMCR_SEED = {
 def test_an_amcr_seed_keeps_its_identity_and_the_run_is_returned(mock_process, tmp_path, monkeypatch):
     """atrium-project#71, end to end through /process: the seed's id, digest, file name and media
     type come back unchanged, and this service, the reader of the source, adds only the origin
-    (its sha256 is of the ALTO, not of the original). The blocks it wrote carry the run_uuid that
-    is the returned CreateAction's @id, and nothing is written to the working directory."""
+    (`legacy` for PCSS ALTO). The record carries no run data; the returned CreateAction names the
+    upload and the seed read, and the record written with its blocks and fields, by SHA-512
+    (atrium-project#84). Nothing is written to the working directory."""
     monkeypatch.chdir(tmp_path)
     mock_process.return_value = json.loads(json.dumps(_ALTO_RESULT))
     files = {
@@ -361,29 +364,30 @@ def test_an_amcr_seed_keeps_its_identity_and_the_run_is_returned(mock_process, t
     record = body["document_json"]
     validate_document(record)
     assert record["doc_id"] == _SEED_ID
-    assert record["source"] == {**_AMCR_SEED["source"], "origin": "ABBYY-ALTO"}
+    assert record["source"] == {**_AMCR_SEED["source"], "origin": "legacy"}
+    assert "assembled" not in record and "provenance" not in record
 
     action = body["paradata"]
     assert atrium_rocrate.action_problems(action) == []
-    stamps = record["assembled"]["blocks"]
-    assert {stamps[block]["run_uuid"] for block in ("pages", "lines")} == {action["@id"]}
-    assert record["provenance"]["contributors"][-1]["paradata_ref"] == action["@id"]
-    assert {"#record"} <= {entity["@id"] for entity in action["object"]}
-    assert {"#block-pages", "#block-lines"} <= {entity["@id"] for entity in action["result"]}
+    assert [entity["name"] for entity in action["object"]] == ["original", "atrium/document-json"]
+    (result,) = action["result"]
+    assert result["name"] == "atrium/document-json" and {"pages", "lines"} <= set(result["recordFields"])
     assert list(tmp_path.iterdir()) == []
 
 
 @patch("service.text_api.text_manager.process_document", create=True)
-def test_a_born_digital_upload_leaves_the_seeds_origin_to_its_reader(mock_process):
-    """The origin is written by the tool it names: a born-digital PDF is digital-convert's, so
-    /process neither adds blocks nor names the origin, and the seed goes back as it came."""
+def test_a_born_digital_upload_is_built_like_any_other(mock_process):
+    """Since record schema 2.0 this repo builds every record (atrium-project#84): a born-digital
+    PDF's lines are written, with their text source, and the origin is `digital`."""
     mock_process.return_value = {**json.loads(json.dumps(_DOC_RESULT)), "origin": "digital-born-pdf"}
     files = {
         "file": ("x.pdf", b"%PDF-1.4", "application/pdf"),
         "document_json": ("seed.document.json", json.dumps(_AMCR_SEED).encode("utf-8"), "application/json"),
     }
     body = _conforms(200, client.post("/process", files=files, data={"task_type": "document"}))
-    assert body["document_json"]["source"] == _AMCR_SEED["source"]
+    record = body["document_json"]
+    assert record["source"] == {**_AMCR_SEED["source"], "origin": "digital"}
+    assert {line["text_source"] for line in record["lines"]} == {"text-layer"}
     assert atrium_rocrate.action_problems(body["paradata"]) == []
 
 

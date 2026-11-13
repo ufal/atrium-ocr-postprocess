@@ -15,8 +15,10 @@ which lines need correcting, and which pages need another OCR pass. It is stage 
 | ALTO XML (the worked example throughout), PAGE XML, hOCR, ABBYY FineReader XML, DjVuXML, Tesseract TSV, OCR JSON | per-page ALTO and text files                                                                                   |
 | PDF text layers, office files (DOCX, ODT, XLSX, PPTX, …), EPUB, RTF, HTML, e-mail, Markdown, CSV, plain text     | a per-line CSV with the language, a quality score in [0, 1] and the category of every line                     |
 | optionally, the ATRIUM document record of the document                                                           | per-page statistics; the record with this tool's `pages`, `content` and `lines` fields and a `quality_summary` |
+| docproc (`atr/docproc-json`), the ATR's or digital-convert's layout of a document                                | the ATRIUM record built from it, every line scored                                                             |
 
-The record follows the hub's [document contract](https://ufal.github.io/atrium-project/ecosystem/document-contract/).
+The record follows the hub's [document contract](https://ufal.github.io/atrium-project/ecosystem/document-contract/),
+record schema 2.0 ([atrium-project#84](https://github.com/ufal/atrium-project/issues/84)): this tool is its builder.
 Every input format, with its standard and what is kept of it: [docs/text_inputs.md](docs/text_inputs.md).
 
 The command line and the service read the same formats with the same code and write the same record:
@@ -24,8 +26,10 @@ The command line and the service read the same formats with the same code and wr
 | Entry point                      | Takes                                                                   | Returns                                                                                                 |
 |----------------------------------|-------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------|
 | `run_pipeline.py` and its stages | folders of documents in any of the formats above                        | the per-page files, the per-line CSV, page statistics, the record, a paradata file                      |
+| `build_record.py`                | one docproc, optionally the AMČR seed                                   | the record, built and scored, and a paradata file                                                       |
 | `score_record.py`                | records (`*.document.json`), or folders of them                         | the records with this tool's scores; with `--scores`, the scored lines                                  |
 | `POST /process`                  | one page or document in any of the formats above, optionally its record | the scored lines (page by page for a document, a paged text or JSON), the record when sent or asked for |
+| `POST /build_record`             | one docproc, optionally the AMČR seed                                   | the record, built and scored                                                                            |
 | `POST /score_record`             | one record                                                              | the scored lines and the record                                                                         |
 
 What only one of them does, and why (the document passes, the GLM method, page statistics):
@@ -90,9 +94,9 @@ the cases the score gets wrong. The batch pipeline then corrects isolated mistak
 ## Where it fits in ATRIUM
 
 It reads what OCR produced for the pages page-classification sent to text recognition, and its lines go on to
-nlp-enrich (morphology, named entities, TEITOK) and keyword-extract. For born-digital documents, digital-convert
-writes the record and this service scores its lines (`POST /score_record`) and re-reads pages the converter
-flags for OCR. The whole chain: the [hub's workflow page](https://ufal.github.io/atrium-project/workflows/ocr-postprocess/).
+nlp-enrich (morphology, named entities, TEITOK) and keyword-extract. Since ARÚP's output contract of 12 November
+2026 it is the record builder: it builds every record from the stored docproc, the ATR's for a scanned document and
+digital-convert's for a born-digital one (`POST /build_record`), and is the only scorer of its lines. The whole chain: the [hub's workflow page](https://ufal.github.io/atrium-project/workflows/ocr-postprocess/).
 Its SSH Open Marketplace record:
 [OCR output post-processing and quality control (text-line categorization) - ATRIUM](https://marketplace.sshopencloud.eu/tool-or-service/YParYU).
 

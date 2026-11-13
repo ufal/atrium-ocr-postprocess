@@ -52,8 +52,8 @@ def test_accretion_preserves_unrelated_metadata_and_co_owned_fields(tmp_path):
     # nlp-enrich's entities, and the first-writer-wins `source` (whose `origin` is what
     # authorises this repo to write the positional blocks at all \u2014 Issue #18 \u00a71a).
     with DocumentRecord("CTX88", "page-classification", out_dir=str(doc_dir)) as doc:
-        doc.set_source(sha256="b" * 64, filename="CTX88.alto.xml", origin="ABBYY-ALTO")
-        doc.merge_block("pages", [{"page": "1", "category": "Text", "category_confidence": 0.88}])
+        doc.set_source(sha512="b" * 128, filename="CTX88.alto.xml")
+        doc.merge_block("pages", [{"page_index": 1, "category": "Text", "category_confidence": 0.88}])
         doc.set_block("page_categories", {"1": "Text"})
     with DocumentRecord.open(
         "CTX88", "nlp-enrich", baseline=str(doc_dir / "CTX88.document.json"), out_dir=str(doc_dir)
@@ -68,12 +68,10 @@ def test_accretion_preserves_unrelated_metadata_and_co_owned_fields(tmp_path):
     (txt_dir / "CTX88").mkdir(parents=True)
     (txt_dir / "CTX88" / "CTX88-1.txt").write_text("Extracted page text", encoding="utf-8")
 
-    pages, content = document_hook.pages_and_content_from_text(str(txt_dir), "CTX88", [1], engine="alto-tools")
+    pages, content = document_hook.pages_and_content_from_text(str(txt_dir), "CTX88", [1])
     document_hook.write_document_block(
         str(doc_dir),
         "CTX88",
-        "r9",
-        "paradata/r9_ocr-postprocess.json",
         merge_blocks={"pages": pages},
         set_blocks={"content": content},
     )
@@ -88,6 +86,7 @@ def test_accretion_preserves_unrelated_metadata_and_co_owned_fields(tmp_path):
     row = after["pages"][0]
     assert row["category"] == "Text"
     assert row["category_confidence"] == 0.88
-    assert row["ocr"] == {"engine": "alto-tools"}
+    assert (row["page_index"], row["page"], row["content_status"]) == (1, "1", "text")
+    assert "ocr" not in row, "the engine is a paradata parameter since record schema 2.0"
 
     assert after["content"] == {"text": "Extracted page text"}

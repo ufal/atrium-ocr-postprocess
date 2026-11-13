@@ -157,6 +157,9 @@ jobs:
           # tests/test_release_bundle.py now runs this step's closure check on every push.
           # alto_tools.py: service/text_inference.py reads `reading_order=alto` with it since
           # v1.14.0-beta, as `--method alto-tools` (atrium-project#72); its Apache-2.0 licence rides along.
+          # build_record.py, docproc.py: service/text_api.py builds the record from docproc
+          # (`/build_record`, atrium-project#84); build_record.py's command line loads the
+          # models through score_record.py.
           mkdir -p atrium-service/LICENSES
           cp LICENSES/alto-tools-Apache-2.0.txt atrium-service/LICENSES/
           cp alto_tools.py \
@@ -170,11 +173,14 @@ jobs:
              atrium_vocab.py \
              atrium_vocab.schema.json \
              para_licenses.py \
+             build_record.py \
              classify_TEXT.py \
+             docproc.py \
              document_hook.py \
              extract_JSON_2_TXT.py \
              page_split.py \
              record_scoring.py \
+             score_record.py \
              text_formats.py \
              text_util.py \
              atrium-service/

@@ -664,16 +664,16 @@ def main() -> int:
     # job, a Kubernetes Job or CI that classify crashed in read "success" over stale or partial outputs.
     verdict = "PIPELINE ABORTED" if aborted else "PIPELINE COMPLETE"
     print(f"\n{'=' * 78}\n> {verdict} - merged {data['stage_count']} logged stage(s)")
-    # No output licence is asserted (atrium-project#6): the run lists its components, each with its
-    # own licence, in license_detail; data["license"] is only the calculated label over them.
-    components = (data.get("license_detail") or {}).get("components") or []
-    print(f"  Components and licences  : {len(components)} (license_detail.components; no output licence)")
+    # No licence of the output is computed or recorded (atrium-project#6, #84 D2): the run lists the
+    # components it used, each with its own licence terms, as facts.
+    components = data.get("components") or []
+    print(f"  Components               : {len(components)} (components, each with its own terms)")
     fmts = ", ".join(f"{k}x{v}" for k, v in data["intermediate_formats"].items()) or "-"
     print(f"  Intermediate formats     : {fmts}")
     print(f"  Total duration           : {data['total_duration_seconds']} s")
     if skipped_names:
         print(f"  Skipped stages           : {', '.join(skipped_names)}")
-        print("  NOTE: license/formats above reflect EXECUTED stages only.")
+        print("  NOTE: components/formats above reflect EXECUTED stages only.")
     print(f"  Run summary              : {merged}\n{'=' * 78}")
     if aborted:
         print(f"  Not complete: {aborted}", file=sys.stderr)

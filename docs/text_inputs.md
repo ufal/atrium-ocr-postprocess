@@ -388,7 +388,7 @@ full re-run over unchanged inputs skips them again, and a changed page is proces
 | `kind`, `media_type`, `encoding`                    | the detected format (§1), its media type, the text encoding used                                    |
 | `pages`, `lines`, `chars`                           | counts of the pages written and their non-blank lines and characters                                |
 | `pages_no_text`, `pages_garbled`, `pages_ocr_layer` | pages without a text line; PDF pages whose text layer is `garbled` / `ocr`                          |
-| `origin`, `sha256`                                  | the `source.origin` recorded (§6) and the file's SHA-256                                            |
+| `origin`, `sha512`                                  | the origin resolved (§6), in the input's own spelling, and the file's SHA-512                       |
 | `notes`                                             | the reader's notes and the stage's own, `; `-joined                                                 |
 
 The lossy notes are `xml_recovered`, `decode_replacement`, `jsonl_bad_records=N`,
@@ -446,17 +446,16 @@ but a named limit also carries its code as `cause`.
 | `digital`    | anything else                                                                               | born-digital text                                             |
 
 A garbled layer is still extracted, because its lines are exactly what the categorizer is meant to
-flag as `Trash`. A document whose text-bearing pages are mostly `ocr` gets `source.origin`
-`ocr:pdf-text-layer`; any other PDF gets `digital-born-pdf`. PDFium returns text in content-stream
-order, so multi-column pages are not re-ordered (no column detection). digital-convert's `digital_to_json`
-does detect columns since its #18, so for a born-digital PDF the record's `lines[]` (written by that
-converter, the plane's originator) follow the columns, while this repo's line tables follow the
-content stream. Both ratio thresholds must lie in [0, 1].
+flag as `Trash`. A document whose text-bearing pages are mostly `ocr` gets the origin
+`ocr:pdf-text-layer` (`atr` in the record); any other PDF gets `digital-born-pdf` (`digital`). PDFium returns text
+in content-stream order, so multi-column pages are not re-ordered (no column detection). In the AMČR pipeline a
+born-digital PDF's record is built from digital-convert's docproc, whose reading order follows the columns
+(`build_record.py`). Both ratio thresholds must lie in [0, 1].
 
 The `flags` column reports what the text layer looks like. The flags never set a category, since the
 categories stay classify's and the shared vocabulary keeps the tools' category sets apart. The
-`mojibake_cp1252` test is the same one digital-convert's `digital_to_json` applies to a line before calling
-it `Garbage` (same thresholds, same letter evidence, since its #18):
+`mojibake_cp1252` test is the same one digital-convert's `digital_to_json` applies to a line before flagging
+it `Garbage` in its docproc (same thresholds, same letter evidence, since its #18):
 
 | Flag                                 | Set when                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 |--------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
@@ -467,31 +466,25 @@ it `Garbage` (same thresholds, same letter evidence, since its #18):
 
 ## 6. Provenance: `source.origin`
 
-With `[DOCUMENT].JSON_DIR` set, `text_split.py` writes the record's `source`: `sha256`, `filename`,
+With `[DOCUMENT].JSON_DIR` set, `text_split.py` writes the record's `source`: `sha512`, `filename`,
 `media_type`, `origin`, and `page_count` for formats with real pages only (PDF, ALTO, PAGE XML,
 hOCR, ABBYY, DjVu, Tesseract TSV, a bundle of such pages). A DOCX or ODT has no page count of its
-own: its pages are the breaks a reader chooses to count. Since its #18, digital-convert counts DOCX pages
-with the same rules as `PAGE_BREAKS = auto` here, but each tool's setting can differ, and
-`set_source()` keeps the first writer's value. So the count is left to the positional plane's
-originator, which for a born-digital DOCX is digital-convert. The origin is **truthful per class**:
+own: its pages are the breaks a reader chooses to count, and `set_source()` keeps the first writer's value. The
+origin is **truthful per class**. Record schema 2.0 ([atrium-project#84](https://github.com/ufal/atrium-project/issues/84))
+holds it as `digital`, `atr` or `legacy` (`document_hook.record_origin()`), and each line written gets the matching
+`text_source`; the ingest report keeps the input's own spelling:
 
-| Class                      | Formats                                                                                                                  | Default origin                                                                                                                                                                                              | Positional blocks written by this repo |
-|----------------------------|--------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------|
-| OCR output                 | ALTO, PAGE XML, hOCR, ABBYY FineReader XML, DjVuXML, Tesseract TSV, PDF with an OCR layer; a ZIP bundle of one such kind | `ABBYY-ALTO`, `ocr:page-xml`, `ocr:hocr`, `ocr:abbyy-finereader`, `ocr:djvu`, `ocr:tesseract`, `ocr:pdf-text-layer`; for ALTO and hOCR the engine the file names, when known (below); the bundle's members' | yes                                    |
-| text of unknown provenance | TXT, Markdown, CSV/TSV, JSON/JSONL, TEI, other XML, SRT/VTT; a bundle of mixed kinds                                     | `ocr:generic` (as json-keys)                                                                                                                                                                                | yes                                    |
-| born-digital               | DOCX, ODT/ODS/ODP, XLSX, PPTX, EPUB, RTF, plain HTML, visible-text PDF, EML/MBOX                                         | `digital-born-<kind>`                                                                                                                                                                                       | **no**: `source` only                  |
+| Class                      | Formats                                                                                                                  | Default origin                                                                                                                                                                                              | In the record                  |
+|----------------------------|--------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|--------------------------------|
+| OCR output                 | ALTO, PAGE XML, hOCR, ABBYY FineReader XML, DjVuXML, Tesseract TSV, PDF with an OCR layer; a ZIP bundle of one such kind | `ABBYY-ALTO`, `ocr:page-xml`, `ocr:hocr`, `ocr:abbyy-finereader`, `ocr:djvu`, `ocr:tesseract`, `ocr:pdf-text-layer`; for ALTO and hOCR the engine the file names, when known (below); the bundle's members' | `legacy` (`ABBYY-ALTO`), `atr` |
+| text of unknown provenance | TXT, Markdown, CSV/TSV, JSON/JSONL, TEI, other XML, SRT/VTT; a bundle of mixed kinds                                     | `ocr:generic` (as json-keys)                                                                                                                                                                                | `atr`                          |
+| born-digital               | DOCX, ODT/ODS/ODP, XLSX, PPTX, EPUB, RTF, plain HTML, visible-text PDF, EML/MBOX                                         | `digital-born-<kind>`                                                                                                                                                                                       | `digital`                      |
 
-A `digital-born-*` origin authorises **digital-convert** to originate the record's
-`pages`/`content`/`lines`/`tables` (`atrium_document` §1a), and the hub's digital end-to-end test
-asserts that ocr-postprocess does not write them. The shared check only *warns* when it is not
-strict. `document_hook.write_document_block()` therefore holds those blocks back for every stage of
-this repo, including the unchanged `classify_TEXT` and `aggregate_STAT`, with one warning per
-document. The exception is the pages the record flags with digital-convert's own
-`pages[].needs_ocr`, which ask for exactly this repo's pass: since W4 (atrium-digital-convert#4)
-those pages are written page by page — their lines replaced, the page keys mapped through
-`pages[].page_index` — and no other page, `content`, `tables` or OCR-input `source` is. The
-categorized CSV outputs are produced either way; with a record configured, the ingest report notes `born-digital origin: the document record gets
-source only`.
+Since record schema 2.0 this repo is the record builder and writes the positional blocks of every class. Until #84
+a `digital-born-*` origin made the record digital-convert's to originate, and every stage of this repo held its
+`pages`/`content`/`lines` back (the origin guard), except for the pages digital-convert flagged `needs_ocr` (the OCR
+hand-off). Both are gone: in the AMČR pipeline the record of a born-digital document is built from digital-convert's
+docproc (`build_record.py`), and the merge of a mixed document is the builder's (H6, not built yet).
 
 **The engine an OCR file names** (#31 Phase 5). ALTO's
 `Description/OCRProcessing/…/processingSoftware/softwareName` (or `softwareCreator`) and hOCR's
@@ -502,13 +495,7 @@ ABBYY/FineReader → `ABBYY-ALTO` — that is the default origin; any other name
 default. A real Tesseract ALTO used to be recorded as `ABBYY-ALTO`. A ZIP bundle takes its members'
 origin when they agree. The ALTO methods (`page_split.py`) keep `ABBYY-ALTO`.
 
-digital-convert reads PDF and DOCX, and since its v1.1.0-beta ODT, ODS, XLSX and RTF (with this
-repository's `text_formats.py`, which it vendors) and DOC/XLS (through LibreOffice). For the other
-born-digital kinds (PPTX, ODP, EPUB, HTML, e-mail) nothing in the ecosystem writes the positional plane
-yet, and the note says so (`document_hook.DIGITAL_CONVERT_KINDS`). The hub keeps its `digital-born…` prefix as is,
-by decision (2026-09-25): narrowing it would change the §1a contract for all five repos, and the
-per-kind override below is the per-site answer. `[DOCUMENT].SOURCE_ORIGIN_BY_KIND` lets an
-operator state, per kind, what the files really are:
+`[DOCUMENT].SOURCE_ORIGIN_BY_KIND` lets an operator state, per kind, what the files really are:
 
 ```ini
 [DOCUMENT]
@@ -519,11 +506,11 @@ Precedence: `--source-origin` > the `DOCUMENT_SOURCE_ORIGIN` env var > `SOURCE_O
 document's kind > `[DOCUMENT].SOURCE_ORIGIN` > the truthful default. The flag and the env var are
 per-run statements about every input, so they win over the config; within the config the per-kind
 entry is the more specific one. Kinds are those of §1 (`text_formats.READERS`). An unknown kind, a
-kind given twice, an empty value, or an origin no originator claims (`ocr:…`, `vlm:…`, `ABBYY-ALTO`,
-`digital-born-…`) stops the run with exit 2. **Keep it truthful.** `source.origin` is provenance
+kind given twice, an empty value, or an origin that matches no known prefix (`ocr:…`, `vlm:…`, `ABBYY-ALTO`,
+`digital-born-…`) stops the run with exit 2. **Keep it truthful.** `source.origin` and `text_source` are provenance
 that other tools read, so use it when the files of that kind really are OCR or transcription
-exports (a spreadsheet of transcribed lines, an OCR engine's DOCX export), not only to unlock the
-blocks. A `pdf = …` entry overrides the per-document text-layer test.
+exports (a spreadsheet of transcribed lines, an OCR engine's DOCX export). A `pdf = …` entry overrides the
+per-document text-layer test.
 
 ## 7. The API service
 
@@ -543,8 +530,9 @@ here as on the batch path (since v1.14.0-beta; blank lines used to be dropped al
 batch-only, and the `DOCUMENT_SOURCE_ORIGIN` env var is not read. Errors name the reason code: `415` `unsupported_media_type` for a file of a kind this
 service does not read (a `400` before atrium-project#32 round 2), `422` for a supported kind that cannot
 be read, a document without a single text line included (`no_text`), and `501` when a reader's optional
-dependency is not installed; the HTTP column of §4 lists them. Born-digital uploads do not accrete into
-the record sent as `document_json` (or under its deprecated name `document_record`).
+dependency is not installed; the HTTP column of §4 lists them. Since record schema 2.0 a born-digital upload's
+lines accrete into the record sent as `document_json` (or under its deprecated name `document_record`) like any
+other's, with `text_source: text-layer`.
 
 ## 8. Known limitations
 

@@ -219,7 +219,6 @@ def main(argv: Optional[list] = None) -> int:
     # No log_component(): stdlib + text_formats' pure-Python normalization only.
 
     doc_json_dir = document_hook.resolve_document_json_dir(cfg.get("DOCUMENT", "JSON_DIR", fallback=""))
-    doc_ref = document_hook.paradata_ref_for(_logger)
     ok = failed = failed_docs = 0
     table_rows: Dict[str, List[Dict[str, object]]] = {}
     try:
@@ -267,19 +266,17 @@ def main(argv: Optional[list] = None) -> int:
                 continue
             _logger.log_success("csv")
 
+        # The engine is the producer's paradata (record schema 2.0 has no `pages[].ocr`, D9).
+        _logger.set_parameter("ocr_engine", "text-lines")
         for doc_id, page_ids in document_hook.group_tasks_by_doc(tasks).items():
             try:
-                pages, content = document_hook.pages_and_content_from_text(
-                    output_dir, doc_id, page_ids, engine="text-lines"
-                )
+                pages, content = document_hook.pages_and_content_from_text(output_dir, doc_id, page_ids)
                 document_hook.write_document_block(
                     doc_json_dir,
                     doc_id,
-                    _logger.run_id,
-                    doc_ref,
-                    run_uuid=_logger.run_uuid,
                     merge_blocks={"pages": pages} if pages else None,
                     set_blocks={"content": content} if pages else None,
+                    logger=_logger,
                 )
             except Exception as exc:  # one record that fails validation costs that document only
                 failed_docs += 1

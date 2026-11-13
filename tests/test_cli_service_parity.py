@@ -32,6 +32,7 @@ No model runs: the line classifier is replaced by one that answers every line fr
 from __future__ import annotations
 
 import ast
+import hashlib
 import json
 import os
 import sys
@@ -271,9 +272,10 @@ def test_include_record_returns_a_new_record_as_the_batch_writes_one(echo):
     assert [(row["page"], row["line"]) for row in record["lines"]] == [
         (e["page"], e["line_num"]) for e in body["cleaned_lines"]
     ]
-    # The record is an output of the call, not an input.
-    inputs = body["paradata"]["object"]
-    assert [entity.get("name") for entity in inputs] == ["DOC1.txt"]
+    # The record is an output of the call, not an input; the upload is named `original` (#84).
+    action = body["paradata"]
+    assert [entity.get("name") for entity in action["object"]] == ["original"]
+    assert [entity.get("name") for entity in action["result"]] == ["atrium/document-json"]
 
 
 def test_without_include_record_no_record_comes_back(echo):
@@ -418,10 +420,10 @@ def test_a_reading_order_other_than_the_two_is_refused():
 
 
 def _record(tmp_path: Path) -> Path:
-    """An OCR record of two pages: a decode verdict, a blank line, lines to score."""
+    """An ATR record of two pages: a blank line, lines to score."""
     with DocumentRecord("DOC3", "ocr-postprocess", out_dir=str(tmp_path)) as doc:
-        doc.set_source(sha256="b" * 64, filename="DOC3.alto.xml", origin="ocr:pero")
-        doc.merge_block("pages", [{"page": "1"}, {"page": "2"}])
+        doc.set_source(sha512="b" * 128, filename="DOC3.alto.xml", origin="atr")
+        doc.merge_block("pages", [{"page_index": 1, "page": "1"}, {"page_index": 2, "page": "2"}])
         doc.merge_block(
             "lines",
             [
@@ -474,7 +476,11 @@ def test_score_record_in_place_and_the_paradata_file(tmp_path):
     record = json.loads(path.read_text(encoding="utf-8"))
     assert [row.get("categ") for row in record["lines"]] == ["Clear", "Noisy", None, "Clear"]
     (written,) = list(para.glob("*_ocr-postprocess.json"))
-    assert json.loads(written.read_text(encoding="utf-8"))["config"]["command"] == "score_record"
+    paradata = json.loads(written.read_text(encoding="utf-8"))
+    assert paradata["config"]["command"] == "score_record"
+    # The file written is the one the paradata name (atrium-project#84), byte for byte.
+    (output,) = paradata["outputs"]
+    assert output["sha512"] == hashlib.sha512(path.read_bytes()).hexdigest()
 
 
 def test_unknown_pages_are_refused_by_both(tmp_path, capsys):

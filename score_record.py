@@ -89,9 +89,7 @@ def score_file(
         raw,
         selection,
         lambda texts: classify(texts, notes),
-        run_id=run.run_id,
-        paradata_ref=run.paradata_ref,
-        run_uuid=run.run_uuid,
+        logger=run,
     )
     run.note_limits(notes)
     body = {
@@ -106,7 +104,8 @@ def score_file(
     target_dir = out_dir or path.parent
     target_dir.mkdir(parents=True, exist_ok=True)
     target = target_dir / path.name
-    target.write_text(json.dumps(body["document_json"], ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    # The bytes the run's paradata name by SHA-512 (atrium-project#84), not a re-serialisation.
+    target.write_bytes(scored["record_bytes"])
     if scores:
         stem = path.name[: -len(RECORD_SUFFIX)] if path.name.endswith(RECORD_SUFFIX) else path.stem
         answer = {key: value for key, value in body.items() if key != "document_json"}

@@ -232,12 +232,12 @@ PAGE_TEXT/
 
 This is the pipeline's **first** stage to see the original file, so when
 `[DOCUMENT].JSON_DIR` is configured it is also the first writer of the record's `source`
-block (`sha256`, `filename`, `media_type`, `page_count`, `origin`). `source` is
-immutable: the first writer wins. Its `origin` **authorises** this repo to write the
-positional blocks (`pages`/`content`/`lines`/`tables`, the `atrium_document` §1a rule), so that no
-document can end up with half an OCR-derived plane and half a born-digital one. A value that matches no known originator
-prefix silently switches that check off, which is why the resolution is verified and a
-mismatch warns.
+block (`sha512`, `filename`, `media_type`, `page_count`, `origin`). `source` is
+immutable: the first writer wins. Record schema 2.0 ([atrium-project#84](https://github.com/ufal/atrium-project/issues/84))
+holds the origin as `digital`, `atr` or `legacy`, and each line gets the matching `text_source` (`text-layer`,
+`atr`, `legacy`). The tables below give the input's own spelling, which `document_hook.record_origin()` maps:
+`digital-born-*` is `digital`, `ocr:`/`vlm:` is `atr`, `ABBYY-ALTO` is `legacy`. A value that matches no known
+prefix leaves the record without an origin, so it warns.
 
 | Input    | Default `origin` | Meaning                                                                                          |
 |----------|------------------|--------------------------------------------------------------------------------------------------|
@@ -250,26 +250,16 @@ invisible OCR layer under the page image) and `ocr:generic` (TXT, Markdown, CSV/
 subtitles). An ALTO or hOCR file that names its engine in its header gets that engine instead (`ocr:tesseract`,
 `ocr:pero`, `ocr:kraken`, `ocr:transkribus`, `ocr:ocrd`, …). A ZIP bundle takes its members' origin. Born-digital
 documents are `digital-born-<kind>` (DOCX, ODT/ODS/ODP,
-XLSX, PPTX, EPUB, RTF, plain HTML, e-mail, a PDF with visible text). A born-digital record is
-originated by [`digital-convert`](https://github.com/ufal/atrium-digital-convert), so this repo then writes **only**
-`source` into it. `document_hook` holds back the `pages`/`content`/`lines` blocks of every stage
-(`atrium_document` §1a), except for the pages digital-convert flags `needs_ocr`. Those pages'
-rows are written page by page, their lines replaced by this repo's, and every other page is left
-alone (the OCR hand-off;
-[service/README.md](../service/README.md#merging-an-ocrd-page-into-a-born-digital-record)). The CSV
-outputs of the run are produced either way. `--source-origin ocr:<engine>` overrides the default when the
-files are known OCR output.
-
-digital-convert reads PDF, DOCX, ODT, ODS, XLSX and RTF (with this repository's
-`text_formats.py`), so born-digital records of the other kinds (PPTX, ODP, EPUB, HTML, e-mail) keep `source`
-only. The lines digital-convert does write can be scored on its record by `POST /score_record`
-([service/README.md](../service/README.md#scoring-a-record-post-score_record)). When files of such a kind really are OCR or transcription exports, say so per kind:
-`[DOCUMENT].SOURCE_ORIGIN_BY_KIND = xlsx = ocr:generic, pptx = ocr:generic`. For text-lines the
-precedence is CLI flag > env var > `SOURCE_ORIGIN_BY_KIND` > `SOURCE_ORIGIN` > per-format default
+XLSX, PPTX, EPUB, RTF, plain HTML, e-mail, a PDF with visible text). Since record schema 2.0 this repo is the record
+builder and writes the positional blocks of every record, a born-digital one too: the hold-back of a born-digital
+record and the OCR hand-off into it are gone. In the AMČR pipeline the record is built from docproc instead
+([`build_record.py`](#build-the-record-from-docproc-build_recordpy)). `--source-origin ocr:<engine>` overrides the
+default when the files are known OCR output, and `[DOCUMENT].SOURCE_ORIGIN_BY_KIND` does so per kind:
+`xlsx = ocr:generic, pptx = ocr:generic`. For text-lines the precedence is CLI flag > env var >
+`SOURCE_ORIGIN_BY_KIND` > `SOURCE_ORIGIN` > per-format default
 ([docs/text_inputs.md §6](text_inputs.md#6-provenance-sourceorigin)).
 
-Override it when the engine **is** known — the prefix must stay one this repo owns
-(`ABBYY-ALTO`, `ocr:<engine>`, `vlm:<engine>`):
+Override it when the engine **is** known (`ABBYY-ALTO`, `ocr:<engine>`, `vlm:<engine>`):
 
 ```
 python3 page_split.py <input_dir> <output_dir> --source-origin ocr:pero
@@ -598,11 +588,30 @@ identify files that need another round of OCR or manual correction based on the 
 majority of **Clear** lines can be marked for further processing. The absence of clear lines combined with a high proportion
 of **Trash** lines may also indicate handwritten content, which can be excluded before Handwritten Text Recognition (HTR) is applied.
 
+## Build the record from docproc: `build_record.py`
+
+In the AMČR pipeline this repo builds the record from the stored docproc (`atr/docproc-json`): the ATR's for a
+scanned document, atrium-digital-convert's for a born-digital one ([atrium-project#84](https://github.com/ufal/atrium-project/issues/84)
+§1). `build_record.py` is the command line of `POST /build_record`:
+
+```bash
+python3 build_record.py C-202000543A-DT-27.docproc.json --seed C-202000543A-DT-27.seed.json --out-dir records/
+python3 build_record.py report.docproc.json --doc-id R-1 --out-dir records/ --no-score
+```
+
+It writes `source` (the seed's identity, `origin`, `page_count`, `language`), a `pages[]` row for every page of the
+original (`content_status`, the canvas), `lines[]` from 1 per page in docproc's reading order (each with its
+`block`, `text_source` and `bbox_precision`) and `content.text`, then scores every line and page with the models of
+`score_record.py`. A docproc it cannot read completely fails the build: a page neither listed nor routed `empty`
+(H15), a block whose text could not be read, a page that needs the ATR (the merge of a mixed document, H6, is not
+built yet). Then nothing is written, the exit status is 1, and the run's paradata (`--paradata-dir`, default
+`paradata/`) say `action_status: failed`. What docproc gives and how it is read:
+[service/README.md](../service/README.md#building-the-record-post-build_record).
+
 ## Score an existing record: `score_record.py`
 
-A record whose lines another tool wrote (digital-convert's record of a born-digital PDF or DOCX), or an OCR record
-to score again, is scored by `score_record.py`, the command line of `POST /score_record`. Both run
-[record_scoring.py](../record_scoring.py):
+A record to score again, or one built without scores, is scored by `score_record.py`, the command line of
+`POST /score_record`. Both run [record_scoring.py](../record_scoring.py):
 
 ```bash
 python3 score_record.py records/C-202000543A-DT-27.document.json    # in place, as every batch stage writes
@@ -610,11 +619,12 @@ python3 score_record.py records/ --out-dir scored/ --scores          # a folder;
 python3 score_record.py records/ --pages i,ii                        # only these pages, by the record's own keys
 ```
 
-Each line with text is scored as it is, not re-read, split or reordered. A line with digital-convert's decode
-verdict (`Garbage`, `Inverted`) is left as it is. The record gets `lines[].categ`, `quality_score` and `lang`, and
-`pages[].quality_score` and `quality_band`, on the rows it already has. `--scores` also writes `<doc>.scores.json`:
-the endpoint's answer without the record (`cleaned_lines`, `pages`, `limits_applied`). The run's paradata goes to
-`--paradata-dir` (default `paradata/`).
+Each line with text is scored as it is, not re-read, split or reordered, whatever its text source (D18; until #84 a
+line with digital-convert's decode verdict was left out). The record gets `lines[].categ`, `quality_score` and
+`lang`, and `pages[].quality_score` and `quality_band`, on the rows it already has; an empty page gets no page
+score. `--scores` also writes `<doc>.scores.json`: the endpoint's answer without the record (`cleaned_lines`,
+`pages`, `limits_applied`). The run's paradata goes to `--paradata-dir` (default `paradata/`) and names the record
+read and written by SHA-512; the record file is byte for byte the one it names.
 
 The models are the service's, without LayoutReader; `GPT2_MODEL_NAME` picks the perplexity model. The service's
 `MAX_PAGES` and `MAX_LINES_PER_PAGE` do not apply. Exit status: 0 when every record was scored. It is 1 when one was
@@ -773,10 +783,11 @@ perplexity model.
 | Page-relative perplexity blend     | `[CLASSIFY] PAGE_PPL_BLEND_ENABLE` (off)                                                | not applied                                                                                                   | it needs the whole page's lines; off by default                             |
 | Where the input came from          | `--source-origin`, else `DOCUMENT_SOURCE_ORIGIN`, else `[DOCUMENT] SOURCE_ORIGIN`       | `[DOCUMENT] SOURCE_ORIGIN` only                                                                               | a batch names its collection's origin                                       |
 | One page per document              | `extract_JSON_2_TXT.py --force-single-page`                                             | none                                                                                                          | a batch option for legacy collections                                       |
-| The page of an upload              | the file's own page number                                                              | `page`, for an ATR page written into a born-digital record                                                    | the OCR hand-off is a service call                                          |
+| The page of an upload              | the file's own page number                                                              | `page`, the record's key for a one-page upload                                                                |                                                                             |
 | A compressed ALTO (`.alto.xml.gz`) | read by the shared reader as a document (`--method text-lines`): no reading-order model | the same (`task_type=document`)                                                                               | the same: the ALTO stages take `*.xml`                                      |
 | Page statistics, reports           | CSV files                                                                               | not returned                                                                                                  | batch outputs                                                               |
 | The record                         | `[DOCUMENT] JSON_DIR`, with a baseline there or without                                 | `document_json` in and out; `include_record=true` returns a new one when none is sent                         |                                                                             |
+| Building the record from docproc   | `build_record.py`                                                                       | `POST /build_record`                                                                                          |                                                                             |
 | Scoring a record                   | `score_record.py`                                                                       | `POST /score_record`                                                                                          | the service applies `MAX_PAGES` and `MAX_LINES_PER_PAGE`                    |
 | Paradata                           | a file in `paradata/`                                                                   | the response's `paradata`, a `CreateAction`                                                                   | the service writes no file                                                  |
 

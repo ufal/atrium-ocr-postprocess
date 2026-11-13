@@ -133,18 +133,17 @@ def test_the_retry_runs_outside_the_except_block():
 def test_the_service_reports_the_lines_that_failed_alone_not_the_batch():
     from unittest.mock import MagicMock
 
-    from atrium_limits import LimitNotes
+    from atrium_limits import ContentLimitError, LimitNotes
     from service.text_inference import TextModelManager
 
     m = TextModelManager()
     m.ppl_model = MagicMock()
     m.ppl_model.config.max_position_embeddings = 1024
     m.ppl_tokenizer = None
-    notes = LimitNotes()
-    # Three of four lines were scored; one failed even alone.
-    m._note_perplexity(["a", "b", "c", "d"], [10.0, tu.PPL_FAILED, 30.0, 40.0], notes)
-    [entry] = notes.as_list()
-    assert (entry["limit"], entry["effect"], entry["count"]) == ("ppl_batch_lines", "skipped", 1)
+    # Three of four lines were scored; one failed even alone: the run fails on that one (D13).
+    with pytest.raises(ContentLimitError) as info:
+        m._note_perplexity(["a", "b", "c", "d"], [10.0, tu.PPL_FAILED, 30.0, 40.0], LimitNotes())
+    assert (info.value.limit, info.value.effect, info.value.count) == ("ppl_batch_lines", "skipped", 1)
 
 
 # ── needs torch: the model call itself ──────────────────────────────────────────────────────

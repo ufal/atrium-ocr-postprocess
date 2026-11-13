@@ -25,7 +25,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional, Set, Tuple
 
-from document_hook import DECODE_VERDICTS, quality_band, write_scores
+from document_hook import quality_band, write_scores
 
 #: The `lang` of a line the CPU pre-filter settled (`Empty` / `Non-text`): no language was
 #: identified for it. The batch pipeline writes the same marker in its CSV (classify_TEXT._fast_track_row)
@@ -117,7 +117,6 @@ class Selection:
     """The lines of a record to score, page by page, and those left as they were."""
 
     by_page: "OrderedDict[str, List[Tuple[int, str]]]" = field(default_factory=OrderedDict)
-    skipped_verdict: Dict[str, int] = field(default_factory=dict)
     skipped_empty: Dict[str, int] = field(default_factory=dict)
 
     @property
@@ -128,9 +127,10 @@ class Selection:
 def select_lines(record: Dict[str, Any], wanted: Optional[Set[str]] = None) -> Selection:
     """The record's lines to score (`lines[].text`, in record order), on the `wanted` pages or all.
 
-    A line carrying digital-convert's decode verdict (`Garbage`, `Inverted`) is left as it is, and a
-    line without text is not scored; both are counted. Raises `UnknownPages` for a wanted key the
-    record has neither in `lines[]` nor in `pages[]`.
+    Every line with text is scored, whatever its text source (D18 rules 1–2, atrium-project#84;
+    until #84 a line carrying digital-convert's decode verdict was left out). A line without text
+    is not scored, and is counted. Raises `UnknownPages` for a wanted key the record has neither in
+    `lines[]` nor in `pages[]`.
     """
     selection = Selection()
     record_pages = [str(row.get("page")) for row in record.get("pages") or [] if isinstance(row, dict)]
@@ -141,9 +141,6 @@ def select_lines(record: Dict[str, Any], wanted: Optional[Set[str]] = None) -> S
         if wanted is not None and page not in wanted:
             continue
         selection.by_page.setdefault(page, [])
-        if row.get("categ") in DECODE_VERDICTS:
-            selection.skipped_verdict[page] = selection.skipped_verdict.get(page, 0) + 1
-            continue
         text = row.get("text")
         if not isinstance(text, str) or not text.strip():
             selection.skipped_empty[page] = selection.skipped_empty.get(page, 0) + 1
@@ -162,15 +159,14 @@ def score_record(
     selection: Selection,
     classify: Callable[[List[str]], List[Dict[str, Any]]],
     *,
-    run_id: Optional[str],
-    paradata_ref: str,
-    run_uuid: Optional[str],
+    logger: Optional[Any] = None,
 ) -> Dict[str, Any]:
     """Score the selected lines and write the answers into the record.
 
     `raw` is the record as it was read (the write starts from those bytes). Returns the scored
     lines (`cleaned_lines`, keyed by the record's `page` and `line`), the per-page summary
-    (`pages`) and the record (`document_json`), as sent when nothing was scored.
+    (`pages`), the record (`document_json`), as sent when nothing was scored, and its bytes
+    (`record_bytes`).
     """
     doc_id = str(record.get("doc_id") or "")
     texts = selection.texts
@@ -205,16 +201,14 @@ def score_record(
     for e in cleaned:
         counts[e["page"]] = counts.get(e["page"], 0) + 1
 
-    returned = record
+    returned, record_bytes = record, raw
     with tempfile.TemporaryDirectory() as work:
         key = file_key(doc_id)
         Path(work, f"{key}.document.json").write_bytes(raw)
-        written = write_scores(
-            work, key, run_id, paradata_ref, pages=page_records, lines=line_records, run_uuid=run_uuid
-        )
+        written = write_scores(work, key, pages=page_records, lines=line_records, logger=logger)
         if written:
-            with open(written, "r", encoding="utf-8-sig") as fh:
-                returned = json.load(fh)
+            record_bytes = Path(written).read_bytes()
+            returned = json.loads(record_bytes.decode("utf-8-sig"))
 
     return {
         "type": "record",
@@ -224,7 +218,6 @@ def score_record(
             {
                 "page": page,
                 "lines_scored": counts.get(page, 0),
-                "skipped_decode_verdict": selection.skipped_verdict.get(page, 0),
                 "skipped_empty": selection.skipped_empty.get(page, 0),
                 "quality_score": (page_summary.get(page) or {}).get("quality_score"),
                 "quality_band": (page_summary.get(page) or {}).get("quality_band"),
@@ -232,4 +225,7 @@ def score_record(
             for page in selection.by_page
         ],
         "document_json": returned,
+        # The record's bytes as written (or as read, when nothing was): the bytes its paradata
+        # name by SHA-512, so a caller that stores the record writes these.
+        "record_bytes": record_bytes,
     }

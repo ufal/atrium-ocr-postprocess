@@ -16,7 +16,7 @@ import pytest
 
 import text_formats as tf
 import tool_limits
-from atrium_limits import LimitNotes
+from atrium_limits import ContentLimitError, LimitNotes
 from tests.text_format_fixtures import make_zip, odf_bytes
 
 
@@ -128,12 +128,19 @@ def test_reader_notes_become_limit_notes():
     from service.text_inference import _note_reader_limits
 
     notes = LimitNotes()
-    _note_reader_limits(
-        ["bundle_members=3", "zip_members_over_max_file_mb=2", "page_overflow_split", "pdf_objects_capped", "x=1"],
-        notes,
-    )
+    _note_reader_limits(["bundle_members=3", "page_overflow_split", "pdf_objects_capped", "x=1"], notes)
     got = {(n["limit"], n["effect"], n["count"]) for n in notes.as_list()}
-    assert got == {("max_file_mb", "skipped", 2), ("max_lines_per_page", "split", 1), ("pdf_object_cap", "sampled", 1)}
+    assert got == {("max_lines_per_page", "split", 1), ("pdf_object_cap", "sampled", 1)}
+
+
+def test_a_zip_member_left_unread_fails_the_run():
+    """D13 (atrium-project#84): a member over MAX_FILE_MB is content skipped, so the run fails
+    rather than writing a record without it."""
+    from service.text_inference import _note_reader_limits
+
+    with pytest.raises(ContentLimitError) as info:
+        _note_reader_limits(["bundle_members=3", "zip_members_over_max_file_mb=2"], LimitNotes())
+    assert (info.value.limit, info.value.effect, info.value.count) == ("max_file_mb", "skipped", 2)
 
 
 # ── the models ───────────────────────────────────────────────────────────────────────────
@@ -178,22 +185,24 @@ def test_perplexity_is_batched_on_every_path(tmp_path, monkeypatch):
     assert calls == [4, 4, 2]
 
 
-def test_a_failed_perplexity_batch_is_noted(monkeypatch):
+def test_a_failed_perplexity_batch_fails_the_run(monkeypatch):
+    """D13: a line whose perplexity could not be computed would be scored as the worst quality,
+    which is not a score; the run fails instead of writing it."""
     monkeypatch.setattr("service.text_inference.calculate_perplexity_batch", lambda t, *a: [99999.0] * len(t))
-    notes = LimitNotes()
     # Lines the CPU pre-filter lets through to the model ("dva" is under four characters: Non-text).
-    _manager()._classify_lines(["první řádek", "druhý řádek"], notes)
-    [entry] = notes.as_list()
-    assert (entry["limit"], entry["effect"], entry["count"]) == ("ppl_batch_lines", "skipped", 2)
+    with pytest.raises(ContentLimitError) as info:
+        _manager()._classify_lines(["první řádek", "druhý řádek"], LimitNotes())
+    assert (info.value.limit, info.value.effect, info.value.count) == ("ppl_batch_lines", "skipped", 2)
 
 
-def test_a_line_over_the_perplexity_window_is_noted(monkeypatch):
+def test_a_line_over_the_perplexity_window_fails_the_run(monkeypatch):
+    """D13: a line scored on its start only is trimmed content; the run fails (per-window scoring
+    is an open question, atrium-project#84)."""
     monkeypatch.setattr("service.text_inference.calculate_perplexity_batch", lambda t, *a: [50.0] * len(t))
-    notes = LimitNotes()
     # The fake tokenizer makes one token per word; the window is 8 tokens.
-    _manager()._classify_lines(["krátký řádek", "a b c d e f g h i j k l"], notes)
-    [entry] = notes.as_list()
-    assert (entry["limit"], entry["effect"], entry["count"], entry["value"]) == ("ppl_max_tokens", "trimmed", 1, 8)
+    with pytest.raises(ContentLimitError) as info:
+        _manager()._classify_lines(["krátký řádek", "a b c d e f g h i j k l"], LimitNotes())
+    assert (info.value.limit, info.value.effect, info.value.count) == ("ppl_max_tokens", "trimmed", 1)
 
 
 # ── the service ──────────────────────────────────────────────────────────────────────────

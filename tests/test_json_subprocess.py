@@ -190,7 +190,7 @@ def test_cli_force_single_page_flag_via_subprocess(tmp_path: Path):
     doc_a = json.loads((doc_dir / "doc-a.document.json").read_text(encoding="utf-8"))
     assert len(doc_a["pages"]) == 1
     assert doc_a["pages"][0]["page"] == "1"
-    assert doc_a["pages"][0]["ocr"]["source_pages"] == ["1", "2"]
+    assert "ocr" not in doc_a["pages"][0], "the engine is a paradata parameter since record schema 2.0"
 
 
 def test_cli_force_single_page_config_default_applies_with_no_flags(tmp_path: Path):

@@ -62,9 +62,8 @@ from typing import Dict, List, Optional, Tuple
 
 import document_hook
 import text_formats
-from atrium_document import resolve_originator
 from atrium_paradata import ParadataLogger
-from page_split import _doc_id_from_filename, _sha256_of
+from page_split import _doc_id_from_filename, _sha512_of
 
 CONFIG_PATH = os.getenv("LANGID_CONFIG", os.path.join("setup", "config.txt"))
 
@@ -73,7 +72,7 @@ PAGES_REPORT = "pages_report.csv"
 
 INGEST_COLUMNS = [
     "filename", "doc_id", "status", "reason", "kind", "media_type", "encoding", "pages", "lines", "chars",
-    "pages_no_text", "pages_garbled", "pages_ocr_layer", "origin", "sha256", "notes",
+    "pages_no_text", "pages_garbled", "pages_ocr_layer", "origin", "sha512", "notes",
 ]  # fmt: skip
 PAGES_COLUMNS = ["file", "page", "page_label", "text_layer", "needs_ocr_reason", "lines", "images", "flags"]
 
@@ -350,7 +349,6 @@ def main(argv=None) -> int:
         output_types=["txt", "csv"],
         config_dir=os.path.join(os.path.dirname(os.path.abspath(__file__)), "setup"),
     )
-    _doc_paradata_ref = document_hook.paradata_ref_for(_logger)
 
     ingest_rows: List[Dict[str, object]] = [
         {"filename": name, "status": "ignored", "reason": why} for name, why in ignored
@@ -398,16 +396,13 @@ def main(argv=None) -> int:
                     raise text_formats.IngestError("no_text", text_formats.no_text_message(doc))
 
                 origin = resolve_text_source_origin(doc, configured_origin, args.source_origin, origin_by_kind)
-                sha256 = _sha256_of(path)
-                row.update(origin=origin, sha256=sha256)
+                sha512 = _sha512_of(path)
+                row.update(origin=origin, sha512=sha512)
                 staged = _stage_pages(args.output_dir, doc_id, doc)
-                source = {"sha256": sha256, "filename": name, "media_type": doc.media_type, "origin": origin}
+                source = {"sha512": sha512, "filename": name, "media_type": doc.media_type, "origin": origin}
                 if doc.native_pages:
                     # Only for formats whose pages are real pages: a DOCX "page" here is a
                     # break-delimited block, and how many there are depends on PAGE_BREAKS.
-                    # llm-enrich counts DOCX pages with the same `auto` rules since its #18,
-                    # but the two settings are separate and set_source() keeps the first
-                    # writer's value, so the count is left to the plane's originator.
                     source["page_count"] = len(doc.pages)
                 try:
                     # The record is written before the pages are swapped in, so a failed
@@ -415,10 +410,8 @@ def main(argv=None) -> int:
                     document_hook.write_document_block(
                         document_json_dir,
                         doc_id,
-                        _logger.run_id,
-                        _doc_paradata_ref,
                         source=source,
-                        run_uuid=_logger.run_uuid,
+                        logger=_logger,
                     )
                 except BaseException:
                     shutil.rmtree(staged, ignore_errors=True)
@@ -437,14 +430,6 @@ def main(argv=None) -> int:
                             "flags": ";".join(page.flags),
                         }
                     )
-                if document_json_dir and resolve_originator(origin) not in (None, document_hook.PROGRAM_NAME):
-                    note = "born-digital origin: the document record gets source only"
-                    if doc.kind not in document_hook.DIGITAL_CONVERT_KINDS:
-                        note += (
-                            f" (no ecosystem originator writes positional blocks for {doc.kind} yet — "
-                            "see [DOCUMENT].SOURCE_ORIGIN_BY_KIND)"
-                        )
-                    _append_note(row, note)
                 lossy = text_formats.lossy_reasons(doc)
                 if lossy:
                     partials += 1

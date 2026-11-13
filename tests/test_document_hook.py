@@ -1,17 +1,14 @@
 """
 tests/test_document_hook.py — tests for the LIVE document_hook.py surface
-(write_document_block / resolve_document_json_dir / paradata_ref_for), which
-every stage script (page_split, aggregate_STAT, classify_TEXT, the four
+(write_document_block / resolve_document_json_dir / pages_and_content_from_text),
+which every stage script (page_split, aggregate_STAT, classify_TEXT, the four
 extract_*) actually calls.
 
-Previously this file tested `write_document_record()`/`update_document_record()`
-— two functions that bypassed DocumentRecord entirely, wrote keys from the
-superseded aggregator draft (`assembled.source_run_ids`, `assembled.mode`), and
-were never called from anywhere except these tests. They have been deleted
-(issue #13 alignment audit, P2.1) since the real, wired-up path below already
-does the job correctly. `test_no_baseline_creates_standalone`'s mocked logger
-also assigned `logger.run_id = ...`, which no longer works now that `run_id` is
-a read-only property on the real ParadataLogger.
+Record schema 2.0 (atrium-project#84): this repo is the record builder. The hook writes
+the positional blocks of every record, whatever its origin (the origin guard and the OCR
+hand-off are gone), keys page rows by `page_index`, gives each line its `text_source` and
+`bbox_precision` and each page its `content_status`, and writes no run data: the record
+read and written are named in the stage's paradata instead, by SHA-512.
 """
 
 import json
@@ -22,20 +19,13 @@ import pytest
 
 import document_hook
 from atrium_document import load_document
+from atrium_paradata import ParadataLogger
 from document_hook import (
     document_path,
     pages_and_content_from_text,
-    paradata_ref_for,
     resolve_document_json_dir,
     write_document_block,
 )
-
-
-class _FakeLogger:
-    def __init__(self, run_id, program, paradata_dir="paradata"):
-        self.run_id = run_id
-        self.program = program
-        self.paradata_dir = paradata_dir
 
 
 def test_resolve_document_json_dir_env_wins(monkeypatch):
@@ -54,16 +44,11 @@ def test_resolve_document_json_dir_disabled_by_default(monkeypatch):
     assert resolve_document_json_dir("") == ""
 
 
-def test_paradata_ref_for():
-    logger = _FakeLogger(run_id="260731-101112", program="ocr-postprocess", paradata_dir="paradata")
-    assert paradata_ref_for(logger) == os.path.join("paradata", "260731-101112_ocr-postprocess.json")
-
-
 def test_write_document_block_noop_when_dir_falsy(monkeypatch, tmp_path):
     # Rule 3 / enablement: a falsy document_json_dir must return immediately,
     # before any filesystem access — verified by running from an empty cwd.
     monkeypatch.chdir(tmp_path)
-    result = write_document_block("", "CTX01", run_id="r1", set_blocks={"content": {"text": "hi"}})
+    result = write_document_block("", "CTX01", set_blocks={"content": {"text": "hi"}})
     assert result is None
     assert list(tmp_path.iterdir()) == []
 
@@ -75,14 +60,12 @@ def test_write_document_block_merges_without_erasing_co_owned_fields(tmp_path):
     from atrium_document import DocumentRecord
 
     with DocumentRecord("CTX01", "page-classification", out_dir=doc_dir) as doc:
-        doc.merge_block("pages", [{"page": "1", "category": "Text", "category_confidence": 0.97}])
+        doc.merge_block("pages", [{"page_index": 1, "category": "Text", "category_confidence": 0.97}])
 
     # alto-postprocess contributes via the live hook — quality fields on the SAME page row.
     write_document_block(
         doc_dir,
         "CTX01",
-        run_id="r2",
-        paradata_ref="paradata/r2_ocr-postprocess.json",
         merge_blocks={"pages": [{"page": "1", "quality_score": 0.98, "quality_band": "Clear"}]},
     )
 
@@ -94,6 +77,7 @@ def test_write_document_block_merges_without_erasing_co_owned_fields(tmp_path):
     assert page["category_confidence"] == 0.97
     assert page["quality_score"] == 0.98
     assert page["quality_band"] == "Clear"
+    assert page["page_index"] == 1 and page["page"] == "1"
 
 
 def test_write_document_block_set_blocks_uses_set_block(tmp_path):
@@ -101,19 +85,17 @@ def test_write_document_block_set_blocks_uses_set_block(tmp_path):
     write_document_block(
         doc_dir,
         "CTX02",
-        run_id="r1",
         set_blocks={"content": {"text": "full document text"}},
     )
     record = load_document(document_path(doc_dir, "CTX02"))
     assert record["content"] == {"text": "full document text"}
-    assert record["assembled"]["blocks"]["content"]["program"] == "ocr-postprocess"
+    assert "assembled" not in record and "provenance" not in record, "no run data in the record"
 
 
-def test_write_document_block_keeps_an_amcr_seed_and_stamps_the_run(tmp_path, capsys):
+def test_write_document_block_keeps_an_amcr_seed(tmp_path, capsys):
     """atrium-project#71: a seed at the record's path (a foreign doc_id, the archive's sha512,
-    file name and media type) is a valid baseline, not an invalid one. The stage keeps the
-    seed's identity, adds the origin, and stamps its run_uuid on its block and its entry."""
-    run_uuid = "urn:uuid:0b6f2c3e-7f43-4d6e-9a59-2f1c2b8e5d10"
+    file name and media type) is a valid baseline. The stage keeps the seed's identity and adds
+    the origin, as record schema 2.0 holds it (`legacy` for PCSS ALTO); it stamps nothing."""
     seed = {
         "doc_id": "AMCR-F-CTX01",
         "source": {"sha512": "c" * 128, "filename": "CTX01.pdf", "media_type": "application/pdf"},
@@ -124,11 +106,8 @@ def test_write_document_block_keeps_an_amcr_seed_and_stamps_the_run(tmp_path, ca
     written = write_document_block(
         str(tmp_path),
         "CTX01",
-        run_id="r1",
-        paradata_ref=run_uuid,
-        run_uuid=run_uuid,
         source={
-            "sha256": "a" * 64,
+            "sha512": "c" * 128,
             "filename": "CTX01.alto.xml",
             "media_type": "application/alto+xml",
             "origin": "ABBYY-ALTO",
@@ -139,10 +118,32 @@ def test_write_document_block_keeps_an_amcr_seed_and_stamps_the_run(tmp_path, ca
     assert written == document_path(str(tmp_path), "CTX01")
     record = load_document(written)
     assert record["doc_id"] == "AMCR-F-CTX01"
-    assert record["source"] == {**seed["source"], "origin": "ABBYY-ALTO"}
-    assert record["assembled"]["blocks"]["pages"]["run_uuid"] == run_uuid
-    assert record["provenance"]["contributors"][-1]["run_uuid"] == run_uuid
+    assert record["source"] == {**seed["source"], "origin": "legacy"}
+    assert "assembled" not in record and "provenance" not in record
     assert "WARNING" not in capsys.readouterr().err
+
+
+def test_write_document_block_names_the_record_in_the_paradata(tmp_path):
+    """Paradata 3.0 (#84 §4): the record read and the record written, by distribution name and
+    SHA-512, the output with the blocks and fields the stage wrote; never a path."""
+    doc_dir = str(tmp_path / "records")
+    os.makedirs(doc_dir)
+    with open(document_path(doc_dir, "CTX05"), "w", encoding="utf-8") as f:
+        json.dump({"doc_id": "CTX05", "source": {"sha512": "c" * 128}}, f)
+    run = ParadataLogger(program="ocr-postprocess", config={}, paradata_dir=None)
+
+    write_document_block(
+        doc_dir,
+        "CTX05",
+        merge_blocks={"lines": [{"page": "1", "line": 1, "text": "a line"}]},
+        logger=run,
+    )
+    run.finalize()
+    (read,), (wrote,) = run.record["inputs"], run.record["outputs"]
+    assert read["name"] == wrote["name"] == "atrium/document-json"
+    assert len(read["sha512"]) == len(wrote["sha512"]) == 128 and read["sha512"] != wrote["sha512"]
+    assert wrote["record_fields"]["lines"] == ["page", "line", "text"]
+    assert doc_dir not in json.dumps(run.record)
 
 
 def _write_pages(output_text_dir, file_id, page_texts):
@@ -153,29 +154,24 @@ def _write_pages(output_text_dir, file_id, page_texts):
 
 
 def test_pages_and_content_default_one_row_per_page(tmp_path):
-    _write_pages(tmp_path, "doc1", {1: "Page one text", 2: "Page two text"})
+    _write_pages(tmp_path, "doc1", {1: "Page one text", 2: "   "})
 
-    pages, content = pages_and_content_from_text(str(tmp_path), "doc1", [1, 2], engine="json-keys")
+    pages, content = pages_and_content_from_text(str(tmp_path), "doc1", [1, 2])
 
-    assert [p["page"] for p in pages] == ["1", "2"]
-    assert all(p["ocr"] == {"engine": "json-keys"} for p in pages)
-    assert content == {"text": "Page one text\n\nPage two text"}
+    assert pages == [
+        {"page_index": 1, "page": "1", "content_status": "text"},
+        {"page_index": 2, "page": "2", "content_status": "empty"},
+    ], "keyed by page_index, no engine (a paradata parameter since 2.0)"
+    assert content == {"text": "Page one text\n\n   "}
 
 
 def test_pages_and_content_force_single_page_collapses_rows(tmp_path):
     _write_pages(tmp_path, "doc2", {1: "Page one text", 2: "Page two text", 3: "Page three text"})
 
-    pages, content = pages_and_content_from_text(
-        str(tmp_path), "doc2", [1, 2, 3], engine="json-keys", force_single_page=True
-    )
+    pages, content = pages_and_content_from_text(str(tmp_path), "doc2", [1, 2, 3], force_single_page=True)
 
     # Exactly one schema-valid pages[] row, regardless of source page count.
-    assert len(pages) == 1
-    assert pages[0]["page"] == "1"
-    assert pages[0]["ocr"]["engine"] == "json-keys"
-    assert pages[0]["ocr"]["force_single_page"] is True
-    # Original page labels traceable, in concatenation order — no data loss.
-    assert pages[0]["ocr"]["source_pages"] == ["1", "2", "3"]
+    assert pages == [{"page_index": 1, "page": "1", "content_status": "text"}]
     # content.text is identical to the non-forced case: force_single_page is an
     # assembly-only policy switch, it does not change what gets extracted.
     assert content == {"text": "Page one text\n\nPage two text\n\nPage three text"}
@@ -186,19 +182,14 @@ def test_pages_and_content_force_single_page_skips_unreadable_pages_without_dupl
     # extraction failed) and must be skipped, not guessed at or duplicated.
     _write_pages(tmp_path, "doc3", {1: "Only readable page"})
 
-    pages, content = pages_and_content_from_text(
-        str(tmp_path), "doc3", [1, 2], engine="json-keys", force_single_page=True
-    )
+    pages, content = pages_and_content_from_text(str(tmp_path), "doc3", [1, 2], force_single_page=True)
 
     assert len(pages) == 1
-    assert pages[0]["ocr"]["source_pages"] == ["1"]
     assert content == {"text": "Only readable page"}
 
 
 def test_pages_and_content_force_single_page_no_readable_pages_yields_no_rows(tmp_path):
-    pages, content = pages_and_content_from_text(
-        str(tmp_path), "doc4", [1, 2], engine="json-keys", force_single_page=True
-    )
+    pages, content = pages_and_content_from_text(str(tmp_path), "doc4", [1, 2], force_single_page=True)
 
     assert pages == []
     assert content == {"text": None}
@@ -229,17 +220,16 @@ def test_invalid_inherited_baseline_warns_but_still_accretes(tmp_path, capsys):
     _write_raw_record(
         document_path(doc_dir, "CTXbad"),
         {
-            "schema_version": "1.0",
+            "schema_version": "2.0",
             "record_type": "atrium-document",
             "doc_id": "CTXbad",
-            "pages": [{"page": "1", "quality_score": 5}],
+            "pages": [{"page_index": 1, "page": "1", "quality_score": 5}],
         },
     )
 
     write_document_block(
         doc_dir,
         "CTXbad",
-        run_id="r1",
         merge_blocks={"pages": [{"page": "1", "quality_band": "Clear"}]},
     )
 
@@ -262,7 +252,6 @@ def test_invalid_own_output_raises_and_emits_no_record(tmp_path):
         write_document_block(
             doc_dir,
             "CTXown",
-            run_id="r1",
             # quality_score is ours to write, so nothing filters it — it is simply
             # out of the schema's [0, 1] range.
             merge_blocks={"pages": [{"page": "1", "quality_score": 42}]},
@@ -283,8 +272,8 @@ def test_missing_jsonschema_warns_once_and_does_not_block_the_write(tmp_path, mo
     monkeypatch.setattr(document_hook, "_VALIDATION_UNAVAILABLE_WARNED", False)
 
     doc_dir = str(tmp_path)
-    write_document_block(doc_dir, "CTXnojs", run_id="r1", set_blocks={"content": {"text": "hi"}})
-    write_document_block(doc_dir, "CTXnojs", run_id="r2", set_blocks={"content": {"text": "hi again"}})
+    write_document_block(doc_dir, "CTXnojs", set_blocks={"content": {"text": "hi"}})
+    write_document_block(doc_dir, "CTXnojs", set_blocks={"content": {"text": "hi again"}})
 
     err = capsys.readouterr().err
     assert "jsonschema" in err
@@ -299,7 +288,7 @@ def test_missing_jsonschema_warns_once_and_does_not_block_the_write(tmp_path, mo
 
 def test_merge_of_a_field_outside_this_repos_grant_raises(tmp_path):
     """`category` belongs to page-classification. merge_block() drops it silently and
-    the result still validates (pages[] requires only `page`), which is how a wrong
+    the result still validates (pages[] requires only `page_index`), which is how a wrong
     grant produced rows stripped down to their key. assert_fields_survived() turns that
     into a failure at the call site that got it wrong."""
     doc_dir = str(tmp_path)
@@ -307,7 +296,6 @@ def test_merge_of_a_field_outside_this_repos_grant_raises(tmp_path):
         write_document_block(
             doc_dir,
             "CTXgrant",
-            run_id="r1",
             merge_blocks={"pages": [{"page": "1", "quality_score": 0.9, "category": "Text"}]},
         )
     assert list(tmp_path.iterdir()) == []
@@ -320,95 +308,106 @@ def test_declared_fields_survive_the_merge(tmp_path):
     write_document_block(
         doc_dir,
         "CTXok",
-        run_id="r1",
         merge_blocks={
-            "pages": [{"page": "1", "quality_score": 0.9, "quality_band": "Clear", "ocr": {"engine": "alto-tools"}}],
+            "pages": [{"page": "1", "quality_score": 0.9, "quality_band": "Clear"}],
             "lines": [
-                {"page": "1", "line": 1, "text": "a line", "lang": "ces", "quality_score": 0.8, "categ": "Clear"}
+                {
+                    "page": "1",
+                    "line": 1,
+                    "text": "a line",
+                    "block": "p1-b1",
+                    "lang": "ces",
+                    "quality_score": 0.8,
+                    "categ": "Clear",
+                }
             ],
         },
     )
     record = load_document(document_path(doc_dir, "CTXok"))
-    assert record["lines"][0]["text"] == "a line"
-    assert record["pages"][0]["ocr"] == {"engine": "alto-tools"}
+    assert record["lines"][0]["text"] == "a line" and record["lines"][0]["block"] == "p1-b1"
+    assert record["pages"][0]["content_status"] == "text"
 
 
-def test_write_document_block_records_source_once(tmp_path):
+def test_write_document_block_records_source_once(tmp_path, capsys):
     doc_dir = str(tmp_path)
     write_document_block(
         doc_dir,
         "CTX03",
-        run_id="r1",
-        source={"sha256": "a" * 64, "filename": "CTX03.alto.xml", "origin": "ABBYY-ALTO"},
+        source={"sha512": "a" * 128, "sha256": "f" * 64, "filename": "CTX03.alto.xml", "origin": "ABBYY-ALTO"},
     )
     # A later write must not overwrite an existing source (set_source is first-writer-wins).
     write_document_block(
         doc_dir,
         "CTX03",
-        run_id="r2",
-        source={"sha256": "b" * 64, "filename": "other.xml", "origin": "digital-born-pdf"},
+        source={"sha512": "b" * 128, "filename": "other.xml"},
     )
     record = load_document(document_path(doc_dir, "CTX03"))
-    assert record["source"]["sha256"] == "a" * 64
+    assert record["source"] == {"sha512": "a" * 128, "filename": "CTX03.alto.xml", "origin": "legacy"}
+    assert "conflicting values" in capsys.readouterr().err
 
 
-# ── (#31) the origin guard: no OCR-path blocks in a digital-born record ───────
+# ── record schema 2.0: the builder writes every record's positional blocks (#84) ─────────────
 
-_PAGES = [{"page": "1", "quality_score": 0.9, "quality_band": "Clear"}]
-_LINES = [{"page": "1", "line": 1, "text": "a line", "categ": "Clear", "quality_score": 0.9}]
+_LINES = [
+    {"page": "1", "line": 1, "text": "a line", "categ": "Clear", "quality_score": 0.9, "bbox": [1, 2, 30, 12]},
+    {"page": "1", "line": 2, "text": "no box"},
+]
+
+
+@pytest.mark.parametrize(
+    "origin, mapped",
+    [
+        ("digital-born-pdf", "digital"),
+        ("digital-born-docx", "digital"),
+        ("ABBYY-ALTO", "legacy"),
+        ("ocr:pero", "atr"),
+        ("vlm:qwen", "atr"),
+        ("unknown-method", None),
+        ("", None),
+    ],
+)
+def test_an_input_origin_maps_onto_the_records_three(origin, mapped):
+    assert document_hook.record_origin(origin) == mapped
 
 
 def _seed_source(doc_dir, doc_id, origin, pages=None):
     from atrium_document import DocumentRecord
 
-    with DocumentRecord(doc_id, "digital-convert" if origin.startswith("digital") else "ocr-postprocess",
-                        out_dir=str(doc_dir)) as doc:  # fmt: skip
-        doc.set_source(sha256="c" * 64, filename=f"{doc_id}.bin", origin=origin)
+    with DocumentRecord(doc_id, "ocr-postprocess", out_dir=str(doc_dir)) as doc:
+        doc.set_source(sha512="c" * 128, filename=f"{doc_id}.bin", origin=origin)
         if pages:
             doc.merge_block("pages", pages)
 
 
-def test_guard_drops_positional_blocks_for_a_digital_born_record(tmp_path, capsys):
+@pytest.mark.parametrize("origin, text_source", [("digital", "text-layer"), ("legacy", "legacy"), ("atr", "atr")])
+def test_every_origin_gets_its_lines_with_their_text_source(tmp_path, origin, text_source):
+    """Until #84 a born-digital record was digital-convert's, and this hook dropped its lines and
+    pages (the origin guard); the record builder now writes them for every origin."""
     doc_dir = str(tmp_path)
-    _seed_source(doc_dir, "DB1", "digital-born-docx")
-    write_document_block(doc_dir, "DB1", run_id="r1", merge_blocks={"pages": _PAGES, "lines": _LINES})
-    record = load_document(document_path(doc_dir, "DB1"))
-    assert "lines" not in record and not record.get("pages")
-    assert record["source"]["origin"] == "digital-born-docx"
-    assert "not writing lines, pages" in capsys.readouterr().err
+    _seed_source(doc_dir, "R1", origin)
+    write_document_block(
+        doc_dir,
+        "R1",
+        merge_blocks={"pages": [{"page": "1"}, {"page": "2"}], "lines": _LINES},
+    )
+    record = load_document(document_path(doc_dir, "R1"))
+    assert [(r["text_source"], r["bbox_precision"] if "bbox" in r else None) for r in record["lines"]] == [
+        (text_source, "measured"),
+        (text_source, None),
+    ]
+    assert [(p["page_index"], p["content_status"]) for p in record["pages"]] == [(1, "text"), (2, "empty")]
 
 
-@pytest.mark.parametrize("origin", ["ABBYY-ALTO", "ocr:pdf-text-layer", "unknown-method"])
-def test_guard_keeps_blocks_for_own_or_unmatched_origins(tmp_path, origin):
-    doc_dir = str(tmp_path)
-    _seed_source(doc_dir, "OK1", origin)
-    write_document_block(doc_dir, "OK1", run_id="r1", merge_blocks={"lines": _LINES})
-    assert load_document(document_path(doc_dir, "OK1"))["lines"][0]["text"] == "a line"
-
-
-def test_guard_honours_the_needs_ocr_hand_off(tmp_path):
-    """digital-convert marked a page needs_ocr: this repo is ASKED to re-originate it."""
-    doc_dir = str(tmp_path)
-    _seed_source(
-        doc_dir, "HO1", "digital-born-pdf",
-        pages=[{"page": "1", "needs_ocr": True, "needs_ocr_reason": "garbled text layer"}],
-    )  # fmt: skip
-    write_document_block(doc_dir, "HO1", run_id="r1", merge_blocks={"lines": _LINES})
-    assert load_document(document_path(doc_dir, "HO1"))["lines"][0]["categ"] == "Clear"
-
-
-def test_guard_reads_the_origin_of_this_calls_source_when_no_baseline(tmp_path):
+def test_an_unknown_origin_writes_no_text_source(tmp_path):
     doc_dir = str(tmp_path)
     write_document_block(
         doc_dir,
         "NEW1",
-        run_id="r1",
-        source={"sha256": "d" * 64, "filename": "NEW1.pdf", "origin": "digital-born-pdf"},
-        merge_blocks={"pages": _PAGES},
+        source={"sha512": "d" * 128, "filename": "NEW1.txt", "origin": "unknown-method"},
+        merge_blocks={"lines": _LINES[1:]},
     )
     record = load_document(document_path(doc_dir, "NEW1"))
-    assert record["source"]["origin"] == "digital-born-pdf"
-    assert not record.get("pages")
+    assert "origin" not in record["source"] and "text_source" not in record["lines"][0]
 
 
 def test_write_document_block_writes_back_in_place_onto_a_seed_keyed_differently(tmp_path):
@@ -417,10 +416,10 @@ def test_write_document_block_writes_back_in_place_onto_a_seed_keyed_differently
     stage and no caller looks up: the next write_document_block() call re-read the untouched
     seed and the one after it overwrote this one."""
     doc_dir = str(tmp_path)
-    _seed_source(doc_dir, "C-202000543A-DT-27", "ABBYY-ALTO")
+    _seed_source(doc_dir, "C-202000543A-DT-27", "legacy")
     os.replace(document_path(doc_dir, "C-202000543A-DT-27"), document_path(doc_dir, "scan"))
 
-    written = write_document_block(doc_dir, "scan", run_id="r1", merge_blocks={"lines": _LINES})
+    written = write_document_block(doc_dir, "scan", merge_blocks={"lines": _LINES})
 
     assert written == document_path(doc_dir, "scan")
     assert sorted(os.listdir(doc_dir)) == ["scan.document.json"]
@@ -445,7 +444,7 @@ def test_parse_origin_by_kind_accepts_commas_newlines_and_any_case():
         ("xls = ocr:generic", "unknown kind"),
         ("xlsx = ocr:a, xlsx = ocr:b", "given twice"),
         ("xlsx =", "empty origin"),
-        ("xlsx = scanned", "matches no known originator"),
+        ("xlsx = scanned", "matches no known origin prefix"),
     ],
 )
 def test_parse_origin_by_kind_rejects_typos_naming_the_key(raw, why):

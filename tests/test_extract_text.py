@@ -126,7 +126,8 @@ def test_document_record_is_schema_valid(workdir, monkeypatch):
     record = load_document(str(docs / "d.document.json"))
     validate_document(record)
     assert [p["page"] for p in record["pages"]] == ["1", "2"]
-    assert record["pages"][0]["ocr"] == {"engine": "text-lines"}
+    assert [p["content_status"] for p in record["pages"]] == ["text", "text"]
+    assert "ocr" not in record["pages"][0], "the engine is a paradata parameter since record schema 2.0"
     assert record["content"]["text"] == "line one\n\nline two"
 
 
