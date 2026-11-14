@@ -27,7 +27,10 @@
     "record_scoring.py",
     "text_formats.py",
     "text_util.py",
-    "tool_limits.py"
+    "tool_limits.py",
+    "build_record.py",
+    "docproc.py",
+    "score_record.py"
   ],
   "vendored": {},
   "moving": {}

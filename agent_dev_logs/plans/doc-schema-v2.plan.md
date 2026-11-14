@@ -1,13 +1,17 @@
 # Strategy — [atrium-project#84](https://github.com/ufal/atrium-project/issues/84) (doc-schema-v2): ocr-postprocess's part
 
+> _**Refreshed 2026-11-13**: "Status — round 2" (the code, pushed 11-13 to `test`) and round 4's notes. The file keeps
+> the name `doc-schema-v2.plan.md` (it was `84.plan.md` on 11-12 and 11-13)._
 > _**Refreshed 2026-11-12** on ARÚP's output contract of 12 November and atrium-project#84 (motyc, 11-12), at this
 > checkout's head `ff3a467` (= `test`). The hub carries the whole change:
-> [plan](https://github.com/ufal/atrium-project/blob/test/agent_dev_logs/plans/84.plan.md) ·
-> [digest](https://github.com/ufal/atrium-project/blob/test/agent_dev_logs/digests/84.digest.md) (the docproc schema
+> [plan](https://github.com/ufal/atrium-project/blob/test/agent_dev_logs/plans/doc-schema-v2.plan.md) ·
+> [digest](https://github.com/ufal/atrium-project/blob/test/agent_dev_logs/digests/doc-schema-v2.digest.md) (the docproc schema
 > of #84's comment 1) · [contract digest](https://github.com/ufal/atrium-project/blob/test/agent_dev_logs/digests/project_state_1211.md).
-> This file is the repository's slice only; it was `plans/doc-schema-v2.plan.md` (written 2026-11-11, before the
+> This file is the repository's slice only; its 11-11 version (written before the
 > issue existed), whose reader for "ATR's JSON or ALTO", D14 merge by decode verdict, `pages[].origin`,
 > `lines[].style.region` and `tables[]` are superseded below._
+
+**Status (2026-11-13)**: 🟡 **Implemented, pushed 11-13 to `test`; see "Status — round 2". Deferred items are listed there.**
 
 **Status (2026-11-12)**: 📋 **Planned, plans only. ocr-postprocess becomes the record builder: it builds every
 record from docproc, whichever producer wrote it (digital-convert, the ATR, the PCSS converter), merges the two
@@ -100,6 +104,38 @@ Two actions in `paradata/atrium/document-json`, one per step and document:
 - **Limits:** `sampled` and `split` only. **Components** (`setup/para_config.txt`), facts with their terms:
   fastText (CC BY-NC 4.0), Qwen2.5-0.5B (Apache-2.0), and the rest as listed; LayoutReader only where ALTO is still
   read (the PCSS converter). Never merged.
+
+## Status — round 2 (11-13)
+
+Local branch from `test`, on the re-vendored shared modules (record 2.0, paradata 3.0,
+`ContentLimitError`); delivered as an archive with the commands to run; pushed 11-13 (below). Nothing posted.
+
+- **Task 1, the docproc reader** (`docproc.py`): pages by `pageNumber`, blocks by `readingOrder`. A block's own
+  `lines[]` are `measured`; else its `content` split at line breaks, with the block's box (`derived`). Tables give one
+  line per `cellGrid` row; image blocks without text give none. `all_engines_failed` and H15 fail the build.
+- **Task 2, the builder** (`build_record.py`, `POST /build_record`): one producer. `source` (`origin`,
+  `page_count`, `language`), a page row for every page (`content_status`, `canvas`), lines with `block`,
+  `text_source`, `bbox_precision`, `content.text`; then scored. The batch path lost the origin guard and the OCR
+  hand-off: origins map to `digital`/`atr`/`legacy`, and the engine is the paradata parameter `ocr_engine`.
+- **Task 3, the merge (H6): not built.** A docproc with a `needsAtr` page fails the build (`needs_atr`).
+- **Task 4, scoring:** rules 1–3 and 7 done: every line is scored, `skipped_decode_verdict` is gone, an empty page
+  has no score, and `quality_summary` counts empty pages apart. **Deferred:** rule 4 (the service's page and
+  document passes) and rule 5's exclusion from calibrated statistics (such a line is only marked `derived`).
+- **Task 6, paradata:** `object` is docproc and the seed, or `original` and the record; `result` is the record's
+  fields; `cleaned_lines.json` is left out. SHA-512 throughout. `score_record.py` writes exactly the bytes it names.
+- **Task 7, D13:** a ZIP member over the limit, the ODF cap, LayoutReader out of memory, a line that fails
+  perplexity alone, and a line over the perplexity window all fail the run. The last one is Q6, still open.
+- **Fixes found on the way:** a page row is keyed through the record's own labels (`iv` keeps its row);
+  `content_status` falls back to `page_index` for a row without a label.
+- **Tests:** 2324 passed, 16 skipped; new `tests/test_build_record.py`
+  on docproc fixtures in the ATR's shape and from digital-convert. `tests/test_ocr_handoff.py` is deleted.
+- **Pushed** to `test` (11-13) without `tests/fixtures/docproc/` and with `tests/test_ocr_handoff.py` still in.
+  Round 4 adds the fixtures, removes the test, re-vendors the addendum's shared files and declares `build_record.py`,
+  `docproc.py` and `score_record.py` in `.github/production-image.json`: 2324 pass.
+- **[atrium-digital-convert#9](https://github.com/ufal/atrium-digital-convert/issues/9#issuecomment-6838301982)**
+  (agreed 11-13): born-digital lines are scored here (point 1, as built). TXT, CSV, TSV and JSON skip the visual
+  steps and go straight to scoring (point 4); whether digital-convert writes them a docproc or this repository reads
+  them is the hub's Q9.
 
 ## Depends on
 
