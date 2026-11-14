@@ -157,6 +157,37 @@ def test_every_line_with_text_gets_the_scoring_fields_only(classifier):
     assert all(len(entity["sha512"]) == 128 for entity in action["object"] + action["result"])
 
 
+def test_the_batchs_document_passes_run_on_a_scored_record(classifier):
+    """D18 rule 4: the endpoint runs the batch's document passes: a repeated text gets its modal
+    category, as the batch's dedup gives it, whatever the line-by-line answer was."""
+    record = _digital_record()
+    record["lines"][3]["text"] = "ok: Zpráva o výzkumu"  # page 1 repeats page i's heading
+    classifier.side_effect = lambda texts, notes=None: [
+        _answer(t, "Noisy", 0.6) if i == 3 else _fake_classifier([t])[0] for i, t in enumerate(texts)
+    ]
+    body = _post(record).json()
+    repeated = [e["category"] for e in body["cleaned_lines"] if e["text"] == "ok: Zpráva o výzkumu"]
+    assert repeated == ["Clear", "Clear"]
+    assert [
+        row.get("categ") for row in body["document_json"]["lines"] if row.get("text") == "ok: Zpráva o výzkumu"
+    ] == [
+        "Clear",
+        "Clear",
+    ]
+
+
+def test_a_block_unit_keeps_its_score_but_not_its_pages(classifier):
+    """D18 rule 5: a row marked `unit: block` is scored, but the page's score leaves it out."""
+    record = _digital_record()
+    record["lines"][3]["unit"] = "block"  # page 1's only scored line
+    body = _post(record).json()
+    out = body["document_json"]
+    assert out["lines"][3]["unit"] == "block" and out["lines"][3]["categ"] == "Clear"
+    page_1 = next(p for p in out["pages"] if p["page"] == "1")
+    assert "quality_score" not in page_1 and "quality_band" not in page_1
+    assert out["quality_summary"]["lines"]["block_units"] == 1
+
+
 def test_the_pages_field_selects_by_the_records_own_keys(classifier):
     body = _post(_digital_record(), pages="1").json()
     assert [(e["page"], e["line"]) for e in body["cleaned_lines"]] == [("1", 1)]

@@ -10,7 +10,9 @@ asks 3 and 13 applied (block `lines[]`, the page verdict).
 * **Blocks** in `readingOrder` (dense per page). A block's `lines[]`, when the producer gives them, are
   its lines, each with its own box (`bboxPrecision`, else `measured` when it has a box). Otherwise the
   block's `content` split on line breaks gives the lines, each with the block's box (`derived`); a block
-  with no line break is one line (rule 5).
+  with no line break is one line marked `unit: block`, a whole block scored as one unit and kept out of
+  the calibrated statistics (D18 rule 5). Until the ATR keeps a break per visual line (ask 7), a heading
+  of one line cannot be told from a paragraph that lost its breaks, so both are marked.
 * **Tables**: one line per `cellGrid` row (its cells joined by a tab), with the table's box (`derived`);
   without a grid, its `content` as above.
 * **Image-class blocks** (`image`, `figure`, `chart`, `seal`) give no line unless they carry text.
@@ -57,6 +59,8 @@ class ReadLine:
     bbox_precision: str = "absent"
     language: Optional[str] = None
     flags: List[str] = field(default_factory=list)
+    #: `block` when the line is a whole block scored as one unit (D18 rule 5); None for a visual line.
+    unit: Optional[str] = None
 
 
 @dataclass
@@ -161,10 +165,12 @@ def _block_lines(block: Dict[str, Any]) -> List[ReadLine]:
         if not isinstance(content, str) or not content.strip():
             return []  # an image-class block, or an empty one: no line
         texts = content.split("\n")
+    rows = [text for text in texts if text.strip()]
+    # Rule 5: content with no line break at all is the whole block as one unit.
+    unit = "block" if len(texts) == 1 and rows else None
     return [
-        ReadLine(text=text, block=block_id, bbox=box, bbox_precision=precision, language=language)
-        for text in texts
-        if text.strip()
+        ReadLine(text=text, block=block_id, bbox=box, bbox_precision=precision, language=language, unit=unit)
+        for text in rows
     ]
 
 

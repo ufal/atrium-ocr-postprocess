@@ -618,11 +618,6 @@ _READER_LIMIT_NOTES = {
         "trimmed",
         "repeated spreadsheet cells or rows over the cap were read once per cap",
     ),
-    "pdf_objects_capped": (
-        tool_limits.PDF_OBJECT_CAP,
-        "sampled",
-        "a PDF page's text layer was judged on its first objects (its text was read in full)",
-    ),
 }
 
 

@@ -2132,3 +2132,11 @@ Documentation only; no code, test or configuration change.
 * **Checked:** the full suite, 2325 passed.
 * **Next:** the pin commit after the hub's PR merges; the major version at the release. Hub: [plan of #84](https://github.com/ufal/atrium-project/blob/test/agent_dev_logs/plans/doc-schema-v2.plan.md), "Status — PRs".
 * **Not posted; not pushed.**
+
+## 2026-11-14 (afternoon) — atrium-project#84 round 6: the rest of this repository's part
+
+* **Asked (K4TEL):** complete the doc-schema-v2 update in every repository.
+* **Done (local, not pushed):** `atrium_document.py`, its schema and `tests/test_document_originators.py` re-vendored: rows may carry `lines[].unit: "block"` (rule 5, written by ocr-postprocess only), and `quality_summary.lines` counts them as `block_units`. `v2.0.0-beta` as the unreleased version: `setup/para_config.txt`, `CITATION.cff`, `service/openapi.json` (re-exported) and a CONTRIBUTING.md row marked Unreleased; api-contract passes with it; Rule 4: `record_scoring.document_passes()` runs the batch's `apply_page_perplexity_blend()` and `apply_document_postprocessing()` (dedup, Trash islands, page context, inverted sweep) on the scored lines, in `build_record` and `/score_record`; `rot_ratio` is computed as the batch does. Answers without the model's signals pass through unchanged; Rule 5: `docproc.py` marks a block without lines and without a line break `unit: "block"`; `page_records_from_lines()` leaves such rows out of the page's score and band; No object sampling: `text_formats.py` (this repository owns it) judges a PDF page on all its objects; `PDF_OBJECT_CAP` and the `pdf_objects_capped` note gone (`tool_limits.py`, `service/text_inference.py`, `.env.example`, service README, `docs/text_inputs.md`, `tests/test_limits.py`); `tests/fixtures/docproc/*.json` again, to be added with `git add -f`: the push of 11-14 left them out a second time.
+* **Checked:** the full suite, 2332 passed; the spec export; `compare` against the latest release: compatible at v2.0.0-beta.
+* **Next:** the hub's second PR for #84, then the pins; then this PR. Hub: [plan of #84](https://github.com/ufal/atrium-project/blob/test/agent_dev_logs/plans/doc-schema-v2.plan.md), "Status — round 6".
+* **Not posted; not pushed.**

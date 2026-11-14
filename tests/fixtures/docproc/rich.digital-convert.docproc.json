@@ -1,0 +1,309 @@
+{
+  "version": "1.1",
+  "sourceFormat": "docx",
+  "pages": [
+    {
+      "pageNumber": 1,
+      "blocks": [
+        {
+          "id": "p1-b0",
+          "type": "header",
+          "readingOrder": 0,
+          "confidence": 1.0,
+          "content": "Archeologický ústav – nálezová zpráva",
+          "lines": [
+            {
+              "text": "Archeologický ústav – nálezová zpráva",
+              "bboxPrecision": "absent"
+            }
+          ]
+        },
+        {
+          "id": "p1-b1",
+          "type": "heading",
+          "readingOrder": 1,
+          "confidence": 1.0,
+          "content": "Hradiště u Horní Mezi",
+          "level": 1,
+          "lines": [
+            {
+              "text": "Hradiště u Horní Mezi",
+              "bboxPrecision": "absent"
+            }
+          ]
+        },
+        {
+          "id": "p1-b2",
+          "type": "heading",
+          "readingOrder": 2,
+          "confidence": 1.0,
+          "content": "Průběh výzkumu",
+          "level": 2,
+          "lines": [
+            {
+              "text": "Průběh výzkumu",
+              "bboxPrecision": "absent"
+            }
+          ]
+        },
+        {
+          "id": "p1-b3",
+          "type": "paragraph",
+          "readingOrder": 3,
+          "confidence": 1.0,
+          "content": "Sonda II",
+          "lines": [
+            {
+              "text": "Sonda II",
+              "bboxPrecision": "absent"
+            }
+          ]
+        },
+        {
+          "id": "p1-b4",
+          "type": "paragraph",
+          "readingOrder": 4,
+          "confidence": 1.0,
+          "content": "Nalezena bronzová spona, viz katalog.",
+          "lines": [
+            {
+              "text": "Nalezena bronzová spona, viz katalog.",
+              "bboxPrecision": "absent"
+            }
+          ]
+        },
+        {
+          "id": "p1-b5",
+          "type": "paragraph",
+          "readingOrder": 5,
+          "confidence": 1.0,
+          "content": "První řádek\nDruhý řádek",
+          "lines": [
+            {
+              "text": "První řádek",
+              "bboxPrecision": "absent"
+            },
+            {
+              "text": "Druhý řádek",
+              "bboxPrecision": "absent"
+            }
+          ]
+        },
+        {
+          "id": "p1-b6",
+          "type": "heading",
+          "readingOrder": 6,
+          "confidence": 1.0,
+          "content": "Dílčí závěr",
+          "level": 3,
+          "lines": [
+            {
+              "text": "Dílčí závěr",
+              "bboxPrecision": "absent"
+            }
+          ]
+        },
+        {
+          "id": "p1-b7",
+          "type": "paragraph",
+          "readingOrder": 7,
+          "confidence": 1.0,
+          "content": "Kotva rámečku.",
+          "lines": [
+            {
+              "text": "Kotva rámečku.",
+              "bboxPrecision": "absent"
+            }
+          ]
+        },
+        {
+          "id": "p1-b8",
+          "type": "paragraph",
+          "readingOrder": 8,
+          "confidence": 1.0,
+          "content": "Poznámka v rámečku.",
+          "lines": [
+            {
+              "text": "Poznámka v rámečku.",
+              "bboxPrecision": "absent"
+            }
+          ]
+        },
+        {
+          "id": "p1-b9",
+          "type": "footnote",
+          "readingOrder": 9,
+          "confidence": 1.0,
+          "content": "Katalog nálezů je uložen v archivu.",
+          "lines": [
+            {
+              "text": "Katalog nálezů je uložen v archivu.",
+              "bboxPrecision": "absent"
+            }
+          ]
+        }
+      ],
+      "textLayer": "digital"
+    },
+    {
+      "pageNumber": 2,
+      "blocks": [
+        {
+          "id": "p2-b0",
+          "type": "paragraph",
+          "readingOrder": 0,
+          "confidence": 1.0,
+          "content": "Druhá strana začíná zde.",
+          "lines": [
+            {
+              "text": "Druhá strana začíná zde.",
+              "bboxPrecision": "absent"
+            }
+          ]
+        },
+        {
+          "id": "p2-b1",
+          "type": "table",
+          "readingOrder": 1,
+          "confidence": 1.0,
+          "content": "Nálezy\tNálezy\nKeramika\t12 ks",
+          "cellGrid": {
+            "rows": [
+              {
+                "cells": [
+                  {
+                    "text": "Nálezy",
+                    "isHeader": true
+                  },
+                  {
+                    "text": "Nálezy",
+                    "isHeader": true
+                  }
+                ]
+              },
+              {
+                "cells": [
+                  {
+                    "text": "Keramika"
+                  },
+                  {
+                    "text": "12 ks"
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "id": "p2-b2",
+          "type": "paragraph",
+          "readingOrder": 2,
+          "confidence": 1.0,
+          "content": "Konec první sekce.",
+          "lines": [
+            {
+              "text": "Konec první sekce.",
+              "bboxPrecision": "absent"
+            }
+          ]
+        },
+        {
+          "id": "p2-b3",
+          "type": "footer",
+          "readingOrder": 3,
+          "confidence": 1.0,
+          "content": "Strana 1",
+          "lines": [
+            {
+              "text": "Strana 1",
+              "bboxPrecision": "absent"
+            }
+          ]
+        }
+      ],
+      "textLayer": "digital"
+    },
+    {
+      "pageNumber": 3,
+      "blocks": [
+        {
+          "id": "p3-b0",
+          "type": "paragraph",
+          "readingOrder": 0,
+          "confidence": 1.0,
+          "content": "Text třetí strany",
+          "lines": [
+            {
+              "text": "Text třetí strany",
+              "bboxPrecision": "absent"
+            }
+          ]
+        }
+      ],
+      "textLayer": "digital"
+    },
+    {
+      "pageNumber": 4,
+      "blocks": [
+        {
+          "id": "p4-b0",
+          "type": "paragraph",
+          "readingOrder": 0,
+          "confidence": 1.0,
+          "content": "pokračuje na čtvrté.",
+          "lines": [
+            {
+              "text": "pokračuje na čtvrté.",
+              "bboxPrecision": "absent"
+            }
+          ]
+        },
+        {
+          "id": "p4-b1",
+          "type": "paragraph",
+          "readingOrder": 1,
+          "confidence": 1.0,
+          "content": "Závěr.",
+          "lines": [
+            {
+              "text": "Závěr.",
+              "bboxPrecision": "absent"
+            }
+          ]
+        }
+      ],
+      "textLayer": "digital"
+    }
+  ],
+  "metadata": {
+    "routing": {
+      "pages": [
+        {
+          "page": 1,
+          "route": "text-layer",
+          "text_layer": true
+        },
+        {
+          "page": 2,
+          "route": "text-layer",
+          "text_layer": true
+        },
+        {
+          "page": 3,
+          "route": "text-layer",
+          "text_layer": true
+        },
+        {
+          "page": 4,
+          "route": "text-layer",
+          "text_layer": true
+        }
+      ],
+      "counts": {
+        "by_route": {
+          "text-layer": 4
+        }
+      }
+    }
+  }
+}

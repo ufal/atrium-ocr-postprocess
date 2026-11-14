@@ -15,11 +15,13 @@ the only scorer of its lines. One run, one action:
   * `pages[]`: a row for every page of the original (`page_index`, `page`, `content_status`, the
     canvas when docproc gives a size), `empty` for a page routed empty (D29);
   * `lines[]`: from 1 per page in docproc's reading order, each with its docproc `block`, its
-    `text_source` (`text-layer`, `atr`) and `bbox_precision` (`docproc.py`);
+    `text_source` (`text-layer`, `atr`) and `bbox_precision`, and `unit: block` for a block scored as
+    one unit (`docproc.py`; D18 rule 5);
   * `content.text`: the lines in reading order (H8);
   * the scores (unless `--no-score`): every line's `categ`, `quality_score`, `lang`, each page's
     `quality_score`, `quality_band`, and `quality_summary`, with the one model and band scheme
-    `/score_record` uses (D18 rules 1–3; an empty page has no score, rule 7).
+    `/score_record` uses, then the batch's document passes (D18 rules 1–4; an empty page has no score,
+    rule 7; a block unit stays out of the page score, rule 5).
 
 What fails the job (D13): a docproc that cannot be read (`docproc.DocprocError`), a page neither in
 `pages[]` nor routed empty (H15), a block whose text could not be read, and a born-digital docproc with
@@ -44,7 +46,7 @@ from atrium_limits import LimitNotes
 from atrium_paradata import ParadataLogger
 from docproc import DocprocError, ReadDocument, read_docproc
 from document_hook import PROGRAM_NAME, RECORD_DISTRIBUTION, _set_quality_summary, document_path
-from record_scoring import page_records_from_lines, record_lang, scored_by_model
+from record_scoring import document_passes, page_records_from_lines, record_lang, scored_by_model
 
 #: The AMČR distribution name of docproc (#84 §4).
 DOCPROC_DISTRIBUTION = "atr/docproc-json"
@@ -79,6 +81,8 @@ def _line_rows(document: ReadDocument) -> List[Dict[str, Any]]:
             }
             if line.bbox is not None:
                 row["bbox"] = line.bbox
+            if line.unit:
+                row["unit"] = line.unit
             rows.append(row)
     return rows
 
@@ -139,6 +143,7 @@ def build(
         entries = list(classify([row["text"] for row in lines]))
         if len(entries) != len(lines):
             raise RuntimeError(f"the classifier answered {len(entries)} lines for {len(lines)}")
+        entries = document_passes(entries, [row["page"] for row in lines])  # D18 rule 4
         for row, entry in zip(lines, entries, strict=True):
             for name, value in (
                 ("categ", entry.get("category")),

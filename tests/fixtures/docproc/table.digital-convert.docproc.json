@@ -1,0 +1,127 @@
+{
+  "version": "1.1",
+  "sourceFormat": "pdf-digital",
+  "pages": [
+    {
+      "pageNumber": 1,
+      "width": 612.0,
+      "height": 792.0,
+      "coordinateUnit": "pt",
+      "blocks": [
+        {
+          "id": "p1-b0",
+          "type": "paragraph",
+          "bbox": [
+            72.0,
+            62.484,
+            191.376,
+            74.484
+          ],
+          "readingOrder": 0,
+          "confidence": 1.0,
+          "content": "Tabulka vrstev je nize.",
+          "lines": [
+            {
+              "text": "Tabulka vrstev je nize.",
+              "bbox": [
+                72.0,
+                62.484,
+                191.376,
+                74.484
+              ],
+              "bboxPrecision": "measured"
+            }
+          ]
+        },
+        {
+          "id": "p1-b1",
+          "type": "table",
+          "bbox": [
+            76.0,
+            138.07,
+            356.56,
+            168.07
+          ],
+          "readingOrder": 1,
+          "confidence": 1.0,
+          "content": "Vrstva\tMocnost\tNalezy\nOrnice\t30 cm\tkeramika",
+          "cellGrid": {
+            "rows": [
+              {
+                "cells": [
+                  {
+                    "text": "Vrstva",
+                    "isHeader": true
+                  },
+                  {
+                    "text": "Mocnost",
+                    "isHeader": true
+                  },
+                  {
+                    "text": "Nalezy",
+                    "isHeader": true
+                  }
+                ]
+              },
+              {
+                "cells": [
+                  {
+                    "text": "Ornice"
+                  },
+                  {
+                    "text": "30 cm"
+                  },
+                  {
+                    "text": "keramika"
+                  }
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "id": "p1-b2",
+          "type": "paragraph",
+          "bbox": [
+            72.0,
+            202.484,
+            170.724,
+            214.484
+          ],
+          "readingOrder": 2,
+          "confidence": 1.0,
+          "content": "Text pod tabulkou.",
+          "lines": [
+            {
+              "text": "Text pod tabulkou.",
+              "bbox": [
+                72.0,
+                202.484,
+                170.724,
+                214.484
+              ],
+              "bboxPrecision": "measured"
+            }
+          ]
+        }
+      ],
+      "textLayer": "digital"
+    }
+  ],
+  "metadata": {
+    "routing": {
+      "pages": [
+        {
+          "page": 1,
+          "route": "text-layer",
+          "text_layer": true
+        }
+      ],
+      "counts": {
+        "by_route": {
+          "text-layer": 1
+        }
+      }
+    }
+  }
+}

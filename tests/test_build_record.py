@@ -179,6 +179,75 @@ def test_every_line_is_scored_and_an_empty_page_gets_no_score(tmp_path):
     assert record["quality_summary"]["pages"]["empty"] == 1
 
 
+def test_a_block_without_line_breaks_is_one_marked_unit(tmp_path):
+    """D18 rule 5: a block whose text has no line break is scored as one unit, marked `unit: block`,
+    and kept out of the page score and of quality_summary's line counts."""
+    document = read_docproc(_docproc("scan.atr"))
+    assert [line.unit for line in document.pages[1].lines] == ["block", None, None, None, None]
+    built = build_record.build(_bytes(_docproc("scan.atr")), str(tmp_path), seed=SEED, classify=_classify)
+    record = json.loads(built.data)
+    validate_document(record)
+    units = {(row["page"], row["line"]): row.get("unit") for row in record["lines"]}
+    assert units == {
+        ("1", 1): "block",
+        ("1", 2): None,
+        ("1", 3): None,
+        ("1", 4): None,
+        ("1", 5): None,
+        ("2", 1): "block",
+    }
+    assert all("categ" in row and "quality_score" in row for row in record["lines"]), "rule 1: scored all the same"
+    pages = {p["page_index"]: p for p in record["pages"]}
+    assert pages[1]["quality_score"] == 0.9
+    assert not {"quality_score", "quality_band"} & set(pages[2]), "a page of block units only has no page score"
+    assert record["quality_summary"]["lines"] == {"total": 6, "by_categ": {"Clear": 4}, "block_units": 2}
+
+
+def _answer(text, category, score=0.6, lang_score=0.95):
+    """A classifier answer with the signals the document passes read (as the common model gives)."""
+    return {
+        "text": text,
+        "category": category,
+        "quality_score": score,
+        "lang": "ces",
+        "lang_score": lang_score,
+        "original_lang": "cs",
+        "perplexity": 40.0,
+        "word_weird": 0.0,
+    }
+
+
+def test_the_batchs_document_passes_run_on_the_built_record(tmp_path):
+    """D18 rule 4: identical text gets its modal category, as the batch's dedup pass gives it."""
+    docproc = _docproc("scan.atr")
+    docproc["pages"][1]["blocks"][0]["content"] = "Sonda S1 byla vyhloubena u severní hradby."
+
+    def classify(texts, notes=None):
+        return [_answer(t, "Noisy" if i == len(texts) - 1 else "Clear", 0.9) for i, t in enumerate(texts)]
+
+    record = json.loads(build_record.build(_bytes(docproc), str(tmp_path), seed=SEED, classify=classify).data)
+    repeated = [row["categ"] for row in record["lines"] if row["text"] == "Sonda S1 byla vyhloubena u severní hradby."]
+    assert repeated == ["Clear", "Clear"], "the last line's Noisy follows its twin's Clear"
+
+
+def test_answers_without_the_models_signals_pass_through_the_passes():
+    from record_scoring import document_passes
+
+    answers = [{"category": "Trash", "quality_score": 0.1}, {"category": "Clear", "quality_score": 0.9}]
+    assert document_passes(answers, ["1", "1"]) == answers
+
+
+def test_the_inverted_scan_sweep_runs_on_scored_lines():
+    """The batch's page sweep: most lines of a page without diacritics and with a weak language id."""
+    from record_scoring import document_passes
+
+    texts = ["ouesuod plo eqt", "ʇxǝʇ uʍop ǝpısdn", "ssnpʇɐ ʎʞıʎ", "ppo ɐpuɐ ʎʇ", "Hradba stála dál."]
+    answers = [_answer(t, "Noisy", 0.3, lang_score=0.2) for t in texts[:4]] + [_answer(texts[4], "Clear", 0.9)]
+    out = document_passes(answers, ["1"] * 5)
+    assert [a["category"] for a in out[:4]] == ["Trash"] * 4
+    assert out[4]["category"] == "Clear"
+
+
 def test_a_born_digital_docproc_gives_text_layer_lines(tmp_path):
     built = build_record.build(_bytes(_docproc("table.digital-convert")), str(tmp_path), doc_id="T-1")
     record = json.loads(built.data)

@@ -12,8 +12,8 @@ keywords:
   - "reading order"
   - "OCR quality estimation"
   - "language identification"
-version: "1.15.4-beta"
-date-released: "2026-11-06"
+version: "2.0.0-beta"
+date-released: "2026-11-14"
 authors:
   - family-names: "Lutsai"
     given-names: "Kateryna"

@@ -69,9 +69,8 @@ MAX_LINE_CHARS = limit("ATRIUM_TEXT_INGEST_MAX_LINE_CHARS", 1000, unit="chars", 
 #: Most times an ODS/ODT cell or row is repeated (``number-*-repeated``); the rest would not
 #: be read → the run fails (``trimmed``, D13).
 ODF_REPEAT_CAP = limit("ATRIUM_TEXT_INGEST_ODF_REPEAT_CAP", 100, unit="repeats", key="odf_repeat_cap", minimum=1)
-#: Most objects of one PDF page scanned to judge its text layer (the text itself is always
-#: read in full); a page with more is judged on the first N → ``sampled`` note.
-PDF_OBJECT_CAP = limit("ATRIUM_TEXT_INGEST_PDF_OBJECT_CAP", 20000, unit="objects", key="pdf_object_cap", minimum=1)
+#: (``ATRIUM_TEXT_INGEST_PDF_OBJECT_CAP`` is gone: a PDF page's text layer is judged on all its objects,
+#: never a sample of them, atrium-project#84.)
 
 # ── the models ──────────────────────────────────────────────────────────────────────────
 #: Lines per LayoutReader window when predicting an ALTO page's reading order. A longer page
@@ -154,7 +153,6 @@ LIMITS = LimitSet(
     READER_TIMEOUT_S,
     MAX_LINE_CHARS,
     ODF_REPEAT_CAP,
-    PDF_OBJECT_CAP,
     LR_CHUNK_SIZE,
     LR_MIN_CHUNK_SIZE,
     PPL_BATCH_LINES,

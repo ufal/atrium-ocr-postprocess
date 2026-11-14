@@ -1,0 +1,87 @@
+{
+  "version": "1.1",
+  "sourceFormat": "pdf-scanned",
+  "pages": [
+    {
+      "pageNumber": 1,
+      "width": 612.0,
+      "height": 792.0,
+      "coordinateUnit": "pt",
+      "blocks": [
+        {
+          "id": "p1-b0",
+          "type": "paragraph",
+          "bbox": [
+            72.0,
+            62.484,
+            264.048,
+            102.484
+          ],
+          "readingOrder": 0,
+          "confidence": 1.0,
+          "content": "Zpráva o sondì èíslo 3.\nNalezeny høeby a zlomky keramiky.\nVrstva ornice mìla mocnost 30 cm.",
+          "lines": [
+            {
+              "text": "Zpráva o sondì èíslo 3.",
+              "bbox": [
+                72.0,
+                62.484,
+                194.064,
+                74.484
+              ],
+              "bboxPrecision": "measured",
+              "flags": [
+                "Garbage"
+              ]
+            },
+            {
+              "text": "Nalezeny høeby a zlomky keramiky.",
+              "bbox": [
+                72.0,
+                76.484,
+                264.048,
+                88.484
+              ],
+              "bboxPrecision": "measured",
+              "flags": [
+                "Garbage"
+              ]
+            },
+            {
+              "text": "Vrstva ornice mìla mocnost 30 cm.",
+              "bbox": [
+                72.0,
+                90.484,
+                256.056,
+                102.484
+              ],
+              "bboxPrecision": "measured",
+              "flags": [
+                "Garbage"
+              ]
+            }
+          ]
+        }
+      ],
+      "textLayer": "garbled",
+      "needsAtr": true,
+      "needsAtrReason": "embedded text layer does not decode: 3 of 3 lines carry CP1250 bytes read as CP1252 (mojibake diacritics), page decode-sanity 0.94. The page has a text layer; it is not trustworthy."
+    }
+  ],
+  "metadata": {
+    "routing": {
+      "pages": [
+        {
+          "page": 1,
+          "route": "atr",
+          "text_layer": false
+        }
+      ],
+      "counts": {
+        "by_route": {
+          "atr": 1
+        }
+      }
+    }
+  }
+}
