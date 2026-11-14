@@ -2123,3 +2123,12 @@ Documentation only; no code, test or configuration change.
 * **Written here (not pushed):** `.github/production-image.json`; `plans/doc-schema-v2.plan.md` (the round-2 status, the push, atrium-digital-convert#9 points 1 and 4). This file: the round-2 entry of 11-13 and this one.
 * **Detail:** `plans/doc-schema-v2.plan.md`, "Status — round 2"; hub: [plan of #84](https://github.com/ufal/atrium-project/blob/test/agent_dev_logs/plans/doc-schema-v2.plan.md).
 * **Not posted; not pushed.**
+
+## 2026-11-14 — atrium-project#84 round 5: the PR's checks
+
+* **Asked (K4TEL):** check the doc-schema-v2 PRs and fix their problems.
+* **Found:** [atrium-ocr-postprocess#11](https://github.com/ufal/atrium-ocr-postprocess/pull/11) fails drift (the hub pin at `v1`) and api-contract (record major 1.0 → 2.0, no major version yet); build / test: `tests/fixtures/docproc/*.json` was not committed and `tests/test_ocr_handoff.py` (which imports `OCR_HANDOFF`, gone in 2.0) was still there; api-contract also reports `ocr_handoff` and `skipped_decode_verdict` gone.
+* **Written here (not pushed):** the re-vendored `atrium_rocrate.py` and `tests/test_atrium_rocrate.py` (`#no-licence-asserted` on the crate root again), `tests/fixtures/docproc/*.json`, `tests/test_ocr_handoff.py` (removed); `plans/doc-schema-v2.plan.md`, "Status — PR".
+* **Checked:** the full suite, 2325 passed.
+* **Next:** the pin commit after the hub's PR merges; the major version at the release. Hub: [plan of #84](https://github.com/ufal/atrium-project/blob/test/agent_dev_logs/plans/doc-schema-v2.plan.md), "Status — PRs".
+* **Not posted; not pushed.**
