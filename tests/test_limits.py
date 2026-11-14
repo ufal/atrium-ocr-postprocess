@@ -128,9 +128,9 @@ def test_reader_notes_become_limit_notes():
     from service.text_inference import _note_reader_limits
 
     notes = LimitNotes()
-    _note_reader_limits(["bundle_members=3", "page_overflow_split", "pdf_objects_capped", "x=1"], notes)
+    _note_reader_limits(["bundle_members=3", "page_overflow_split", "x=1"], notes)
     got = {(n["limit"], n["effect"], n["count"]) for n in notes.as_list()}
-    assert got == {("max_lines_per_page", "split", 1), ("pdf_object_cap", "sampled", 1)}
+    assert got == {("max_lines_per_page", "split", 1)}  # a PDF page is never judged on a sample (#84)
 
 
 def test_a_zip_member_left_unread_fails_the_run():

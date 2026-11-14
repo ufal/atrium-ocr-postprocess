@@ -38,6 +38,14 @@ PREFILTER_CATEGORIES = ("Empty", "Non-text")
 #: The lines a page's `quality_score` averages: its text, as aggregate_STAT.py's `avg_quality_score`.
 PAGE_SCORE_CATEGORIES = ("Clear", "Noisy")
 
+#: `lines[].unit` of a row that holds a whole docproc block scored as one unit (D18 rule 5): it keeps its
+#: score, but neither the page's `quality_score` nor its `quality_band` counts it (atrium-project#84).
+BLOCK_UNIT = "block"
+
+#: What the document passes read from each classifier answer, besides its category and score: every
+#: answer of the common model (`service/text_inference.py`) carries them.
+PASS_SIGNALS = frozenset({"text", "lang_score", "original_lang", "perplexity", "word_weird"})
+
 #: Characters a record's doc_id may keep in the temporary file name it is written under; the
 #: record itself keeps its doc_id (DocumentRecord inherits the baseline's).
 _UNSAFE_FILE_KEY = re.compile(r"[^A-Za-z0-9._-]")
@@ -79,7 +87,9 @@ def page_records_from_lines(line_records: List[Dict[str, Any]]) -> List[Dict[str
     """
     by_page: "OrderedDict[str, List[Dict[str, Any]]]" = OrderedDict()
     for record in line_records:
-        by_page.setdefault(record["page"], []).append(record)
+        rows = by_page.setdefault(record["page"], [])
+        if record.get("unit") != BLOCK_UNIT:  # rule 5: out of the calibrated page statistics
+            rows.append(record)
 
     pages: List[Dict[str, Any]] = []
     for page, rows in by_page.items():
@@ -100,6 +110,56 @@ def page_records_from_lines(line_records: List[Dict[str, Any]]) -> List[Dict[str
             record["quality_band"] = quality_band(clear, noisy, trash)
         pages.append(record)
     return pages
+
+
+def document_passes(entries: List[Dict[str, Any]], pages: List[str]) -> List[Dict[str, Any]]:
+    """D18 rule 4: the batch's document passes over one record's scored lines (atrium-project#84).
+
+    `entries` are the classifier's answers in record order and `pages[i]` is the page of `entries[i]`.
+    The batch pipeline (`classify_TEXT.process_document`) runs `apply_page_perplexity_blend()` and then
+    `apply_document_postprocessing()` on each document's lines: identical text to its modal category, a
+    Noisy island inside Trash, the page-context corrections and the inverted-scan sweep. This runs the
+    same two functions on the same signals (`rot_ratio` computed here, as the batch does), so a record
+    built or scored here gets the categories the batch gives. The blend stays off unless
+    `PAGE_PPL_BLEND_ENABLE`, as in the batch. Returns new entries; only `category` can change. Answers
+    without the model's signals (`PASS_SIGNALS`; a stand-in classifier in tests) pass through unchanged.
+    """
+    if not entries:
+        return []
+    if len(pages) != len(entries):
+        raise ValueError(f"{len(pages)} page labels for {len(entries)} entries")
+    if not all(PASS_SIGNALS <= set(entry) for entry in entries):
+        # Answers without the model's signals (a stand-in classifier): the passes would read zeros.
+        return [dict(entry) for entry in entries]
+    import pandas as pd  # noqa: PLC0415  (both images carry pandas; the passes are pandas code)
+
+    from classify_TEXT import apply_document_postprocessing, apply_page_perplexity_blend  # noqa: PLC0415
+    from text_util import compute_rotatable_ratio  # noqa: PLC0415
+
+    order = {page: number for number, page in enumerate(dict.fromkeys(pages), start=1)}
+    frame = pd.DataFrame(
+        [
+            {
+                "entry": index,
+                "page_num": order[page],
+                "line_num": index + 1,
+                "text": str(entry.get("text") or ""),
+                "categ": entry.get("category"),
+                "quality_score": float(entry.get("quality_score") or 0.0),
+                "lang_score": float(entry.get("lang_score") or 0.0),
+                "original_lang": str(entry.get("original_lang") or ""),
+                "perplex": float(entry.get("perplexity") or 0.0),
+                "word_weird": float(entry.get("word_weird") or 0.0),
+                "rot_ratio": compute_rotatable_ratio(str(entry.get("text") or "")),
+            }
+            for index, (entry, page) in enumerate(zip(entries, pages, strict=True))
+        ]
+    )
+    frame = apply_document_postprocessing(apply_page_perplexity_blend(frame))
+    out = [dict(entry) for entry in entries]
+    for index, categ in zip(frame["entry"], frame["categ"], strict=True):
+        out[int(index)]["category"] = categ
+    return out
 
 
 def parse_pages(spec: Optional[str]) -> Optional[Set[str]]:
@@ -173,6 +233,12 @@ def score_record(
     entries = classify(texts) if texts else []
     if len(entries) != len(texts):
         raise RuntimeError(f"the classifier answered {len(entries)} lines for {len(texts)}")
+    entries = document_passes(entries, [page for page, rows in selection.by_page.items() for _row in rows])
+    units = {
+        (str(row.get("page")), row.get("line")): row.get("unit")
+        for row in record.get("lines") or []
+        if isinstance(row, dict) and row.get("unit")
+    }
 
     cleaned: List[Dict[str, Any]] = []
     answers = iter(entries)
@@ -184,6 +250,7 @@ def score_record(
 
     line_records = [
         {"page": e["page"], "line": e["line"]}
+        | ({"unit": units[(e["page"], e["line"])]} if (e["page"], e["line"]) in units else {})
         | {
             name: value
             for name, value in (
@@ -205,7 +272,9 @@ def score_record(
     with tempfile.TemporaryDirectory() as work:
         key = file_key(doc_id)
         Path(work, f"{key}.document.json").write_bytes(raw)
-        written = write_scores(work, key, pages=page_records, lines=line_records, logger=logger)
+        # `unit` only steers the page scores above; the rows keep the one the record builder wrote.
+        scores = [{name: value for name, value in row.items() if name != "unit"} for row in line_records]
+        written = write_scores(work, key, pages=page_records, lines=scores, logger=logger)
         if written:
             record_bytes = Path(written).read_bytes()
             returned = json.loads(record_bytes.decode("utf-8-sig"))

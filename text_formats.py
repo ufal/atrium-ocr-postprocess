@@ -56,7 +56,7 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tupl
 from urllib.parse import unquote
 
 import tool_limits
-from tool_limits import ODF_REPEAT_CAP, PDF_OBJECT_CAP
+from tool_limits import ODF_REPEAT_CAP
 
 logger = logging.getLogger(__name__)
 
@@ -2756,11 +2756,8 @@ def _xml_as_plain_text(data: bytes, ctx: "_Ctx") -> List[TextPage]:
 
 # ── readers: PDF (pypdfium2, isolated) ────────────────────────────────────────
 
-#: Objects scanned per PDF page to judge its text layer. A setting since atrium-project#53
-#: (ATRIUM_TEXT_INGEST_PDF_OBJECT_CAP in tool_limits.py, read per document); this name is
-#: its default, kept for the callers that import it. A page over it is noted
-#: `pdf_objects_capped` — its text is still read in full.
-_PDF_OBJECT_CAP = PDF_OBJECT_CAP.default
+#: A PDF page's text layer is judged on all its objects: since atrium-project#84 nothing is judged on a
+#: sample (the object cap of #53, ATRIUM_TEXT_INGEST_PDF_OBJECT_CAP, is gone).
 #: A text object counts as rotated when its matrix turns more than about 1°
 #: (tan 1° ≈ 0.0175): OCR layers of deskewed scans tilt by fractions of a degree.
 _PDF_ROTATION_TOL = 0.0175
@@ -2825,7 +2822,6 @@ def read_pdf(path: str, ctx: "_Ctx") -> List[TextPage]:
         n_pages = len(pdf)
         if n_pages > ctx.limits.max_pages:
             raise IngestError("too_large", f"{n_pages} pages > MAX_PAGES={ctx.limits.max_pages}")
-        object_cap = PDF_OBJECT_CAP.get()
         pages = []
         for i in range(n_pages):
             try:
@@ -2839,16 +2835,10 @@ def read_pdf(path: str, ctx: "_Ctx") -> List[TextPage]:
                 raw = textpage.get_text_bounded()
                 n_text = n_invisible = n_images = n_mirrored = n_rotated = 0
                 forms: List[Tuple[float, float, float, float]] = []  # form matrices by nesting level
-                for n, obj in enumerate(
-                    page.get_objects(
-                        filter=(pdfium_c.FPDF_PAGEOBJ_TEXT, pdfium_c.FPDF_PAGEOBJ_IMAGE, pdfium_c.FPDF_PAGEOBJ_FORM),
-                        max_depth=4,
-                    )
+                for obj in page.get_objects(
+                    filter=(pdfium_c.FPDF_PAGEOBJ_TEXT, pdfium_c.FPDF_PAGEOBJ_IMAGE, pdfium_c.FPDF_PAGEOBJ_FORM),
+                    max_depth=4,
                 ):
-                    if n >= object_cap:
-                        if "pdf_objects_capped" not in ctx.notes:
-                            ctx.notes.append("pdf_objects_capped")
-                        break
                     level = getattr(obj, "level", 0) or 0
                     if obj.type == pdfium_c.FPDF_PAGEOBJ_FORM:
                         del forms[level:]

@@ -343,10 +343,11 @@ strict failure stops the pipeline after that stage.
 Each of these keys is also an environment setting (atrium-project#53): `ATRIUM_TEXT_INGEST_<KEY>`, e.g.
 `ATRIUM_TEXT_INGEST_MAX_PAGES=500`. The variable wins over the config file, the file over the default above; a
 malformed value stops the run or the service naming it. The service reports every cap's current value in
-`GET /info` (`limits`; `limits_meta` names the variable and where the value came from). Two reader caps that
-used to be fixed are settings too, not config keys: `ATRIUM_TEXT_INGEST_ODF_REPEAT_CAP` (100 — repeats of one
-ODS/ODT cell or row read, noted `sheet_repeat_capped`) and `ATRIUM_TEXT_INGEST_PDF_OBJECT_CAP` (20000 — objects
-of a PDF page scanned for its text layer, noted `pdf_objects_capped`).
+`GET /info` (`limits`; `limits_meta` names the variable and where the value came from). A reader cap that
+used to be fixed is a setting too, not a config key: `ATRIUM_TEXT_INGEST_ODF_REPEAT_CAP` (100 — repeats of one
+ODS/ODT cell or row read; past it the run fails, `sheet_repeat_capped`). A PDF page's text layer is judged on all
+its objects: the object cap (`ATRIUM_TEXT_INGEST_PDF_OBJECT_CAP`, a sample of the first 20,000) is gone
+(atrium-project#84).
 
 XML is parsed without entity resolution, DTD loading or network access, and with libxml2's size and
 depth limits on. A document that declares entities is refused (`xml_entity_declaration`). Broken XML

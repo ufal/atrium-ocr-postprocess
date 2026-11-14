@@ -1,13 +1,27 @@
 # Strategy — [atrium-project#84](https://github.com/ufal/atrium-project/issues/84) (doc-schema-v2): ocr-postprocess's part
 
+> _**Refreshed 2026-11-14 (afternoon)**: "Status — round 6 (11-14)": the hub merged, the pins moved, round 6._
+> _**Refreshed 2026-11-14**: "Status — PR (11-14)": the PR's checks and round 5's fixes._
+> _**Refreshed 2026-11-13**: "Status — round 2" (the code, pushed 11-13 to `test`) and round 4's notes. The file keeps
+> the name `doc-schema-v2.plan.md` (it was `84.plan.md` on 11-12 and 11-13)._
 > _**Refreshed 2026-11-12** on ARÚP's output contract of 12 November and atrium-project#84 (motyc, 11-12), at this
 > checkout's head `ff3a467` (= `test`). The hub carries the whole change:
-> [plan](https://github.com/ufal/atrium-project/blob/test/agent_dev_logs/plans/84.plan.md) ·
-> [digest](https://github.com/ufal/atrium-project/blob/test/agent_dev_logs/digests/84.digest.md) (the docproc schema
+> [plan](https://github.com/ufal/atrium-project/blob/test/agent_dev_logs/plans/doc-schema-v2.plan.md) ·
+> [digest](https://github.com/ufal/atrium-project/blob/test/agent_dev_logs/digests/doc-schema-v2.digest.md) (the docproc schema
 > of #84's comment 1) · [contract digest](https://github.com/ufal/atrium-project/blob/test/agent_dev_logs/digests/project_state_1211.md).
-> This file is the repository's slice only; it was `plans/doc-schema-v2.plan.md` (written 2026-11-11, before the
+> This file is the repository's slice only; its 11-11 version (written before the
 > issue existed), whose reader for "ATR's JSON or ALTO", D14 merge by decode verdict, `pages[].origin`,
 > `lines[].style.region` and `tables[]` are superseded below._
+
+**Status (2026-11-14, afternoon)**: 🟡 **The hub's PR is merged and this repository is pinned to it: drift is green.
+Round 6 completes this repository's part where no answer is pending; see "Status — round 6". The release (v2.0.0-beta)
+is cut at K4TEL's cadence.**
+
+**Status (2026-11-14)**: 🟡 **[atrium-ocr-postprocess#11](https://github.com/ufal/atrium-ocr-postprocess/pull/11) is open
+(`doc-schema-v2` into `test`); see "Status — PR". Drift clears once the hub's PR merges and the pins move; the
+record-major check clears at this tool's next release, which raises its major version.** _(superseded 11-14 afternoon)_
+
+**Status (2026-11-13)**: 🟡 **Implemented, pushed 11-13 to `test`; see "Status — round 2". Deferred items are listed there.** _(superseded 11-14: the PR is open)_
 
 **Status (2026-11-12)**: 📋 **Planned, plans only. ocr-postprocess becomes the record builder: it builds every
 record from docproc, whichever producer wrote it (digital-convert, the ATR, the PCSS converter), merges the two
@@ -100,6 +114,87 @@ Two actions in `paradata/atrium/document-json`, one per step and document:
 - **Limits:** `sampled` and `split` only. **Components** (`setup/para_config.txt`), facts with their terms:
   fastText (CC BY-NC 4.0), Qwen2.5-0.5B (Apache-2.0), and the rest as listed; LayoutReader only where ALTO is still
   read (the PCSS converter). Never merged.
+
+## Status — round 2 (11-13)
+
+Local branch from `test`, on the re-vendored shared modules (record 2.0, paradata 3.0,
+`ContentLimitError`); delivered as an archive with the commands to run; pushed 11-13 (below). Nothing posted.
+
+- **Task 1, the docproc reader** (`docproc.py`): pages by `pageNumber`, blocks by `readingOrder`. A block's own
+  `lines[]` are `measured`; else its `content` split at line breaks, with the block's box (`derived`). Tables give one
+  line per `cellGrid` row; image blocks without text give none. `all_engines_failed` and H15 fail the build.
+- **Task 2, the builder** (`build_record.py`, `POST /build_record`): one producer. `source` (`origin`,
+  `page_count`, `language`), a page row for every page (`content_status`, `canvas`), lines with `block`,
+  `text_source`, `bbox_precision`, `content.text`; then scored. The batch path lost the origin guard and the OCR
+  hand-off: origins map to `digital`/`atr`/`legacy`, and the engine is the paradata parameter `ocr_engine`.
+- **Task 3, the merge (H6): not built.** A docproc with a `needsAtr` page fails the build (`needs_atr`).
+- **Task 4, scoring:** rules 1–3 and 7 done: every line is scored, `skipped_decode_verdict` is gone, an empty page
+  has no score, and `quality_summary` counts empty pages apart. **Deferred:** rule 4 (the service's page and
+  document passes) and rule 5's exclusion from calibrated statistics (such a line is only marked `derived`).
+  _(both done 11-14, round 6)_
+- **Task 6, paradata:** `object` is docproc and the seed, or `original` and the record; `result` is the record's
+  fields; `cleaned_lines.json` is left out. SHA-512 throughout. `score_record.py` writes exactly the bytes it names.
+- **Task 7, D13:** a ZIP member over the limit, the ODF cap, LayoutReader out of memory, a line that fails
+  perplexity alone, and a line over the perplexity window all fail the run. The last one is Q6, still open.
+- **Fixes found on the way:** a page row is keyed through the record's own labels (`iv` keeps its row);
+  `content_status` falls back to `page_index` for a row without a label.
+- **Tests:** 2324 passed, 16 skipped; new `tests/test_build_record.py`
+  on docproc fixtures in the ATR's shape and from digital-convert. `tests/test_ocr_handoff.py` is deleted.
+- **Pushed** to `test` (11-13) without `tests/fixtures/docproc/` and with `tests/test_ocr_handoff.py` still in.
+  Round 4 adds the fixtures, removes the test, re-vendors the addendum's shared files and declares `build_record.py`,
+  `docproc.py` and `score_record.py` in `.github/production-image.json`: 2324 pass.
+- **[atrium-digital-convert#9](https://github.com/ufal/atrium-digital-convert/issues/9#issuecomment-6838301982)**
+  (agreed 11-13): born-digital lines are scored here (point 1, as built). TXT, CSV, TSV and JSON skip the visual
+  steps and go straight to scoring (point 4); whether digital-convert writes them a docproc or this repository reads
+  them is the hub's Q9.
+
+## Status — PR (11-14)
+
+[atrium-ocr-postprocess#11](https://github.com/ufal/atrium-ocr-postprocess/pull/11), head `1a9e778`. Failing checks:
+check-drift (canonical), because the callers read the hub at `v1` (`4435ffb`) while the copies are v2; api-contract,
+because the record schema went from 1.0 to 2.0 without a major version; build / test: `tests/fixtures/docproc/*.json`
+was not committed and `tests/test_ocr_handoff.py` (which imports `OCR_HANDOFF`, gone in 2.0) was still there;
+api-contract also reports `ocr_handoff` and `skipped_decode_verdict` gone. The causes across all seven PRs:
+[hub plan of #84](https://github.com/ufal/atrium-project/blob/test/agent_dev_logs/plans/doc-schema-v2.plan.md),
+"Status — PRs".
+
+Round 5 (not pushed):
+
+- `atrium_rocrate.py` and `tests/test_atrium_rocrate.py` re-vendored: a crate root that asserts no licence names
+  `#no-licence-asserted` again (RO-Crate 1.2 requires a root licence; atrium-project#6, motyc 11-12). The hub's PR
+  failed its RO-Crate check without it.
+- `tests/fixtures/docproc/` (4 files) added, `tests/test_ocr_handoff.py` removed (both from round 4, missing from the
+  push).
+
+The suite passes: 2325. After the hub's PR merges, `v1` moves to its merge commit and
+`scripts/pin_hub_reusables.py --sha` pins this repository's callers to it: drift clears. The record-major check stays
+red until the release, which raises the major version in `setup/para_config.txt` (`v1.15.4-beta` now), `CITATION.cff`
+and `service/openapi.json`'s `info.version`.
+
+## Status — round 6 (11-14)
+
+The hub's PR (atrium-project#86) merged; `v1` moved to it and K4TEL pinned this repository's callers: drift green. Round
+6 (local, delivered as an archive):
+
+- `atrium_document.py`, its schema and `tests/test_document_originators.py` re-vendored: rows may carry
+  `lines[].unit: "block"` (rule 5, written by ocr-postprocess only), and `quality_summary.lines` counts them as
+  `block_units`. `v2.0.0-beta` as the unreleased version: `setup/para_config.txt`, `CITATION.cff`,
+  `service/openapi.json` (re-exported) and a CONTRIBUTING.md row marked Unreleased; api-contract passes with it.
+- Rule 4: `record_scoring.document_passes()` runs the batch's `apply_page_perplexity_blend()` and
+  `apply_document_postprocessing()` (dedup, Trash islands, page context, inverted sweep) on the scored lines, in
+  `build_record` and `/score_record`; `rot_ratio` is computed as the batch does. Answers without the model's signals
+  pass through unchanged.
+- Rule 5: `docproc.py` marks a block without lines and without a line break `unit: "block"`; `page_records_from_lines()`
+  leaves such rows out of the page's score and band.
+- No object sampling: `text_formats.py` (this repository owns it) judges a PDF page on all its objects; `PDF_OBJECT_CAP`
+  and the `pdf_objects_capped` note gone (`tool_limits.py`, `service/text_inference.py`, `.env.example`, service README,
+  `docs/text_inputs.md`, `tests/test_limits.py`).
+- `tests/fixtures/docproc/*.json` again, to be added with `git add -f`: the push of 11-14 left them out a second time.
+
+The suite passes: 2332. Next: the hub's second PR for #84 (the E2E lanes, rule 5's mark), then `v1` and the pins again;
+then this PR. Hub:
+[plan of #84](https://github.com/ufal/atrium-project/blob/test/agent_dev_logs/plans/doc-schema-v2.plan.md),
+"Status — round 6".
 
 ## Depends on
 

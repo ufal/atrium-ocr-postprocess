@@ -1,0 +1,133 @@
+{
+    "version": "1.0",
+    "pipeline": "pipeline-e2e",
+    "processedAt": "2026-11-10T09:00:00Z",
+    "sourceFormat": "pdf-scanned",
+    "documentLanguage": "cs",
+    "pages": [
+        {
+            "pageNumber": 1,
+            "width": 595.0,
+            "height": 842.0,
+            "coordinateUnit": "pt",
+            "blocks": [
+                {
+                    "id": "p1-b0",
+                    "type": "heading",
+                    "bbox": [
+                        72.0,
+                        60.0,
+                        320.0,
+                        80.0
+                    ],
+                    "readingOrder": 0,
+                    "content": "Zpráva o archeologickém výzkumu",
+                    "level": 1
+                },
+                {
+                    "id": "p1-b1",
+                    "type": "text",
+                    "bbox": [
+                        72.0,
+                        100.0,
+                        520.0,
+                        140.0
+                    ],
+                    "readingOrder": 1,
+                    "content": "Sonda S1 byla vyhloubena u severní hradby.\nV hloubce 40 cm se objevila kulturní vrstva."
+                },
+                {
+                    "id": "p1-b2",
+                    "type": "figure",
+                    "bbox": [
+                        72.0,
+                        160.0,
+                        520.0,
+                        400.0
+                    ],
+                    "readingOrder": 2,
+                    "imageRef": "images/p1-b2.png"
+                },
+                {
+                    "id": "p1-b3",
+                    "type": "table",
+                    "bbox": [
+                        72.0,
+                        420.0,
+                        520.0,
+                        480.0
+                    ],
+                    "readingOrder": 3,
+                    "content": "Sonda | Nálezy\nS1 | keramika",
+                    "cellGrid": {
+                        "rows": [
+                            {
+                                "cells": [
+                                    {
+                                        "text": "Sonda",
+                                        "isHeader": true
+                                    },
+                                    {
+                                        "text": "Nálezy",
+                                        "isHeader": true
+                                    }
+                                ]
+                            },
+                            {
+                                "cells": [
+                                    {
+                                        "text": "S1"
+                                    },
+                                    {
+                                        "text": "keramika"
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                }
+            ]
+        },
+        {
+            "pageNumber": 2,
+            "width": 595.0,
+            "height": 842.0,
+            "coordinateUnit": "pt",
+            "blocks": [
+                {
+                    "id": "p2-b0",
+                    "type": "text",
+                    "bbox": [
+                        72.0,
+                        60.0,
+                        520.0,
+                        80.0
+                    ],
+                    "readingOrder": 0,
+                    "content": "Nálezy jsou uloženy v depozitáři."
+                }
+            ]
+        }
+    ],
+    "metadata": {
+        "routing": {
+            "pages": [
+                {
+                    "page": 1,
+                    "route": "atr",
+                    "text_layer": false
+                },
+                {
+                    "page": 2,
+                    "route": "atr",
+                    "text_layer": false
+                },
+                {
+                    "page": 3,
+                    "route": "empty",
+                    "text_layer": false
+                }
+            ]
+        }
+    }
+}
