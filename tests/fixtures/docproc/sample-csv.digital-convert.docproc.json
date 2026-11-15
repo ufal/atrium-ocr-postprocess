@@ -1,0 +1,53 @@
+{
+  "version": "1.1",
+  "sourceFormat": "csv",
+  "pages": [
+    {
+      "pageNumber": 1,
+      "blocks": [
+        {
+          "id": "p1-b0",
+          "type": "paragraph",
+          "readingOrder": 0,
+          "confidence": 1.0,
+          "content": "id\ttext\tdatace\tpoznamka\n1\tZlomek okraje hrnce\tHB\tnalezen v sondě II, vrstva 2\n2\tZvířecí kost\n3\tMazanice\tHB\ts otisky prutů",
+          "lines": [
+            {
+              "text": "id\ttext\tdatace\tpoznamka",
+              "bboxPrecision": "absent"
+            },
+            {
+              "text": "1\tZlomek okraje hrnce\tHB\tnalezen v sondě II, vrstva 2",
+              "bboxPrecision": "absent"
+            },
+            {
+              "text": "2\tZvířecí kost",
+              "bboxPrecision": "absent"
+            },
+            {
+              "text": "3\tMazanice\tHB\ts otisky prutů",
+              "bboxPrecision": "absent"
+            }
+          ]
+        }
+      ],
+      "textLayer": "digital"
+    }
+  ],
+  "metadata": {
+    "routing": {
+      "pages": [
+        {
+          "page": 1,
+          "route": "text-layer",
+          "text_layer": true
+        }
+      ],
+      "counts": {
+        "by_route": {
+          "text-layer": 1
+        }
+      }
+    }
+  }
+}
