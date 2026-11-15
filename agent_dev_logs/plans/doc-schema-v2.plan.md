@@ -146,7 +146,11 @@ Local branch from `test`, on the re-vendored shared modules (record 2.0, paradat
 - **[atrium-digital-convert#9](https://github.com/ufal/atrium-digital-convert/issues/9#issuecomment-6838301982)**
   (agreed 11-13): born-digital lines are scored here (point 1, as built). TXT, CSV, TSV and JSON skip the visual
   steps and go straight to scoring (point 4); whether digital-convert writes them a docproc or this repository reads
-  them is the hub's Q9.
+  them is the hub's Q9. _(11-14: answered by K4TEL. digital-convert extracts them into a docproc without geometry
+  (`sourceFormat` `txt`, `csv`, `tsv`, `json`), and `docproc.py`'s `DIGITAL_FORMATS` takes the four, so their
+  records are `origin: digital` with `text_source: text-layer`. Its office documents now carry the pages of their
+  rendering, in pt; `rich.digital-convert.docproc.json` was regenerated, and `sample-csv.digital-convert.docproc.json`
+  added.)_
 
 ## Status — PR (11-14)
 

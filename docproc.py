@@ -37,8 +37,12 @@ IMAGE_TYPES = frozenset({"image", "figure", "chart", "seal"})
 #: The ATR's producer id (`pipeline`), with or without its cloud-fallback variant.
 ATR_PIPELINE = "pipeline-e2e"
 
-#: `sourceFormat` values of a born-digital original (digital-convert's).
-DIGITAL_FORMATS = frozenset({"pdf-digital", "docx", "pptx", "odt", "ods", "xlsx", "rtf", "doc", "xls"})
+#: `sourceFormat` values of a born-digital original (digital-convert's): PDF, the office documents and
+#: spreadsheets, and the text-only inputs digital-convert extracts as they are (TXT, CSV, TSV, JSON;
+#: atrium-digital-convert#9, the hub's Q9).
+DIGITAL_FORMATS = frozenset(
+    {"pdf-digital", "docx", "pptx", "odt", "ods", "xlsx", "rtf", "doc", "xls", "txt", "csv", "tsv", "json"}
+)
 
 
 class DocprocError(ValueError):
@@ -92,7 +96,7 @@ class ReadDocument:
     @property
     def text_source(self) -> str:
         """Where the lines' text came from (D25): the ATR's docproc is `atr`; digital-convert's, of a
-        born-digital format, is `text-layer`."""
+        born-digital format, is `text-layer` — the file's own text, a text-only input's included."""
         if (self.producer or "").startswith(ATR_PIPELINE):
             return "atr"
         if self.source_format in DIGITAL_FORMATS:
