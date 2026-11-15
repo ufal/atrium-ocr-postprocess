@@ -4,23 +4,44 @@
   "pages": [
     {
       "pageNumber": 1,
+      "width": 595.304,
+      "height": 841.89,
+      "coordinateUnit": "pt",
       "blocks": [
         {
           "id": "p1-b0",
           "type": "header",
+          "bbox": [
+            72.1,
+            38.449,
+            241.159,
+            49.449
+          ],
           "readingOrder": 0,
           "confidence": 1.0,
           "content": "Archeologický ústav – nálezová zpráva",
           "lines": [
             {
               "text": "Archeologický ústav – nálezová zpráva",
-              "bboxPrecision": "absent"
+              "bbox": [
+                72.1,
+                38.449,
+                241.159,
+                49.449
+              ],
+              "bboxPrecision": "measured"
             }
           ]
         },
         {
           "id": "p1-b1",
           "type": "heading",
+          "bbox": [
+            72.1,
+            78.155,
+            318.668,
+            106.155
+          ],
           "readingOrder": 1,
           "confidence": 1.0,
           "content": "Hradiště u Horní Mezi",
@@ -28,13 +49,25 @@
           "lines": [
             {
               "text": "Hradiště u Horní Mezi",
-              "bboxPrecision": "absent"
+              "bbox": [
+                72.1,
+                78.155,
+                318.668,
+                106.155
+              ],
+              "bboxPrecision": "measured"
             }
           ]
         },
         {
           "id": "p1-b2",
           "type": "heading",
+          "bbox": [
+            72.1,
+            108.649,
+            148.209,
+            119.649
+          ],
           "readingOrder": 2,
           "confidence": 1.0,
           "content": "Průběh výzkumu",
@@ -42,56 +75,110 @@
           "lines": [
             {
               "text": "Průběh výzkumu",
-              "bboxPrecision": "absent"
+              "bbox": [
+                72.1,
+                108.649,
+                148.209,
+                119.649
+              ],
+              "bboxPrecision": "measured"
             }
           ]
         },
         {
           "id": "p1-b3",
           "type": "paragraph",
+          "bbox": [
+            72.1,
+            122.099,
+            108.752,
+            133.099
+          ],
           "readingOrder": 3,
           "confidence": 1.0,
           "content": "Sonda II",
           "lines": [
             {
               "text": "Sonda II",
-              "bboxPrecision": "absent"
+              "bbox": [
+                72.1,
+                122.099,
+                108.752,
+                133.099
+              ],
+              "bboxPrecision": "measured"
             }
           ]
         },
         {
           "id": "p1-b4",
           "type": "paragraph",
+          "bbox": [
+            72.1,
+            135.549,
+            240.472,
+            146.549
+          ],
           "readingOrder": 4,
           "confidence": 1.0,
           "content": "Nalezena bronzová spona, viz katalog.",
           "lines": [
             {
               "text": "Nalezena bronzová spona, viz katalog.",
-              "bboxPrecision": "absent"
+              "bbox": [
+                72.1,
+                135.549,
+                240.472,
+                146.549
+              ],
+              "bboxPrecision": "measured"
             }
           ]
         },
         {
           "id": "p1-b5",
           "type": "paragraph",
+          "bbox": [
+            72.1,
+            148.999,
+            126.616,
+            173.449
+          ],
           "readingOrder": 5,
           "confidence": 1.0,
           "content": "První řádek\nDruhý řádek",
           "lines": [
             {
               "text": "První řádek",
-              "bboxPrecision": "absent"
+              "bbox": [
+                72.1,
+                148.999,
+                122.568,
+                159.999
+              ],
+              "bboxPrecision": "measured"
             },
             {
               "text": "Druhý řádek",
-              "bboxPrecision": "absent"
+              "bbox": [
+                72.1,
+                162.449,
+                126.616,
+                173.449
+              ],
+              "bboxPrecision": "measured"
             }
           ]
         },
         {
           "id": "p1-b6",
           "type": "heading",
+          "bbox": [
+            72.1,
+            175.899,
+            116.958,
+            186.899
+          ],
           "readingOrder": 6,
           "confidence": 1.0,
           "content": "Dílčí závěr",
@@ -99,20 +186,38 @@
           "lines": [
             {
               "text": "Dílčí závěr",
-              "bboxPrecision": "absent"
+              "bbox": [
+                72.1,
+                175.899,
+                116.958,
+                186.899
+              ],
+              "bboxPrecision": "measured"
             }
           ]
         },
         {
           "id": "p1-b7",
           "type": "paragraph",
+          "bbox": [
+            72.1,
+            189.349,
+            140.828,
+            200.349
+          ],
           "readingOrder": 7,
           "confidence": 1.0,
           "content": "Kotva rámečku.",
           "lines": [
             {
               "text": "Kotva rámečku.",
-              "bboxPrecision": "absent"
+              "bbox": [
+                72.1,
+                189.349,
+                140.828,
+                200.349
+              ],
+              "bboxPrecision": "measured"
             }
           ]
         },
@@ -132,13 +237,25 @@
         {
           "id": "p1-b9",
           "type": "footnote",
+          "bbox": [
+            80.186,
+            758.899,
+            232.404,
+            769.899
+          ],
           "readingOrder": 9,
           "confidence": 1.0,
           "content": "Katalog nálezů je uložen v archivu.",
           "lines": [
             {
               "text": "Katalog nálezů je uložen v archivu.",
-              "bboxPrecision": "absent"
+              "bbox": [
+                80.186,
+                758.899,
+                232.404,
+                769.899
+              ],
+              "bboxPrecision": "measured"
             }
           ]
         }
@@ -147,23 +264,44 @@
     },
     {
       "pageNumber": 2,
+      "width": 595.304,
+      "height": 841.89,
+      "coordinateUnit": "pt",
       "blocks": [
         {
           "id": "p2-b0",
           "type": "paragraph",
+          "bbox": [
+            72.1,
+            74.449,
+            180.516,
+            85.449
+          ],
           "readingOrder": 0,
           "confidence": 1.0,
           "content": "Druhá strana začíná zde.",
           "lines": [
             {
               "text": "Druhá strana začíná zde.",
-              "bboxPrecision": "absent"
+              "bbox": [
+                72.1,
+                74.449,
+                180.516,
+                85.449
+              ],
+              "bboxPrecision": "measured"
             }
           ]
         },
         {
           "id": "p2-b1",
           "type": "table",
+          "bbox": [
+            77.5,
+            87.899,
+            327.064,
+            112.349
+          ],
           "readingOrder": 1,
           "confidence": 1.0,
           "content": "Nálezy\tNálezy\nKeramika\t12 ks",
@@ -197,26 +335,50 @@
         {
           "id": "p2-b2",
           "type": "paragraph",
+          "bbox": [
+            72.1,
+            114.799,
+            154.622,
+            125.799
+          ],
           "readingOrder": 2,
           "confidence": 1.0,
           "content": "Konec první sekce.",
           "lines": [
             {
               "text": "Konec první sekce.",
-              "bboxPrecision": "absent"
+              "bbox": [
+                72.1,
+                114.799,
+                154.622,
+                125.799
+              ],
+              "bboxPrecision": "measured"
             }
           ]
         },
         {
           "id": "p2-b3",
           "type": "footer",
+          "bbox": [
+            72.1,
+            794.899,
+            100.744,
+            805.899
+          ],
           "readingOrder": 3,
           "confidence": 1.0,
           "content": "Strana 1",
           "lines": [
             {
               "text": "Strana 1",
-              "bboxPrecision": "absent"
+              "bbox": [
+                72.1,
+                794.899,
+                100.744,
+                805.899
+              ],
+              "bboxPrecision": "measured"
             }
           ]
         }
@@ -225,49 +387,57 @@
     },
     {
       "pageNumber": 3,
+      "width": 595.304,
+      "height": 841.89,
+      "coordinateUnit": "pt",
       "blocks": [
         {
           "id": "p3-b0",
           "type": "paragraph",
+          "bbox": [
+            72.1,
+            74.449,
+            232.777,
+            85.449
+          ],
           "readingOrder": 0,
           "confidence": 1.0,
-          "content": "Text třetí strany",
+          "content": "Text třetí strany pokračuje na čtvrté.",
           "lines": [
             {
-              "text": "Text třetí strany",
-              "bboxPrecision": "absent"
-            }
-          ]
-        }
-      ],
-      "textLayer": "digital"
-    },
-    {
-      "pageNumber": 4,
-      "blocks": [
-        {
-          "id": "p4-b0",
-          "type": "paragraph",
-          "readingOrder": 0,
-          "confidence": 1.0,
-          "content": "pokračuje na čtvrté.",
-          "lines": [
-            {
-              "text": "pokračuje na čtvrté.",
-              "bboxPrecision": "absent"
+              "text": "Text třetí strany pokračuje na čtvrté.",
+              "bbox": [
+                72.1,
+                74.449,
+                232.777,
+                85.449
+              ],
+              "bboxPrecision": "measured"
             }
           ]
         },
         {
-          "id": "p4-b1",
+          "id": "p3-b1",
           "type": "paragraph",
+          "bbox": [
+            72.1,
+            87.899,
+            98.115,
+            98.899
+          ],
           "readingOrder": 1,
           "confidence": 1.0,
           "content": "Závěr.",
           "lines": [
             {
               "text": "Závěr.",
-              "bboxPrecision": "absent"
+              "bbox": [
+                72.1,
+                87.899,
+                98.115,
+                98.899
+              ],
+              "bboxPrecision": "measured"
             }
           ]
         }
@@ -292,16 +462,11 @@
           "page": 3,
           "route": "text-layer",
           "text_layer": true
-        },
-        {
-          "page": 4,
-          "route": "text-layer",
-          "text_layer": true
         }
       ],
       "counts": {
         "by_route": {
-          "text-layer": 4
+          "text-layer": 3
         }
       }
     }

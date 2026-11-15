@@ -2140,3 +2140,17 @@ Documentation only; no code, test or configuration change.
 * **Checked:** the full suite, 2332 passed; the spec export; `compare` against the latest release: compatible at v2.0.0-beta.
 * **Next:** the hub's second PR for #84, then the pins; then this PR. Hub: [plan of #84](https://github.com/ufal/atrium-project/blob/test/agent_dev_logs/plans/doc-schema-v2.plan.md), "Status — round 6".
 * **Not posted; not pushed.**
+
+## 2026-11-15 — atrium-digital-convert#9: the text-only inputs and the rendered office documents
+
+* **Asked (K4TEL):** adapt the other repositories to digital-convert#9 (office documents as native text on rendered
+  pages; TXT, CSV, TSV and JSON extracted as they are).
+* **Done (local, not pushed):**
+  * `docproc.py`: `DIGITAL_FORMATS` takes `txt`, `csv`, `tsv`, `json`, so those records are `origin: digital`
+    (they were `atr`);
+  * `tests/fixtures/docproc/rich.digital-convert.docproc.json` regenerated (3 rendered pages in pt);
+    `sample-csv.digital-convert.docproc.json` added;
+  * `tests/test_build_record.py`: the flow tests on the CSV, the office document's pt pages, the four formats.
+* **Checked:** the full suite.
+* **Detail:** `plans/doc-schema-v2.plan.md` (the #9 bullet); digital-convert's `plans/9.plan.md`.
+* **Not posted; not pushed.**

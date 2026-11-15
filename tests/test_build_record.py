@@ -10,7 +10,10 @@ under `tests/fixtures/docproc/` are:
 * `table.digital-convert.docproc.json`, `rich.digital-convert.docproc.json`,
   `garbled.digital-convert.docproc.json`: written by digital-convert from its fixture PDF and DOCX
   (the ATRIUM proposal schema: block `lines[]`, the page verdict). The garbled one has a page that
-  needs the ATR.
+  needs the ATR. Since atrium-digital-convert#9 the DOCX's text sits on the pages of its LibreOffice
+  rendering, in pt, with a text box the rendering does not show kept without a box;
+* `sample-csv.digital-convert.docproc.json`: digital-convert's textual workflow (#9): a CSV extracted
+  as it is, every row a line, no page size and no boxes.
 
 The classifier is a stub, so no model is loaded.
 """
@@ -93,11 +96,31 @@ def test_digital_converts_docproc_keeps_its_measured_line_boxes():
 
 
 def test_a_flow_document_has_lines_without_boxes():
-    document = read_docproc(_docproc("rich.digital-convert"))
-    assert document.page_count == 4
+    """A text-only input (digital-convert#9): its text is the file's own, without geometry."""
+    document = read_docproc(_docproc("sample-csv.digital-convert"))
+    assert (document.text_source, document.origin, document.page_count) == ("text-layer", "digital", 1)
     lines = [line for page in document.pages.values() for line in page.lines]
     assert lines and all(line.bbox is None and line.bbox_precision == "absent" for line in lines)
+    assert lines[0].text == "id\ttext\tdatace\tpoznamka", "every column, the header row included"
     assert document.pages[1].width is None
+
+
+def test_an_office_documents_lines_have_the_boxes_of_its_rendering():
+    """digital-convert#9: a DOCX's native text placed on its rendered pages, in pt."""
+    document = read_docproc(_docproc("rich.digital-convert"))
+    assert (document.text_source, document.origin, document.page_count) == ("text-layer", "digital", 3)
+    assert all(page.width and page.height for page in document.pages.values())
+    precision = {line.text: line.bbox_precision for page in document.pages.values() for line in page.lines}
+    assert precision["Nalezena bronzová spona, viz katalog."] == "measured"
+    assert precision["Poznámka v rámečku."] == "absent", "a text box the rendering does not show"
+
+
+@pytest.mark.parametrize("source_format", ["txt", "csv", "tsv", "json"])
+def test_the_text_only_inputs_are_born_digital(source_format):
+    data = _docproc("sample-csv.digital-convert")
+    data["sourceFormat"] = source_format
+    document = read_docproc(data)
+    assert (document.text_source, document.origin) == ("text-layer", "digital")
 
 
 def test_a_page_neither_listed_nor_routed_empty_fails_the_build():
@@ -259,10 +282,20 @@ def test_a_born_digital_docproc_gives_text_layer_lines(tmp_path):
 
 
 def test_a_flow_documents_record_has_no_boxes(tmp_path):
-    record = json.loads(build_record.build(_bytes(_docproc("rich.digital-convert")), str(tmp_path), doc_id="R-1").data)
+    built = build_record.build(_bytes(_docproc("sample-csv.digital-convert")), str(tmp_path), doc_id="C-1")
+    record = json.loads(built.data)
     validate_document(record)
+    assert record["source"]["origin"] == "digital"
+    assert {row["text_source"] for row in record["lines"]} == {"text-layer"}
     assert all("bbox" not in row and row["bbox_precision"] == "absent" for row in record["lines"])
     assert all("canvas" not in page for page in record["pages"])
+
+
+def test_an_office_documents_record_has_its_rendered_pages(tmp_path):
+    record = json.loads(build_record.build(_bytes(_docproc("rich.digital-convert")), str(tmp_path), doc_id="R-1").data)
+    validate_document(record)
+    assert [page["canvas"]["unit"] for page in record["pages"]] == ["pt", "pt", "pt"]
+    assert {row["bbox_precision"] for row in record["lines"]} >= {"measured", "absent"}
 
 
 def test_a_page_that_needs_the_atr_fails_the_build(tmp_path):
