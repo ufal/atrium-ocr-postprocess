@@ -96,7 +96,7 @@ from utils import parse_alto_page_labels  # noqa: E402
 # import. Keep them below the bootstrap; `tests/test_service_entrypoint.py` enforces it.
 import atrium_rocrate  # noqa: E402
 from atrium_document import canonical_doc_id  # noqa: E402
-from atrium_limits import LimitExceeded, LimitNotes  # noqa: E402
+from atrium_limits import ContentLimitError, LimitExceeded, LimitNotes  # noqa: E402
 from atrium_paradata import ParadataLogger  # noqa: E402
 from build_record import build as build_record  # noqa: E402
 from docproc import DocprocError  # noqa: E402
@@ -427,8 +427,9 @@ class BuildRecordResponse(BaseModel):
     limits_applied: List[LimitNote] = Field(description="The sampling and splitting the result rests on.")
     paradata: Optional[CreateAction] = Field(
         description=(
-            "The call's provenance (paradata 3.0): `object` the docproc (`atr/docproc-json`) and the seed, "
-            "`result` the record with the blocks and fields written, each by SHA-512."
+            "The call's provenance (paradata 3.0): `object` the docproc (`atr/docproc-json`; for a mixed "
+            "document also digital-convert's, `stored: false`) and the seed, `result` the record with the "
+            "blocks and fields written, each by SHA-512."
         )
     )
 
@@ -1260,7 +1261,9 @@ async def score_record(
         para_logger.finalize()
         result["paradata"] = _run_action(para_logger)
         return JSONResponse(content=result)
-    except (HTTPException, LimitExceeded):
+    except (HTTPException, LimitExceeded, ContentLimitError):
+        # ContentLimitError: a line the model cannot score whole fails the call as 422 `limit_exceeded`
+        # (D13), as on /build_record, not as a 500.
         raise
     except Exception as exc:
         logger.exception("score_record failed")
@@ -1288,14 +1291,26 @@ async def build_record_endpoint(
     ),
     doc_id: Optional[str] = Form(None, description="The record's `doc_id` when no seed is sent."),
     score: bool = Form(True, description="Score every line and page with the common quality model (D18)."),
+    text_layer_docproc: UploadFile = File(
+        None,
+        description=(
+            "A mixed document only (H6): digital-convert's docproc, whose `needsAtr` pages the ATR read. "
+            "`docproc` is then the ATR's, the stored one; this one is not stored and is named in the "
+            "paradata by its SHA-512 (D23)."
+        ),
+        json_schema_extra={"contentMediaType": "application/json"},
+    ),
 ) -> JSONResponse:
     """Build the record from docproc (atrium-project#84 §1, D20): ocr-postprocess is the record builder.
 
     One run, one action (`build_record.py`): `source`, `pages`, `lines` and `content` from the docproc,
-    then, with `score`, every line scored as `/score_record` scores it. A docproc that cannot be read,
-    a page neither in `pages[]` nor routed `empty` (H15), a block whose text could not be read, and a
-    page that needs the ATR (its text comes in the ATR's docproc; the mixed merge, H6, is not built yet)
-    fail the call (422, `cause` the reader's code): nothing partial is returned (D13).
+    then, with `score`, every line scored as `/score_record` scores it. For a mixed document the ATR's
+    docproc comes with digital-convert's (`text_layer_docproc`): the text layer's exact lines are kept on
+    the pages it could read, each linked to the ATR block that holds it, and the ATR's lines fill the
+    rest (`docproc_merge.py`, H6, D21). A docproc that cannot be read, a page neither in `pages[]` nor
+    routed `empty` (H15), a block whose text could not be read, digital-convert's docproc with pages that
+    need the ATR sent alone (`needs_atr`), and a merge whose two docprocs disagree fail the call (422,
+    `cause` the reader's or the merge's code): nothing partial is returned (D13).
     """
     _refuse_if_draining()
     para_logger = ParadataLogger(
@@ -1306,6 +1321,9 @@ async def build_record_endpoint(
     )
     upload_mb = MAX_UPLOAD.get()
     docproc_data = await read_upload_bounded(docproc, upload_mb, "docproc")
+    text_layer_data: Optional[bytes] = None
+    if text_layer_docproc is not None:
+        text_layer_data = await read_upload_bounded(text_layer_docproc, upload_mb, "text_layer_docproc")
     seed_data: Optional[bytes] = None
     seed: Optional[Dict[str, Any]] = None
     if document_json is not None:
@@ -1326,6 +1344,7 @@ async def build_record_endpoint(
                 classify=classify,
                 logger=para_logger,
                 seed_data=seed_data,
+                text_layer_docproc_data=text_layer_data,
             )
         except DocprocError as exc:
             raise AtriumHTTPError(422, str(exc), cause=exc.reason) from exc

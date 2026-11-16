@@ -127,7 +127,7 @@ Local branch from `test`, on the re-vendored shared modules (record 2.0, paradat
   `page_count`, `language`), a page row for every page (`content_status`, `canvas`), lines with `block`,
   `text_source`, `bbox_precision`, `content.text`; then scored. The batch path lost the origin guard and the OCR
   hand-off: origins map to `digital`/`atr`/`legacy`, and the engine is the paradata parameter `ocr_engine`.
-- **Task 3, the merge (H6): not built.** A docproc with a `needsAtr` page fails the build (`needs_atr`).
+- **Task 3, the merge (H6): not built.** A docproc with a `needsAtr` page fails the build (`needs_atr`). _(built 11-16, round 7)_
 - **Task 4, scoring:** rules 1–3 and 7 done: every line is scored, `skipped_decode_verdict` is gone, an empty page
   has no score, and `quality_summary` counts empty pages apart. **Deferred:** rule 4 (the service's page and
   document passes) and rule 5's exclusion from calibrated statistics (such a line is only marked `derived`).
@@ -199,6 +199,13 @@ The suite passes: 2332. Next: the hub's second PR for #84 (the E2E lanes, rule 5
 then this PR. Hub:
 [plan of #84](https://github.com/ufal/atrium-project/blob/test/agent_dev_logs/plans/doc-schema-v2.plan.md),
 "Status — round 6".
+
+## Status — round 7 (11-16)
+
+Task 3, the merge (H6), is built: `docproc_merge.py`, `build_record.py --text-layer-docproc`, `/build_record`'s
+`text_layer_docproc`. Also `canvas.pixel_ratio` (D28), the ATR's forced echo checked (D27), `baseline_pages`, and
+`/score_record`'s limit error as 422. Q10 stays open (is digital-convert's unstored docproc, named by SHA-512, enough
+to reproduce the merge?). Hub: "Status — round 7".
 
 ## Depends on
 

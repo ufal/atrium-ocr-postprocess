@@ -30,6 +30,7 @@
     "tool_limits.py",
     "build_record.py",
     "docproc.py",
+    "docproc_merge.py",
     "score_record.py"
   ],
   "vendored": {},

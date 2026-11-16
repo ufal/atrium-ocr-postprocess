@@ -320,7 +320,7 @@
     "/build_record": {
       "post": {
         "summary": "Build Record Endpoint",
-        "description": "Build the record from docproc (atrium-project#84 §1, D20): ocr-postprocess is the record builder.\n\nOne run, one action (`build_record.py`): `source`, `pages`, `lines` and `content` from the docproc,\nthen, with `score`, every line scored as `/score_record` scores it. A docproc that cannot be read,\na page neither in `pages[]` nor routed `empty` (H15), a block whose text could not be read, and a\npage that needs the ATR (its text comes in the ATR's docproc; the mixed merge, H6, is not built yet)\nfail the call (422, `cause` the reader's code): nothing partial is returned (D13).",
+        "description": "Build the record from docproc (atrium-project#84 §1, D20): ocr-postprocess is the record builder.\n\nOne run, one action (`build_record.py`): `source`, `pages`, `lines` and `content` from the docproc,\nthen, with `score`, every line scored as `/score_record` scores it. For a mixed document the ATR's\ndocproc comes with digital-convert's (`text_layer_docproc`): the text layer's exact lines are kept on\nthe pages it could read, each linked to the ATR block that holds it, and the ATR's lines fill the\nrest (`docproc_merge.py`, H6, D21). A docproc that cannot be read, a page neither in `pages[]` nor\nrouted `empty` (H15), a block whose text could not be read, digital-convert's docproc with pages that\nneed the ATR sent alone (`needs_atr`), and a merge whose two docprocs disagree fail the call (422,\n`cause` the reader's or the merge's code): nothing partial is returned (D13).",
         "operationId": "build_record_endpoint",
         "requestBody": {
           "content": {
@@ -1464,6 +1464,12 @@
             "title": "Score",
             "description": "Score every line and page with the common quality model (D18).",
             "default": true
+          },
+          "text_layer_docproc": {
+            "type": "string",
+            "contentMediaType": "application/json",
+            "title": "Text Layer Docproc",
+            "description": "A mixed document only (H6): digital-convert's docproc, whose `needsAtr` pages the ATR read. `docproc` is then the ATR's, the stored one; this one is not stored and is named in the paradata by its SHA-512 (D23)."
           }
         },
         "type": "object",
@@ -1601,7 +1607,7 @@
                 "type": "null"
               }
             ],
-            "description": "The call's provenance (paradata 3.0): `object` the docproc (`atr/docproc-json`) and the seed, `result` the record with the blocks and fields written, each by SHA-512."
+            "description": "The call's provenance (paradata 3.0): `object` the docproc (`atr/docproc-json`; for a mixed document also digital-convert's, `stored: false`) and the seed, `result` the record with the blocks and fields written, each by SHA-512."
           }
         },
         "additionalProperties": true,

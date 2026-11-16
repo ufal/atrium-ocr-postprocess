@@ -597,15 +597,28 @@ scanned document, atrium-digital-convert's for a born-digital one ([atrium-proje
 ```bash
 python3 build_record.py C-202000543A-DT-27.docproc.json --seed C-202000543A-DT-27.seed.json --out-dir records/
 python3 build_record.py report.docproc.json --doc-id R-1 --out-dir records/ --no-score
+python3 build_record.py report.atr.docproc.json --text-layer-docproc report.digital-convert.docproc.json \
+    --seed report.seed.json --out-dir records/                    # a mixed document (H6)
 ```
 
 It writes `source` (the seed's identity, `origin`, `page_count`, `language`), a `pages[]` row for every page of the
 original (`content_status`, the canvas), `lines[]` from 1 per page in docproc's reading order (each with its
 `block`, `text_source` and `bbox_precision`) and `content.text`, then scores every line and page with the models of
-`score_record.py`. A docproc it cannot read completely fails the build: a page neither listed nor routed `empty`
-(H15), a block whose text could not be read, a page that needs the ATR (the merge of a mixed document, H6, is not
-built yet). Then nothing is written, the exit status is 1, and the run's paradata (`--paradata-dir`, default
-`paradata/`) say `action_status: failed`. What docproc gives and how it is read:
+`score_record.py`.
+
+**A mixed document** (H6, D21): when digital-convert routed some pages to the ATR, the whole document went through
+the ATR and its docproc is the stored one; digital-convert's docproc comes beside it with `--text-layer-docproc`. The
+record keeps the text layer's exact lines on the pages digital-convert could read (`text_source: text-layer`), each
+linked to the ATR block that holds it, and takes the ATR's lines on the forced pages and in ATR blocks no kept line
+falls into, such as a figure's OCR child (`text_source: atr`); the order is the ATR's. Its `source.origin` is
+`digital` while any text-layer line is kept. The paradata name digital-convert's docproc by its SHA-512 as not
+stored (D23), and the forced pages as the parameter `atr_pages` ([docproc_merge.py](../docproc_merge.py)).
+
+A docproc it cannot read completely fails the build: a page neither listed nor routed `empty` (H15), a block whose
+text could not be read, digital-convert's docproc with pages that need the ATR sent alone, two docprocs that do not
+describe the same pages or the same page sizes (D28), and baseline page rows the original does not have. Then
+nothing is written, the exit status is 1, and the run's paradata (`--paradata-dir`, default `paradata/`) say
+`action_status: failed`. What docproc gives and how it is read:
 [service/README.md](../service/README.md#building-the-record-post-build_record).
 
 ## Score an existing record: `score_record.py`

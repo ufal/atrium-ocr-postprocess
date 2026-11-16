@@ -166,7 +166,7 @@ unless `[TEXT_INGEST] KEEP_BLANK_LINES` is set, and lines over 1000 characters a
 (`document_json`), lines accrete per page, keyed by `page_index`, each with its `text_source` (`text-layer`, `atr`
 or `legacy`, from the origin) and, when it has a box, `bbox_precision: measured`. Since record schema 2.0 this
 service writes the lines of every record, a born-digital one too (atrium-project#84): the OCR hand-off into a
-born-digital record is gone, and the merge of a mixed document is the record builder's (H6, not built yet).
+born-digital record is gone, and a mixed document is built by `/build_record` from its two docprocs (H6).
 
 Each item in `cleaned_lines` carries the fields used by the classification pipeline. Every field is typed in
 [`openapi.json`](openapi.json) (`ProcessResponse`, `AltoLine`, `AltoPage`); the table below is the short form.
@@ -242,11 +242,17 @@ is the only scorer of its lines.
 curl -X POST "http://localhost:8000/build_record" \
   -F "docproc=@C-202000543A-DT-27.docproc.json" \
   -F "document_json=@C-202000543A-DT-27.seed.json"     # or: -F "doc_id=C-202000543A-DT-27"
+# a mixed document: the ATR's docproc, with digital-convert's beside it
+curl -X POST "http://localhost:8000/build_record" \
+  -F "docproc=@R-1.atr.docproc.json" -F "text_layer_docproc=@R-1.digital-convert.docproc.json" \
+  -F "document_json=@R-1.seed.json"
 ```
 
-* **In:** `docproc` (required): the ATR's schema as delivered (#84 comment 1) or atrium-digital-convert's (the same
-  schema with asks 3 and 13 applied); `document_json` (optional): the AMČR seed; `doc_id` when no seed is sent;
-  `score` (default `true`).
+* **In:** `docproc` (required): the stored docproc, the ATR's schema as delivered (#84 comment 1) or
+  atrium-digital-convert's (the same schema with asks 3 and 13 applied); `text_layer_docproc` (a mixed document
+  only): digital-convert's docproc, whose `needsAtr` pages the ATR read; `document_json` (optional): the AMČR seed,
+  or a record page-classification already wrote (its page rows must be pages of the original); `doc_id` when no
+  seed is sent; `score` (default `true`).
 * **Read** ([`docproc.py`](../docproc.py)): pages by `pageNumber`, blocks in `readingOrder`. A block's own
   `lines[]` are its lines, each with its box (`bbox_precision: measured`); otherwise its `content` split at line
   breaks, each line with the block's box (`derived`), and a block without a line break is one line. A table gives
@@ -254,18 +260,30 @@ curl -X POST "http://localhost:8000/build_record" \
 * **Written:** `source` (the seed's identity, and `origin`, `page_count`, `language`), `pages[]` (a row for every
   page of the original: `page_index`, `page`, `content_status`, and `canvas` when docproc gives the page a size),
   `lines[]` (from 1 per page in reading order, each with its docproc `block`, `text_source` and `bbox_precision`)
-  and `content.text`; with `score`, every line's `categ`, `quality_score` and `lang`, each page's `quality_score`
+  and `content.text`; the canvas carries the page's `user_unit` and an image's `pixel_ratio` when docproc gives
+  them (`userUnit`, `pixelRatio`; D28); with `score`, every line's `categ`, `quality_score` and `lang`, each page's `quality_score`
   and `quality_band`, and `quality_summary`, as `/score_record` writes them. A page routed `empty` has
   `content_status: empty` and no score (D18 rule 7).
-* **Refused (`422`, `cause` the reader's code), nothing returned (D13):** a docproc that cannot be read
-  (`invalid_docproc`), a page neither in `pages[]` nor routed `empty` (`unread_pages`, H15), a block whose text could
-  not be read (`all_engines_failed`), and a page flagged `needsAtr` (`needs_atr`): its text comes in the ATR's
-  docproc, and the merge of a mixed document (H6) is not built yet.
-* **Out** (`BuildRecordResponse`): `document_json`, `limits_applied` and `paradata`: `object` the docproc and the
-  seed, `result` the record with the blocks and fields written, each by SHA-512.
+* **A mixed document** ([`docproc_merge.py`](../docproc_merge.py); H6, D21): a page digital-convert routed to the
+  ATR takes the ATR's lines (`text_source: atr`). Any other page keeps digital-convert's exact lines
+  (`text_source: text-layer`), each linked (`block`) to the ATR block holding the largest share of its box, else the
+  nearest; a nested block (a figure's `.t0` OCR child) wins over its parent. An ATR block no kept line went to adds
+  its own lines. Lines follow the ATR's reading order (H8); `source.origin` is `digital` while a text-layer line is
+  kept, else `atr`.
+* **Refused (`422`, `cause` the reader's or the merge's code), nothing returned (D13):** a docproc that cannot be read
+  (`invalid_docproc`, an unknown `coordinateUnit` included), a page neither in `pages[]` nor routed `empty`
+  (`unread_pages`, H15), a block whose text could not be read (`all_engines_failed`), a page flagged `needsAtr` in a
+  docproc sent alone (`needs_atr`), baseline page rows the original does not have (`baseline_pages`), and for a mixed
+  document: no `needsAtr` page in `text_layer_docproc` (`not_mixed`), the two swapped (`docproc_roles`), different
+  pages (`page_mismatch`), forced pages the ATR echoes other than digital-convert's (`forced_mismatch`), a page whose
+  unit or size differs beyond 2 pt or 1 % (`coordinate_mismatch`, D28), a text-layer page the ATR has no block on
+  (`atr_page_missing`, H9).
+* **Out** (`BuildRecordResponse`): `document_json`, `limits_applied` and `paradata`: `object` the docproc (and
+  digital-convert's, `stored: false`, D23) and the seed, `result` the record with the blocks and fields written,
+  each by SHA-512; `parameters.atr_pages` for a mixed document.
 
 **On the command line:** `python3 build_record.py DOC.docproc.json --seed SEED.json --out-dir records/`
-(`--doc-id` without a seed, `--no-score`, `--paradata-dir`) runs the same code
+(`--text-layer-docproc` for a mixed document, `--doc-id` without a seed, `--no-score`, `--paradata-dir`) runs the same code
 ([build_record.py](../build_record.py)). A failed build exits 1, writes no record, and its paradata say
 `action_status: failed`.
 

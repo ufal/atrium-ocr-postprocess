@@ -2154,3 +2154,22 @@ Documentation only; no code, test or configuration change.
 * **Checked:** the full suite.
 * **Detail:** `plans/doc-schema-v2.plan.md` (the #9 bullet); digital-convert's `plans/9.plan.md`.
 * **Not posted; not pushed.**
+
+## 2026-11-16 — atrium-project#84 round 7: the merge of a mixed document (H6)
+
+* **Asked (K4TEL):** close the doc-schema-v2 gaps left at the `test` heads, against ARÚP's contract of 12 November.
+* **Done (local, not pushed):**
+  * `docproc_merge.py` (new): the ATR's docproc (stored) and digital-convert's (not stored) give one record. The text
+    layer's exact lines stay on the pages that did not need the ATR, each linked to the ATR block that holds most of its
+    box (else the nearest; a nested `.t0` wins over its figure); the ATR's lines fill the forced pages and the blocks no
+    kept line falls into; the ATR's reading order (H8). It fails the job on swapped roles, other pages, forced pages
+    other than digital-convert's, a page size beyond 2 pt or 1 % (D28), or a text-layer page the ATR has no block on;
+  * `build_record.py` `--text-layer-docproc`, `/build_record` `text_layer_docproc`; the paradata name digital-convert's
+    docproc as not stored (D23) and the forced pages as `atr_pages`; `origin` `digital` while a text-layer line is kept;
+    a baseline's page rows must be pages of the original (page-classification may write first, H3);
+  * `docproc.py`: per-block lines, `pixelRatio` → `canvas.pixel_ratio`, the ATR's `forced` echo, an unknown
+    `coordinateUnit` refused; `/score_record` answers `ContentLimitError` with 422, not 500;
+  * docs, `service/openapi.json`, the image and release-bundle lists, CONTRIBUTING's unreleased row.
+* **Checked:** the full suite (2363 passed); the local chain with digital-convert and the hub's stand-in (below).
+* **Detail:** `plans/doc-schema-v2.plan.md`, "Status — round 7"; hub: [plan of #84](https://github.com/ufal/atrium-project/blob/test/agent_dev_logs/plans/doc-schema-v2.plan.md).
+* **Not posted; not pushed.**

@@ -485,7 +485,8 @@ Since record schema 2.0 this repo is the record builder and writes the positiona
 a `digital-born-*` origin made the record digital-convert's to originate, and every stage of this repo held its
 `pages`/`content`/`lines` back (the origin guard), except for the pages digital-convert flagged `needs_ocr` (the OCR
 hand-off). Both are gone: in the AMČR pipeline the record of a born-digital document is built from digital-convert's
-docproc (`build_record.py`), and the merge of a mixed document is the builder's (H6, not built yet).
+docproc (`build_record.py`), and so is a mixed document, from the ATR's docproc and digital-convert's (H6,
+`docproc_merge.py`).
 
 **The engine an OCR file names** (#31 Phase 5). ALTO's
 `Description/OCRProcessing/…/processingSoftware/softwareName` (or `softwareCreator`) and hOCR's
