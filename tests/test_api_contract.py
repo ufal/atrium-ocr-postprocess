@@ -274,7 +274,11 @@ def test_a_document_response_conforms_including_its_pages(mock_process):
         "/process", files={"file": ("x.pdf", b"%PDF-1.4", "application/pdf")}, data={"task_type": "document"}
     )
     body = _conforms(200, response)
-    assert [page["page_label"] for page in body["pages"]] == ["i", "ii"]
+    assert [(page["page_index"], page["page"]) for page in body["pages"]] == [(1, "i"), (2, "ii")]
+    assert [(line["page_index"], line["page"], line["categ"]) for line in body["cleaned_lines"]] == [
+        (1, "i", "Clear"),
+        (2, "ii", "Trash"),
+    ], "the record's field names (atrium-project#84)"
 
 
 @patch("service.text_api.text_manager.process_document", create=True)

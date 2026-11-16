@@ -162,7 +162,7 @@
     "/process": {
       "post": {
         "summary": "Process Document",
-        "description": "Upload an ALTO XML, plain-text or generic JSON file — or (#31) any other text-bearing\ndocument: PDF, DOCX, ODT, XLSX/ODS, PPTX/ODP, EPUB, RTF, HTML/hOCR, PAGE XML, TEI,\nMarkdown, CSV/TSV, JSON Lines, ABBYY/DjVu XML, Tesseract TSV, SRT/VTT, EML/MBOX,\ngzip/bz2/xz-compressed files and ZIP bundles of page files. `task_type=\"auto\"`\nkeeps `.txt` → text and `.json` → json; `.xml` and every other extension are\ndecided from the bytes (an uncompressed ALTO root → alto, anything readable →\ndocument). Document results carry `page`/`page_label` per line and a `pages`\nsummary; so do text uploads with form feeds and JSON uploads of several pages, paged as\nthe batch pipeline pages them. The readers use the config's [TEXT_INGEST] settings.\n\n`reading_order=alto` keeps an ALTO's own line order (no LayoutReader), and\n`include_record=true` returns a new record when none was sent (atrium-project#72, the\nservice–CLI alignment).\n\nErrors name the reader's code at the start of `detail` and, but for a named limit, as\n`cause`: 415 `unsupported_media_type` for a file of a kind this service does not read\n(binary_content, legacy_office_unsupported, image_needs_ocr, archive_unsupported), with\nthe readable extensions as `accepted`; 413 `limit_exceeded` for a file over a size or\ncount limit (too_large, zip_limits_exceeded; 422 for the reader's time limit, timeout);\n422 for a supported kind that cannot be read (corrupt, encrypted, malformed, no_text,\n...); 501 when this deployment lacks the reader's optional dependency\n(dependency_missing). A record part that cannot be opened is 422 `invalid_record`.\nEvery response carries `limits_applied` (atrium-project#53).\n\nThe record goes in `document_json` and comes back in `document_json`, as with every\nother ATRIUM service (atrium-project#32 round 2). The earlier names — `document_record`\nin, `document_json_out` out — still work and are deprecated in the spec.\n\nRecord schema 2.0 (atrium-project#84): the record carries no run data; the call's\n`paradata` name the upload (`original`) and the record read and written, by SHA-512. The\npipeline builds records from docproc (`/build_record`); this endpoint stays for batch and\nresearch inputs (ALTO, text, documents).\n\nReturns the classified lines (`ProcessLine`): `line_num` (1-based, in reading order, per page\nof a paged upload; a blank line counts), `text`, `lang` and `lang_score` (after the\nexpected-language remap), `original_lang` and `orig_lang_score` (FastText's own), `perplexity`\n(the perplexity model's: 0 for a pre-filtered line, 99999 for a batch that could not be\nscored), the signals (`garbage_density`, `sym_count`, `upper_count`, `repeated_count`,\n`ldl_fuses`, `gibberish`, `word_weird`), `quality_score`, `category` (`Clear`, `Noisy`,\n`Trash`, `Non-text`, `Empty`), and on a paged upload `page` and, for a document, `page_label`.",
+        "description": "Upload an ALTO XML, plain-text or generic JSON file — or (#31) any other text-bearing\ndocument: PDF, DOCX, ODT, XLSX/ODS, PPTX/ODP, EPUB, RTF, HTML/hOCR, PAGE XML, TEI,\nMarkdown, CSV/TSV, JSON Lines, ABBYY/DjVu XML, Tesseract TSV, SRT/VTT, EML/MBOX,\ngzip/bz2/xz-compressed files and ZIP bundles of page files. `task_type=\"auto\"`\nkeeps `.txt` → text and `.json` → json; `.xml` and every other extension are\ndecided from the bytes (an uncompressed ALTO root → alto, anything readable →\ndocument). Document results carry `page_index`/`page` per line and a `pages`\nsummary; so do text uploads with form feeds and JSON uploads of several pages, paged as\nthe batch pipeline pages them. The readers use the config's [TEXT_INGEST] settings.\n\n`reading_order=alto` keeps an ALTO's own line order (no LayoutReader), and\n`include_record=true` returns a new record when none was sent (atrium-project#72, the\nservice–CLI alignment).\n\nErrors name the reader's code at the start of `detail` and, but for a named limit, as\n`cause`: 415 `unsupported_media_type` for a file of a kind this service does not read\n(binary_content, legacy_office_unsupported, image_needs_ocr, archive_unsupported), with\nthe readable extensions as `accepted`; 413 `limit_exceeded` for a file over a size or\ncount limit (too_large, zip_limits_exceeded; 422 for the reader's time limit, timeout);\n422 for a supported kind that cannot be read (corrupt, encrypted, malformed, no_text,\n...); 501 when this deployment lacks the reader's optional dependency\n(dependency_missing). A record part that cannot be opened is 422 `invalid_record`.\nEvery response carries `limits_applied` (atrium-project#53).\n\nThe record goes in `document_json` and comes back in `document_json`, as with every\nother ATRIUM service (atrium-project#32 round 2). The earlier names — `document_record`\nin, `document_json_out` out — still work and are deprecated in the spec.\n\nRecord schema 2.0 (atrium-project#84): the record carries no run data; the call's\n`paradata` name the upload (`original`) and the record read and written, by SHA-512. The\npipeline builds records from docproc (`/build_record`); this endpoint stays for batch and\nresearch inputs (ALTO, text, documents).\n\nReturns the classified lines (`ProcessLine`), in the record's field names (atrium-project#84):\n`line` (1-based, in reading order, per page of a paged upload; a blank line counts), `text`,\n`lang` and `lang_score` (after the expected-language remap), `original_lang` and\n`orig_lang_score` (FastText's own), `perplexity` (the perplexity model's: 0 for a pre-filtered\nline, 99999 for a batch that could not be scored), the signals (`garbage_density`,\n`sym_count`, `upper_count`, `repeated_count`, `ldl_fuses`, `gibberish`, `word_weird`),\n`quality_score`, `categ` (`Clear`, `Noisy`, `Trash`, `Non-text`, `Empty`), and on a paged\nupload `page_index` and `page` (the label).",
         "operationId": "process_document",
         "requestBody": {
           "content": {
@@ -499,10 +499,10 @@
       },
       "AltoLine": {
         "properties": {
-          "line_num": {
+          "line": {
             "type": "integer",
-            "title": "Line Num",
-            "description": "1-based position in reading order (LayoutReader's, or the ALTO's own with `reading_order=alto`); per page of a paged upload. A blank line the page text keeps counts, as in the batch's page text."
+            "title": "Line",
+            "description": "1-based position in reading order (LayoutReader's, or the ALTO's own with `reading_order=alto`); per page of a paged upload. A blank line the page text keeps counts, as in the batch's page text. The record's `lines[].line`."
           },
           "text": {
             "type": "string",
@@ -574,10 +574,22 @@
             "title": "Quality Score",
             "description": "The composite quality score, from 0 to 1."
           },
-          "category": {
+          "categ": {
             "type": "string",
-            "title": "Category",
-            "description": "`Clear`, `Noisy`, `Trash`, `Non-text` or `Empty`; written to the record as `lines[].categ`."
+            "title": "Categ",
+            "description": "`Clear`, `Noisy`, `Trash`, `Non-text` or `Empty`: the record's `lines[].categ`."
+          },
+          "page_index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Page Index",
+            "description": "Document uploads, and text or JSON uploads of more than one page: the page's 1-based position, as the record's `pages[].page_index`."
           },
           "page": {
             "anyOf": [
@@ -589,25 +601,13 @@
               }
             ],
             "title": "Page",
-            "description": "Document uploads, and text or JSON uploads of more than one page: the page (a 1-based index; a paged JSON's own page number)."
-          },
-          "page_label": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Page Label",
-            "description": "Document uploads only: the source's own page label."
+            "description": "The same uploads: the page's label, as the record's `pages[].page`: a document's own label (its position when it has none), a paged JSON's own page number, a text page's position."
           }
         },
         "additionalProperties": true,
         "type": "object",
         "required": [
-          "line_num",
+          "line",
           "text",
           "lang",
           "lang_score",
@@ -622,29 +622,22 @@
           "gibberish",
           "word_weird",
           "quality_score",
-          "category"
+          "categ"
         ],
         "title": "AltoLine",
-        "description": "One classified line (`cleaned_lines[]`)."
+        "description": "One classified line (`cleaned_lines[]`), in the record's field names (`lines[]`)."
       },
       "AltoPage": {
         "properties": {
+          "page_index": {
+            "type": "integer",
+            "title": "Page Index",
+            "description": "The page's 1-based position (the `page_index` of its lines)."
+          },
           "page": {
             "type": "string",
             "title": "Page",
-            "description": "The page, as its 1-based index (the `page` of its lines)."
-          },
-          "page_label": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Page Label",
-            "description": "The source's own page label; empty when it has none."
+            "description": "The page's label (the `page` of its lines)."
           },
           "lines": {
             "type": "integer",
@@ -663,7 +656,7 @@
             "title": "Text Layer",
             "description": "PDF only: `none`, `garbled`, `ocr` or `digital`; else null."
           },
-          "needs_ocr_reason": {
+          "needs_atr_reason": {
             "anyOf": [
               {
                 "type": "string"
@@ -672,18 +665,18 @@
                 "type": "null"
               }
             ],
-            "title": "Needs Ocr Reason",
-            "description": "Why the page needs OCR; null when it does not."
+            "title": "Needs Atr Reason",
+            "description": "Why the page needs the ATR; null when it does not."
           }
         },
         "additionalProperties": true,
         "type": "object",
         "required": [
+          "page_index",
           "page",
-          "page_label",
           "lines",
           "text_layer",
-          "needs_ocr_reason"
+          "needs_atr_reason"
         ],
         "title": "AltoPage",
         "description": "One page of a document upload, or of a text or JSON upload of more than one page (`pages[]`)."
@@ -1026,7 +1019,7 @@
                     "Empty"
                   ],
                   "x-atrium-scheme": "line-category",
-                  "description": "Line category, the five values of the `line-category` scheme only (D18 rule 2). Written by the record builder for every line, whatever its text source. digital-convert's decode verdict (Garbage, Inverted) is a flag on docproc lines, never a category here."
+                  "description": "Line category, the five values of the `line-category` scheme only (D18 rule 2). Written by the record builder for every line, whatever its text source. digital-convert's decode verdicts are a separate system: flags on docproc lines (`decode:garbled`, `decode:inverted`; the `decode-verdict` scheme), never a category here."
                 },
                 "quality_score": {
                   "type": "number",
@@ -1069,6 +1062,9 @@
               },
               "allOf": [
                 {
+                  "$ref": "#/components/schemas/AtriumDocument_line_key"
+                },
+                {
                   "$comment": "`absent` precision means no box.",
                   "if": {
                     "required": [
@@ -1092,11 +1088,16 @@
             }
           },
           "entities": {
-            "description": "Owner: nlp-enrich; keyword-extract writes pid. `translation_en` is RESERVED, not in the pilot (contract §5). Carries all three tagsets so no mapping is lost. `page` and `line` are the record's line key; `bbox` is in the one coordinate space.",
+            "description": "Owner: nlp-enrich; keyword-extract writes pid. `translation_en` is RESERVED, not in the pilot (contract §5). Carries all three tagsets so no mapping is lost. `page` and `line` are the record's line key ($defs/line_key): when the record has lines[], the named row must exist; `char_span` counts within that line. `bbox` is in the one coordinate space.",
             "type": "array",
             "items": {
               "type": "object",
               "additionalProperties": true,
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/AtriumDocument_line_key"
+                }
+              ],
               "properties": {
                 "surface": {
                   "type": "string"
@@ -1118,9 +1119,6 @@
                 },
                 "page": {
                   "type": "string"
-                },
-                "line": {
-                  "type": "integer"
                 },
                 "char_span": {
                   "type": "array",
@@ -1197,7 +1195,7 @@
             }
           },
           "enrichment": {
-            "description": "Owner: keyword-extract (llm-enrich before 2026-10-01). Superset of the LLM document schema, plus the explicit page citation.",
+            "description": "Owner: keyword-extract (llm-enrich before 2026-10-01). Superset of the LLM document schema, plus the explicit page citation and, for an item drawn from one record line, that line's key.",
             "type": "object",
             "additionalProperties": true,
             "properties": {
@@ -1206,6 +1204,11 @@
                 "items": {
                   "type": "object",
                   "additionalProperties": true,
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/AtriumDocument_line_key"
+                    }
+                  ],
                   "properties": {
                     "locator": {
                       "type": "string",
@@ -1216,7 +1219,7 @@
                         "string",
                         "null"
                       ],
-                      "description": "Page label from the nearest PAGE_BREAK / '## Page N' marker."
+                      "description": "Page label: the record line's page, or, for a document-level item, the nearest PAGE_BREAK / '## Page N' marker. With `line`, the record's line key ($defs/line_key)."
                     },
                     "extracted_keywords_cs": {
                       "type": "array",
@@ -2361,10 +2364,10 @@
       },
       "ScoredLine": {
         "properties": {
-          "line_num": {
+          "line": {
             "type": "integer",
-            "title": "Line Num",
-            "description": "1-based position in reading order (LayoutReader's, or the ALTO's own with `reading_order=alto`); per page of a paged upload. A blank line the page text keeps counts, as in the batch's page text."
+            "title": "Line",
+            "description": "The record's line key (`lines[].line`)."
           },
           "text": {
             "type": "string",
@@ -2436,38 +2439,33 @@
             "title": "Quality Score",
             "description": "The composite quality score, from 0 to 1."
           },
-          "category": {
+          "categ": {
             "type": "string",
-            "title": "Category",
-            "description": "`Clear`, `Noisy`, `Trash`, `Non-text` or `Empty`; written to the record as `lines[].categ`."
+            "title": "Categ",
+            "description": "`Clear`, `Noisy`, `Trash`, `Non-text` or `Empty`: the record's `lines[].categ`."
           },
-          "page": {
-            "type": "string",
-            "title": "Page",
-            "description": "The record's page key (`lines[].page`, e.g. a PDF page label like `iv`)."
-          },
-          "page_label": {
+          "page_index": {
             "anyOf": [
               {
-                "type": "string"
+                "type": "integer"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Page Label",
-            "description": "Document uploads only: the source's own page label."
+            "title": "Page Index",
+            "description": "Document uploads, and text or JSON uploads of more than one page: the page's 1-based position, as the record's `pages[].page_index`."
           },
-          "line": {
-            "type": "integer",
-            "title": "Line",
-            "description": "The record's line key (`lines[].line`)."
+          "page": {
+            "type": "string",
+            "title": "Page",
+            "description": "The record's page key (`lines[].page`, e.g. a PDF page label like `iv`)."
           }
         },
         "additionalProperties": true,
         "type": "object",
         "required": [
-          "line_num",
+          "line",
           "text",
           "lang",
           "lang_score",
@@ -2482,12 +2480,11 @@
           "gibberish",
           "word_weird",
           "quality_score",
-          "category",
-          "page",
-          "line"
+          "categ",
+          "page"
         ],
         "title": "ScoredLine",
-        "description": "One scored record line (`/score_record` `cleaned_lines[]`): the classifier's fields, keyed\nby the record's own `page` and `line`."
+        "description": "One scored record line (`/score_record` `cleaned_lines[]`): the classifier's fields, keyed\nby the record's own `page` and `line` (no `page_index`: the record's line key is enough)."
       },
       "ScoredPage": {
         "properties": {
@@ -2586,48 +2583,27 @@
           }
         }
       },
-      "AtriumDocument_entity_ref": {
+      "AtriumDocument_line_key": {
         "type": "object",
-        "description": "A reference to one entities[] row by its natural key — BLOCK_KEY_FIELDS['entities'].",
-        "required": [
-          "page",
-          "line",
-          "char_span"
-        ],
-        "additionalProperties": false,
+        "description": "The record's one line key: a lines[] row's `page` and `line`, the key BLOCK_KEY_FIELDS['lines'] merges on. lines[] rows carry it; an entities[] or enrichment.items[] row names its line by it. A `line` needs its `page`; validate_document() checks that the named lines[] row exists (line_key_problems()).",
         "properties": {
-          "page": {
-            "type": "string"
-          },
-          "line": {
-            "type": "integer"
-          },
-          "char_span": {
-            "type": "array",
-            "items": {
-              "type": "integer",
-              "minimum": 0
-            },
-            "minItems": 2,
-            "maxItems": 2
-          }
-        }
-      },
-      "AtriumDocument_line_ref": {
-        "type": "object",
-        "description": "A reference to one lines[] row by its natural key — the same key BLOCK_KEY_FIELDS['lines'] merges on. Survives merge_document_records(), which an array index does not.",
-        "required": [
-          "page",
-          "line"
-        ],
-        "additionalProperties": false,
-        "properties": {
-          "page": {
-            "type": "string"
-          },
           "line": {
             "type": "integer",
-            "minimum": 1
+            "minimum": 1,
+            "description": "1-based, in reading order within the page."
+          }
+        },
+        "dependentSchemas": {
+          "line": {
+            "required": [
+              "page"
+            ],
+            "properties": {
+              "page": {
+                "type": "string",
+                "description": "The page label, as lines[].page."
+              }
+            }
           }
         }
       },
@@ -2714,6 +2690,6 @@
   },
   "x-atrium-record-schema": {
     "schema_version": "2.0",
-    "sha256": "901b5bb6ca36e347e8a415e364a3cf1ce06fdd15128e5af0171d493a28190492"
+    "sha256": "b57c97857b34af1fe3c1585e21662d5b08db04248cac125a720989d8b4c19f36"
   }
 }

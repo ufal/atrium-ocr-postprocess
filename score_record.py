@@ -37,7 +37,7 @@ from typing import Any, Callable, Dict, List, Optional
 from atrium_limits import LimitNotes
 from atrium_paradata import ParadataLogger
 from document_hook import PROGRAM_NAME
-from record_scoring import UnknownPages, parse_pages, score_record, scored_by_model, select_lines
+from record_scoring import UnknownPages, answer_lines, parse_pages, score_record, scored_by_model, select_lines
 
 RECORD_SUFFIX = ".document.json"
 SCORES_SUFFIX = ".scores.json"
@@ -96,7 +96,7 @@ def score_file(
     body = {
         "type": scored["type"],
         "doc_id": scored["doc_id"],
-        "cleaned_lines": scored["cleaned_lines"],
+        "cleaned_lines": answer_lines(scored["cleaned_lines"]),
         "pages": scored["pages"],
         "limits_applied": notes.as_list(),
         "document_json": scored["document_json"],

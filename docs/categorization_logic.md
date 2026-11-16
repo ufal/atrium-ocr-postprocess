@@ -95,8 +95,9 @@ it:
   `avg_quality_score`: the mean of the page's `Clear` and `Noisy` lines.
 - `/score_record` scores the lines of a record another tool wrote (a born-digital record)
   with the same categories and constants, without reading, splitting or reordering
-  them. A line carrying the converter's decode verdict (`Garbage`, `Inverted`) is left as it is, and `text` is
-  never written back.
+  them. A line carrying the converter's decode flag (`decode:garbled`, `decode:inverted`) is scored like any other
+  (D18 rules 1 and 2): the flag is a verdict on the characters, apart from this one on the text. `text` is never
+  written back.
 
 ## Foreign-language lines
 

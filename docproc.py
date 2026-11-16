@@ -24,13 +24,20 @@ asks 3 and 13 applied (block `lines[]`, the page verdict).
 
 The page verdict, `needsAtr`, the ATR's echo of the forced pages (`forced`, `forced_reason` in routing,
 D27) and the decode flags on lines are read, never copied into the record (D27, D18 rule 2): the builder
-decides what to do with them.
+decides what to do with them. The decode flags are digital-convert's verdicts on the characters
+(`decode:garbled`, `decode:inverted`), a system apart from line quality; an older docproc's spelling
+(`Garbage`, `Inverted`) is read as the new one (`atrium_vocab.LEGACY_DECODE_FLAGS`).
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
+
+try:
+    from atrium_vocab import LEGACY_DECODE_FLAGS as _LEGACY_DECODE_FLAGS
+except ImportError:  # no registry vendored, or one from before 2026-11-16 (atrium-project#84)
+    _LEGACY_DECODE_FLAGS = {"Garbage": "decode:garbled", "Inverted": "decode:inverted"}
 
 #: The docproc schema major this reader reads.
 SUPPORTED_MAJOR = 1
@@ -193,7 +200,7 @@ def _block_lines(block: Dict[str, Any]) -> List[ReadLine]:
                     bbox=line_box,
                     bbox_precision=line_precision,
                     language=_language(row.get("language")) or language,
-                    flags=[str(f) for f in row.get("flags") or []],
+                    flags=[_LEGACY_DECODE_FLAGS.get(str(f), str(f)) for f in row.get("flags") or []],
                 )
             )
         return out

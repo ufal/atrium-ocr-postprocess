@@ -23,8 +23,8 @@ curl --fail-with-body -sS -X POST http://localhost:8000/process \
      -F "file=@data_samples/PAGE_ALTO/CTX000000001/CTX000000001-1.alto.xml" -F task_type=alto -o out.json
 ```
 
-Expected: HTTP 200 and `out.json` with `"type": "alto_xml"` and `cleaned_lines`, each line with `text`, `lang`,
-`quality_score` and `category`.
+Expected: HTTP 200 and `out.json` with `"type": "alto_xml"` and `cleaned_lines`, each line with `line`, `text`,
+`lang`, `quality_score` and `categ`.
 
 **With Compose**, from a checkout: `docker compose --profile api up -d`. Compose sets its own `ALLOWED_ORIGINS`
 default, `http://localhost:8080,http://localhost:5500`; the code default is `*` (every origin).
@@ -80,15 +80,15 @@ at least 48 GB of memory (an NVIDIA RTX A6000, for example, or several GPUs); on
 Every request and response field, and the error body, is typed in [`openapi.json`](openapi.json) (see
 [OpenAPI](#openapi-the-typed-contract)); the tables below are the short form.
 
-| Method | Path            | Purpose                                                                                                                                                                                                                                     |
-|--------|-----------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `GET`  | `/`             | the standalone test page (`index.html`)                                                                                                                                                                                                     |
-| `GET`  | `/info`         | service identity and capabilities: `service`, `version`, `endpoints`, `limits` (every [limit](#limits)), `limits_meta` (the variable behind each), status, device, line fields, quality categories                                          |
-| `GET`  | `/health`       | liveness probe: 200 always, even mid-shutdown; `?deep=true` also checks that the quality and language models are loaded (503 on failure or while draining)                                                                                  |
-| `GET`  | `/ready`        | readiness probe: 503 until the models are loaded, 200 while serving, 503 as soon as `SIGTERM` arrives; the Kubernetes `readinessProbe` and `startupProbe` target                                                                            |
-| `POST` | `/process`      | scores the lines of an upload (layout analysis, cleaning, line classification)                                                                                                                                                              |
-| `POST` | `/build_record` | builds the ATRIUM record from docproc and scores its lines: the pipeline's record builder ([Building the record](#building-the-record-post-build_record))                                                                                    |
-| `POST` | `/score_record` | scores the lines of an existing ATRIUM record with the same quality model, in place ([Scoring a record](#scoring-a-record-post-score_record))                                                                                               |
+| Method | Path            | Purpose                                                                                                                                                                                            |
+|--------|-----------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `GET`  | `/`             | the standalone test page (`index.html`)                                                                                                                                                            |
+| `GET`  | `/info`         | service identity and capabilities: `service`, `version`, `endpoints`, `limits` (every [limit](#limits)), `limits_meta` (the variable behind each), status, device, line fields, quality categories |
+| `GET`  | `/health`       | liveness probe: 200 always, even mid-shutdown; `?deep=true` also checks that the quality and language models are loaded (503 on failure or while draining)                                         |
+| `GET`  | `/ready`        | readiness probe: 503 until the models are loaded, 200 while serving, 503 as soon as `SIGTERM` arrives; the Kubernetes `readinessProbe` and `startupProbe` target                                   |
+| `POST` | `/process`      | scores the lines of an upload (layout analysis, cleaning, line classification)                                                                                                                     |
+| `POST` | `/build_record` | builds the ATRIUM record from docproc and scores its lines: the pipeline's record builder ([Building the record](#building-the-record-post-build_record))                                          |
+| `POST` | `/score_record` | scores the lines of an existing ATRIUM record with the same quality model, in place ([Scoring a record](#scoring-a-record-post-score_record))                                                      |
 
 ### Request example
 
@@ -127,7 +127,7 @@ Every request and response field, and the error body, is typed in [`openapi.json
   batch `--method layoutreader`. `alto` reads the page with alto-tools, as `--method alto-tools`: the ALTO's own
   order, a blank line before each text block, a hyphenated line joined to the next. It runs no LayoutReader, so no
   CC BY-NC-SA 4.0 component is logged. Any other value is a `422`. Either way a blank line of the page text is an
-  `Empty` line and counts in `line_num`, as in the batch output.
+  `Empty` line and counts in `line`, as in the batch output.
 
 Every response carries `limits_applied`: the limits that shaped the result without refusing it (see
 [Limits](#limits)), `[]` when none did. It also carries `paradata`, the call's provenance
@@ -155,11 +155,13 @@ curl -X POST "http://localhost:8000/process" \
 
 The top-level `type` field is `alto_xml`, `plain_text`, `json` or `document`, matching the routed `task_type`.
 A `document` result also carries `format` (the detected kind), `origin` (the truthful `source.origin` class), a
-`pages` list (`page`, `page_label`, `lines`, and a PDF's `text_layer` and `needs_ocr_reason`), and `page` and
-`page_label` on every line. A line's `line_num` restarts per page, as in the batch `DOC_LINE_CATEG`. A text upload
-with form feeds and a JSON upload of several pages come back the same way (their `page_label`, `text_layer` and
-`needs_ocr_reason` are null), and each page goes into the record under its own key. One page comes back without
-`page`. The reader's page verdict is in the response only; the record carries none (record schema 2.0).
+`pages` list (`page_index`, `page`: the source's label, else the position; `lines`, and a PDF's `text_layer` and
+`needs_atr_reason`), and `page_index` and `page` on every line. A line's `line` restarts per page, as in the batch
+`DOC_LINE_CATEG`. A text upload with form feeds and a JSON upload of several pages come back the same way (their
+`text_layer` and `needs_atr_reason` are null), and each page goes into the record under its own key. One page comes
+back without `page`. The reader's page verdict is in the response only; the record carries none (record schema
+2.0). The service's JSON uses the record's field names (`line`, `categ`, `page_index`, `page`; atrium-project#84);
+the batch CSVs keep theirs.
 
 Lines are read and shaped by the same `text_formats.py` code as the batch text-lines method: blank lines are dropped
 unless `[TEXT_INGEST] KEEP_BLANK_LINES` is set, and lines over 1000 characters are wrapped. With a record
@@ -177,7 +179,7 @@ Each item in `cleaned_lines` carries the fields used by the classification pipel
   "filename": "page_01.xml",
   "cleaned_lines": [
     {
-      "line_num": 1,
+      "line": 1,
       "text": "The quick brown fox jumps over the lazy dog.",
       "lang": "eng",
       "lang_score": 0.9821,
@@ -186,10 +188,10 @@ Each item in `cleaned_lines` carries the fields used by the classification pipel
       "upper_count": 0,
       "word_weird": 0.0,
       "quality_score": 0.9501,
-      "category": "Clear"
+      "categ": "Clear"
     },
     {
-      "line_num": 2,
+      "line": 2,
       "text": "TYRSOVA5===aras T>r«l",
       "lang": "ces",
       "lang_score": 0.4201,
@@ -198,10 +200,10 @@ Each item in `cleaned_lines` carries the fields used by the classification pipel
       "upper_count": 0,
       "word_weird": 0.85,
       "quality_score": 0.1205,
-      "category": "Trash"
+      "categ": "Trash"
     },
     {
-      "line_num": 3,
+      "line": 3,
       "text": "1956–1959",
       "lang": "N/A",
       "lang_score": 0.0,
@@ -210,7 +212,7 @@ Each item in `cleaned_lines` carries the fields used by the classification pipel
       "upper_count": 0,
       "word_weird": 0.0,
       "quality_score": 0.0,
-      "category": "Non-text"
+      "categ": "Non-text"
     }
   ]
 }
@@ -220,7 +222,7 @@ Each item in `cleaned_lines` carries the fields used by the classification pipel
 
 | Field           | Type   | Description                                                                                                                                                                                                                |
 |-----------------|--------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `line_num`      | int    | 1-based line position after layout reordering.                                                                                                                                                                             |
+| `line`          | int    | 1-based line position after layout reordering (the record's `lines[].line`).                                                                                                                                               |
 | `text`          | string | Cleaned line text with split-word merges applied.                                                                                                                                                                          |
 | `lang`          | string | ISO language code predicted by FastText (e.g., `eng`, `ces`).                                                                                                                                                              |
 | `lang_score`    | float  | FastText confidence score `[0, 1]`.                                                                                                                                                                                        |
@@ -229,7 +231,7 @@ Each item in `cleaned_lines` carries the fields used by the classification pipel
 | `upper_count`   | int    | Tokens with mid-word uppercase artefacts — Patterns 1–3 (`detect_mid_uppercase`).                                                                                                                                          |
 | `word_weird`    | float  | Mean per-word weirdness score `[0, 1]`; combines strange-symbol, repeated-char, LDL-fusion, mid-uppercase and mirror-OCR (`w` / caps-prefix) signals; `0` = fully clean.                                                   |
 | `quality_score` | float  | Composite quality score `[0, 1]`; weighted sum of nine signals (valid-word ratio, word-weirdness, perplexity, length, garbage density, vowel quality, language confidence, gibberish, fused-word ratio); higher = cleaner. |
-| `category`      | string | One of: `Clear`, `Noisy`, `Trash`, `Non-text`, `Empty`.                                                                                                                                                                    |
+| `categ`         | string | One of: `Clear`, `Noisy`, `Trash`, `Non-text`, `Empty` (the record's `lines[].categ`).                                                                                                                                     |
 
 ### Building the record (`POST /build_record`)
 
@@ -309,8 +311,8 @@ curl -X POST "http://localhost:8000/score_record" \
   row, never `source`, and no page score on an empty page. The record's `quality_summary` is recomputed from the
   scored record: page totals (empty pages counted apart), the mean, median, minimum and maximum of the pages'
   `quality_score`, and the lines per `categ`.
-* **Out** (`ScoreRecordResponse`): `cleaned_lines` (every `AltoLine` field plus the record's `page` and `line`;
-  `line_num` restarts per page), `pages` (`lines_scored`, `skipped_empty`, `quality_score`, `quality_band`),
+* **Out** (`ScoreRecordResponse`): `cleaned_lines` (every `AltoLine` field, keyed by the record's `page` and
+  `line`), `pages` (`lines_scored`, `skipped_empty`, `quality_score`, `quality_band`),
   `limits_applied`, `document_json` (the record, scored; as sent when nothing was scored) and `paradata`.
 * **Limits:** `MAX_UPLOAD_MB` for the record part, `ATRIUM_TEXT_INGEST_MAX_PAGES` for the pages scored and
   `ATRIUM_TEXT_INGEST_MAX_LINES_PER_PAGE` for the lines of one page (`413 limit_exceeded`). A record that cannot be
@@ -393,8 +395,8 @@ A 200 can be a result a limit or a reader shaped. It says so in three places:
   (`422 limit_exceeded`, nothing returned): repeated spreadsheet cells over the cap, a line's tokens past the
   perplexity model's length, a ZIP member over the size limit, a page layout ordering could not order for lack of
   memory, a line that failed perplexity even alone.
-- **A document's `pages`**: per page, a PDF's `text_layer` and its `needs_ocr_reason` when the page's text should
-  come from OCR instead.
+- **A document's `pages`**: per page, a PDF's `text_layer` and its `needs_atr_reason` when the page's text should
+  come from the ATR instead.
 - **`/score_record`'s `pages`**: `lines_scored` and `skipped_empty`.
 
 The batch pipeline has the same notes in its paradata, and a text-lines input read with a possible loss is

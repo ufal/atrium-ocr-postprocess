@@ -137,18 +137,18 @@ function renderResults(data) {
 
     // --- Summary bar ---
     const total   = lines.length;
-    const usable  = lines.filter(l => USABLE_CATEGORIES.has(l.category)).length;
-    const cleared = lines.filter(l => l.category === "Clear").length;
-    const noisy   = lines.filter(l => l.category === "Noisy").length;
-    const trash   = lines.filter(l => l.category === "Trash").length;
-    const nontext = lines.filter(l => l.category === "Non-text").length;
-    const empty   = lines.filter(l => l.category === "Empty").length;
+    const usable  = lines.filter(l => USABLE_CATEGORIES.has(l.categ)).length;
+    const cleared = lines.filter(l => l.categ === "Clear").length;
+    const noisy   = lines.filter(l => l.categ === "Noisy").length;
+    const trash   = lines.filter(l => l.categ === "Trash").length;
+    const nontext = lines.filter(l => l.categ === "Non-text").length;
+    const empty   = lines.filter(l => l.categ === "Empty").length;
 
     // Page-level averages for word_weird and quality_score over the Clear and Noisy lines,
     // as aggregate_STAT's avg_quality_score / avg_word_weird and the API's page quality_score
     // average them (Trash lines used to count here too).
     const scoredLines = lines.filter(l =>
-        l.category === "Clear" || l.category === "Noisy"
+        l.categ === "Clear" || l.categ === "Noisy"
     );
     const avgWeird = scoredLines.length
         ? (scoredLines.reduce((s, l) => s + (l.word_weird ?? 0), 0) / scoredLines.length)
@@ -224,7 +224,7 @@ function renderResults(data) {
                 <tbody>`;
 
         lines.forEach(row => {
-            const badgeClass   = CATEGORY_STYLES[row.category] ?? CATEGORY_STYLES.Unknown;
+            const badgeClass   = CATEGORY_STYLES[row.categ] ?? CATEGORY_STYLES.Unknown;
             const pplDisplay   = (row.perplexity != null && row.perplexity > 0)
                 ? row.perplexity.toFixed(1) : "—";
             const symDisplay   = row.sym_count   != null ? row.sym_count   : "—";
@@ -245,15 +245,15 @@ function renderResults(data) {
                 ? row.quality_score.toFixed(3) : "—";
 
             html += `
-                    <tr class="row-${(row.category ?? "").toLowerCase().replace("-", "")}">
-                        <td><small>${row.line_num}</small></td>
+                    <tr class="row-${(row.categ ?? "").toLowerCase().replace("-", "")}">
+                        <td><small>${row.line}</small></td>
                         <td class="text-cell">${escapeHtml(row.text)}</td>
                         <td class="num-cell">${symDisplay}</td>
                         <td class="num-cell">${upperDisplay}</td>
                         <td class="num-cell">${pplDisplay}</td>
                         <td class="num-cell">${weirdDisplay}</td>
                         <td class="num-cell ${qClass}">${qualityDisplay}</td>
-                        <td><span class="badge ${badgeClass}">${escapeHtml(row.category)}</span></td>
+                        <td><span class="badge ${badgeClass}">${escapeHtml(row.categ)}</span></td>
                     </tr>`;
         });
 

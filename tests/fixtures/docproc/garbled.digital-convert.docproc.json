@@ -31,7 +31,7 @@
               ],
               "bboxPrecision": "measured",
               "flags": [
-                "Garbage"
+                "decode:garbled"
               ]
             },
             {
@@ -44,7 +44,7 @@
               ],
               "bboxPrecision": "measured",
               "flags": [
-                "Garbage"
+                "decode:garbled"
               ]
             },
             {
@@ -57,7 +57,7 @@
               ],
               "bboxPrecision": "measured",
               "flags": [
-                "Garbage"
+                "decode:garbled"
               ]
             }
           ]
