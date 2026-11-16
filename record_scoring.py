@@ -67,8 +67,25 @@ def record_lang(entry: Dict[str, Any]) -> Optional[str]:
 
 
 def scored_by_model(cleaned_lines: Iterable[Any]) -> bool:
-    """Whether a quality model scored at least one line (one the CPU pre-filter answered used none)."""
-    return any(isinstance(e, dict) and e.get("category") not in PREFILTER_CATEGORIES for e in cleaned_lines or [])
+    """Whether a quality model scored at least one line (one the CPU pre-filter answered used none).
+    Reads the inference layer's `category` or an answer's `categ` (`answer_lines`)."""
+    return any(
+        isinstance(e, dict) and e.get("categ", e.get("category")) not in PREFILTER_CATEGORIES
+        for e in cleaned_lines or []
+    )
+
+
+def answer_lines(cleaned: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """The scored lines as `/score_record` and `score_record.py --scores` answer them: in the record's
+    field names (atrium-project#84), keyed by the record's `page` and `line`, `categ` for the
+    inference layer's `category`, and without its per-page position (`line_num`)."""
+    out = []
+    for entry in cleaned:
+        row = {k: v for k, v in entry.items() if k not in ("line_num", "category")}
+        if "category" in entry:
+            row["categ"] = entry["category"]
+        out.append(row)
+    return out
 
 
 def page_records_from_lines(line_records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:

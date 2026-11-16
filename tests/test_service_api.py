@@ -50,7 +50,7 @@ def test_process_text_auto_routing(mock_process):
     assert response.status_code == 200
     res_data = response.json()
     assert res_data["type"] == "plain_text"
-    assert res_data["cleaned_lines"][0]["category"] == "Clear"
+    assert res_data["cleaned_lines"][0]["categ"] == "Clear" and res_data["cleaned_lines"][0]["line"] == 1
     assert res_data["filename"] == "document.txt"
 
 
@@ -84,7 +84,7 @@ def test_process_json_auto_routing(mock_process):
     assert response.status_code == 200
     res_data = response.json()
     assert res_data["type"] == "json"
-    assert res_data["cleaned_lines"][0]["category"] == "Clear"
+    assert res_data["cleaned_lines"][0]["categ"] == "Clear" and res_data["cleaned_lines"][0]["line"] == 1
     assert res_data["filename"] == "document.json"
 
 

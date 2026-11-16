@@ -57,7 +57,7 @@ curl --fail-with-body -sS -X POST localhost:8000/process \
 ```
 
 Expected: HTTP 200 and `out.json` with `"type": "alto_xml"` and a `cleaned_lines` list in which every line has
-`text`, `lang`, `quality_score` and `category`.
+`line`, `text`, `lang`, `quality_score` and `categ` (the record's field names).
 
 The batch pipeline, from a checkout with its [setup](docs/usage.md#set-up-the-environment) done, over the samples in
 `data_samples/`:

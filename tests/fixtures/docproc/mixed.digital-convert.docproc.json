@@ -69,7 +69,7 @@
               ],
               "bboxPrecision": "measured",
               "flags": [
-                "Garbage"
+                "decode:garbled"
               ]
             }
           ]

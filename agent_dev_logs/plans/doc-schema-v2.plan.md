@@ -207,6 +207,16 @@ Task 3, the merge (H6), is built: `docproc_merge.py`, `build_record.py --text-la
 `/score_record`'s limit error as 422. Q10 stays open (is digital-convert's unstored docproc, named by SHA-512, enough
 to reproduce the merge?). Hub: "Status — round 7".
 
+## Status — the meeting's follow-ups (11-16 night)
+
+atrium-project#84 round 8 (comment 3's update): `forms` gone, decode verdicts apart, one line key, the services' JSON in the record's names. Paradata per distribution waits for the next meeting (Q23). Not pushed.
+
+- **The record's names.** `/process` and `/score_record` answer with `line`, `categ`, `page_index`, `page` (the label) and a page's `needs_atr_reason` (were `line_num`, `category`, `page`, `page_label`, `needs_ocr_reason`); `/info` `line_fields`; `score_record.py --scores` the same (`record_scoring.answer_lines`); both frontends. The inference layer and the batch CSVs keep their names.
+- **Decode flags apart.** `docproc.py` reads `decode:garbled`/`decode:inverted`, and an older docproc's `Garbage`/`Inverted` as them (`atrium_vocab.LEGACY_DECODE_FLAGS`); fixtures re-spelled; `text_util.py` comments.
+- Re-vendored shared modules (the line-key check); `service/openapi.json`; README, service README, two docs pages, CONTRIBUTING.
+- **Checked:** 2364 passed; the hub's local chain (every record valid, line keys resolve).
+- **Next:** the hub's PR first; then this repository's, with the pins moved to it.
+
 ## Depends on
 
 - Kate's answer on #84 (16 November) and Ronald's on aiscr-docs-pipeline#17: the two-level contract (D20, D24);

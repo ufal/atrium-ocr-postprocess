@@ -17,9 +17,9 @@ Categories Outputted:
 Those five, and only those five, are what this module writes into `lines[].categ`.
 They are bound to the CATEG_* label constants below (collected in
 CATEGORIES_EMITTED) and cross-checked at import time against the hub registry,
-atrium_vocab.LINE_CATEGORY_ORIGINATORS["alto-postprocess"]. The same block's other
-authorised originator, digital-convert, emits a DISJOINT set ({Garbage, Inverted});
-that is deliberate and is not drift to reconcile.
+atrium_vocab.LINE_CATEGORY_ORIGINATORS["alto-postprocess"], this tool's alone since
+doc-schema-v2. digital-convert's decode verdicts (`decode:garbled`, `decode:inverted`)
+are a system apart, flags on docproc lines (the `decode-verdict` scheme), never a category.
 """
 
 import configparser
@@ -49,11 +49,11 @@ _EMPTY_LEXICON: Mapping[str, int] = MappingProxyType({})
 #     re-ordered vendored copy of atrium_vocab.py silently change what the
 #     pipeline outputs -- the registry is a description of behaviour, not a knob
 #     that steers it;
-#   * `lines[].categ` has a SECOND authorised originator (`digital-convert`,
-#     atrium-digital-convert) which emits {Garbage, Inverted}. The two sets are
-#     disjoint ON PURPOSE -- one is an OCR verdict over a rendered image, the
-#     other a decode-sanity verdict over an embedded text layer -- so "align the
-#     two" is never the fix for a disagreement found here.
+#   * digital-convert's decode verdicts are NOT categories: since doc-schema-v2
+#     they are docproc line flags (`decode:garbled`, `decode:inverted`; the
+#     shared `decode-verdict` scheme), a verdict on the characters, apart from
+#     this module's verdict on the text (D18 rules 2 and 3), so "align the two"
+#     is never the fix for a disagreement found here.
 #
 # The registry's role is therefore advisory only: the check below reports a drift
 # between this file and the hub declaration and then gets out of the way. See

@@ -456,7 +456,7 @@ born-digital PDF's record is built from digital-convert's docproc, whose reading
 The `flags` column reports what the text layer looks like. The flags never set a category, since the
 categories stay classify's and the shared vocabulary keeps the tools' category sets apart. The
 `mojibake_cp1252` test is the same one digital-convert's `digital_to_json` applies to a line before flagging
-it `Garbage` in its docproc (same thresholds, same letter evidence, since its #18):
+it `decode:garbled` in its docproc (same thresholds, same letter evidence, since its #18):
 
 | Flag                                 | Set when                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 |--------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
@@ -520,8 +520,8 @@ per-document text-layer test.
 `.xml` and every other extension from the bytes: an uncompressed ALTO root keeps the ALTO path;
 anything else readable, a compressed ALTO included, is a `document`. Documents are read with
 `read_document_isolated()` and shaped with `shape_lines()`, the same code as the batch method, and
-classified page by page in batches of `PPL_BATCH_LINES` (32) lines. Each result line carries `page`/`page_label`, and
-`line_num` restarts per page. A `.txt` upload keeps its `plain_text` response, but it is decoded and
+classified page by page in batches of `PPL_BATCH_LINES` (32) lines. Each result line carries `page_index`/`page`, and
+`line` restarts per page. A `.txt` upload keeps its `plain_text` response, but it is decoded and
 shaped like the batch path (any common encoding, cp1250 first), and since v1.13.0-beta a form feed starts
 a page there too; a `.json` upload is paged by `page_split.json_pages`, the batch split's own function
 (atrium-project#72).

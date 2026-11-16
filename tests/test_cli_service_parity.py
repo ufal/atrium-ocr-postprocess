@@ -145,7 +145,7 @@ def _batch_lines(page_dir: Path, suffix: str = ".txt") -> list:
 
 
 def _service_lines(body: dict) -> list:
-    return [(e.get("page", "1"), e["line_num"], e["text"]) for e in body["cleaned_lines"]]
+    return [(e.get("page", "1"), e["line"], e["text"]) for e in body["cleaned_lines"]]
 
 
 @pytest.fixture
@@ -205,10 +205,10 @@ def test_a_text_with_form_feeds_is_paged_and_numbered_the_same_on_both_sides(wor
     assert service == batch
     assert service[:2] == [("1", 1, "Zpráva o archeologickém výzkumu"), ("1", 2, "na lokalitě Hradiště.")]
     assert [p["page"] for p in body["pages"]] == ["1", "2"]
-    # ... and a blank line on both sides or on neither: an `Empty` entry that counts in `line_num`.
+    # ... and a blank line on both sides or on neither: an `Empty` entry that counts in `line`.
     blank = [(page, n) for page, n, text in service if not text]
     assert blank == ([("1", 3), ("2", 1)] if keep_blank else [])
-    assert {e["category"] for e in body["cleaned_lines"] if not e["text"]} <= {"Empty"}
+    assert {e["categ"] for e in body["cleaned_lines"] if not e["text"]} <= {"Empty"}
 
 
 def test_a_text_without_form_feeds_answers_as_before(echo):
@@ -270,7 +270,7 @@ def test_include_record_returns_a_new_record_as_the_batch_writes_one(echo):
     assert record["doc_id"] == "DOC1"
     assert record["source"]["filename"] == "DOC1.txt"
     assert [(row["page"], row["line"]) for row in record["lines"]] == [
-        (e["page"], e["line_num"]) for e in body["cleaned_lines"]
+        (e["page"], e["line"]) for e in body["cleaned_lines"]
     ]
     # The record is an output of the call, not an input; the upload is named `original` (#84).
     action = body["paradata"]
@@ -358,7 +358,7 @@ def test_an_alto_paragraph_break_is_an_empty_line_on_both_sides(tmp_path, echo, 
     body = _process("DOC4-1.alto.xml", ALTO_PARAGRAPHS, "application/xml")
     assert batch == [("1", 1, "First line"), ("1", 2, "Second line"), ("1", 3, ""), ("1", 4, "Third line")]
     assert _service_lines(body) == batch
-    assert body["cleaned_lines"][2]["category"] == "Empty"
+    assert body["cleaned_lines"][2]["categ"] == "Empty"
 
 
 #: Two text blocks, the first with a word hyphenated across its two lines.

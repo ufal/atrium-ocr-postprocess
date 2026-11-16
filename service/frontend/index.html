@@ -559,7 +559,7 @@
   "filename": "page_01.xml",
   "cleaned_lines": [
     {
-      "line_num":      1,
+      "line":          1,
       "text":          "The quick brown fox jumps over the lazy dog.",
       "lang":          "eng_Latn",
       "lang_score":    0.9891,
@@ -568,10 +568,10 @@
       "upper_count":   0,
       "word_weird":    0.0,
       "quality_score": 0.872,
-      "category":      "Clear"
+      "categ":         "Clear"
     },
     {
-      "line_num":      2,
+      "line":          2,
       "text":          "TYRSOVA5===aras T>r\u00abl",
       "lang":          "und",
       "lang_score":    0.3102,
@@ -580,10 +580,10 @@
       "upper_count":   0,
       "word_weird":    0.375,
       "quality_score": 0.121,
-      "category":      "Trash"
+      "categ":         "Trash"
     },
     {
-      "line_num":      3,
+      "line":          3,
       "text":          "1956\u20131959",
       "lang":          "N/A",
       "lang_score":    0.0,
@@ -592,14 +592,14 @@
       "upper_count":   0,
       "word_weird":    0.0,
       "quality_score": 0.0,
-      "category":      "Non-text"
+      "categ":         "Non-text"
     }
   ]
 }</pre>
 
             <h2>Response Field Reference</h2>
             <ul>
-                <li><code>line_num</code> — 1-based line position after layout reordering.</li>
+                <li><code>line</code> — 1-based line position after layout reordering.</li>
                 <li><code>text</code> — cleaned line text with split-word merges applied.</li>
                 <li><code>lang</code> / <code>lang_score</code> — FastText ISO language code and confidence.</li>
                 <li><code>perplexity</code> — DistilGPT2 perplexity; <code>0</code> for pre-filtered lines.</li>
@@ -611,7 +611,7 @@
                 <li><code>quality_score</code> — composite quality score [0–1];
                 higher = cleaner OCR. Thresholds: &gt; 0.75 Clear, ≥ 0.45 Noisy,
                 &lt; 0.45 Trash.</li>
-                <li><code>category</code> — one of: <code>Clear</code>, <code>Noisy</code>,
+                <li><code>categ</code> — one of: <code>Clear</code>, <code>Noisy</code>,
                 <code>Trash</code>, <code>Non-text</code>, <code>Empty</code>.</li>
             </ul>
 

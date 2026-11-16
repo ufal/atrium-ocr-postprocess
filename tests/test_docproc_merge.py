@@ -80,7 +80,18 @@ def test_the_text_layers_exact_lines_are_kept_and_linked_to_the_atr_blocks():
     ]
     first = document.pages[1].lines[0]
     assert first.bbox == [72.0, 60.0, 260.0, 78.0] and first.bbox_precision == "measured"
-    assert document.pages[1].lines[2].flags == ["Garbage"]  # the decode flag stays a line flag (rule 2)
+    assert document.pages[1].lines[2].flags == ["decode:garbled"]  # the decode flag stays a line flag (rule 2)
+
+
+def test_an_older_docprocs_decode_flags_read_as_the_new_spelling():
+    """digital-convert wrote `Garbage`/`Inverted` before 2026-11-16 (atrium-project#84 round 8); the
+    reader takes them as `decode:garbled`/`decode:inverted` and leaves other flags alone."""
+    data = _docproc("mixed.digital-convert")
+    lines = data["pages"][0]["blocks"][1]["lines"]
+    lines[0]["flags"], lines[1]["flags"] = ["Garbage"], ["Inverted", "level_source:font"]
+    flags = {line.text: line.flags for line in read_docproc(data).pages[1].lines}
+    assert flags[lines[0]["text"]] == ["decode:garbled"]
+    assert flags[lines[1]["text"]] == ["decode:inverted", "level_source:font"]
 
 
 def test_a_forced_page_takes_the_atrs_lines():

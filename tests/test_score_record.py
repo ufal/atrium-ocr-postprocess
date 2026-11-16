@@ -83,11 +83,11 @@ def _digital_record() -> dict:
         "lines",
         [
             _line("i", 1, "ok: Zpráva o výzkumu", "p1-b1", bbox=[72, 64, 388, 80]),
-            _line("i", 2, "sondI", "p1-b2"),  # digital-convert flagged it Garbage in docproc
+            _line("i", 2, "sondI", "p1-b2"),  # digital-convert flagged it decode:garbled in docproc
             _line("i", 3, "xx#&@", "p1-b2"),
             _line("1", 1, "ok: Hradiště", "p2-b1"),
             _line("1", 2, "   ", "p2-b1"),
-            _line("2", 1, "Ä‚Ä", "p3-b1"),  # flagged Inverted in docproc
+            _line("2", 1, "Ä‚Ä", "p3-b1"),  # flagged decode:inverted in docproc
         ],
         key_fields=["page", "line"],
     )
@@ -120,14 +120,14 @@ def test_every_line_with_text_gets_the_scoring_fields_only(classifier):
 
     # every line with text, flagged or not (D18 rule 2), in record order, as it is
     assert classifier.call_args.args[0] == ["ok: Zpráva o výzkumu", "sondI", "xx#&@", "ok: Hradiště", "Ä‚Ä"]
-    assert [(e["page"], e["line"], e["category"]) for e in body["cleaned_lines"]] == [
+    assert [(e["page"], e["line"], e["categ"]) for e in body["cleaned_lines"]] == [
         ("i", 1, "Clear"),
         ("i", 2, "Trash"),
         ("i", 3, "Trash"),
         ("1", 1, "Clear"),
         ("2", 1, "Trash"),
     ]
-    assert [e["line_num"] for e in body["cleaned_lines"]] == [1, 2, 3, 1, 1], "per page"
+    assert not any("line_num" in e or "category" in e for e in body["cleaned_lines"]), "the record's names"
     assert {p["page"]: (p["lines_scored"], p["skipped_empty"]) for p in body["pages"]} == {
         "i": (3, 0),
         "1": (1, 1),
@@ -166,7 +166,7 @@ def test_the_batchs_document_passes_run_on_a_scored_record(classifier):
         _answer(t, "Noisy", 0.6) if i == 3 else _fake_classifier([t])[0] for i, t in enumerate(texts)
     ]
     body = _post(record).json()
-    repeated = [e["category"] for e in body["cleaned_lines"] if e["text"] == "ok: Zpráva o výzkumu"]
+    repeated = [e["categ"] for e in body["cleaned_lines"] if e["text"] == "ok: Zpráva o výzkumu"]
     assert repeated == ["Clear", "Clear"]
     assert [
         row.get("categ") for row in body["document_json"]["lines"] if row.get("text") == "ok: Zpráva o výzkumu"

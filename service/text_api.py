@@ -111,6 +111,7 @@ from document_hook import (  # noqa: E402
 # the line and page projections of /process come from it too.
 from record_scoring import (  # noqa: E402
     UnknownPages,
+    answer_lines,
     parse_pages,
     scored_by_model,
     select_lines,
@@ -280,14 +281,15 @@ ReadingOrder = Literal["layoutreader", "alto"]
 
 
 class AltoLine(BaseModel):
-    """One classified line (`cleaned_lines[]`)."""
+    """One classified line (`cleaned_lines[]`), in the record's field names (`lines[]`)."""
 
     model_config = ConfigDict(extra="allow")
 
-    line_num: int = Field(
+    line: int = Field(
         description=(
             "1-based position in reading order (LayoutReader's, or the ALTO's own with `reading_order=alto`); per "
-            "page of a paged upload. A blank line the page text keeps counts, as in the batch's page text."
+            "page of a paged upload. A blank line the page text keeps counts, as in the batch's page text. The "
+            "record's `lines[].line`."
         )
     )
     text: str = Field(
@@ -313,17 +315,21 @@ class AltoLine(BaseModel):
     gibberish: int = Field(description="Tokens lacking vowels or with highly irregular ratios.")
     word_weird: float = Field(description="The mean per-word weirdness score, from 0 to 1.")
     quality_score: float = Field(description="The composite quality score, from 0 to 1.")
-    category: str = Field(
-        description="`Clear`, `Noisy`, `Trash`, `Non-text` or `Empty`; written to the record as `lines[].categ`."
+    categ: str = Field(description="`Clear`, `Noisy`, `Trash`, `Non-text` or `Empty`: the record's `lines[].categ`.")
+    page_index: Optional[int] = Field(
+        None,
+        description=(
+            "Document uploads, and text or JSON uploads of more than one page: the page's 1-based position, as the "
+            "record's `pages[].page_index`."
+        ),
     )
     page: Optional[str] = Field(
         None,
         description=(
-            "Document uploads, and text or JSON uploads of more than one page: the page (a 1-based index; a "
-            "paged JSON's own page number)."
+            "The same uploads: the page's label, as the record's `pages[].page`: a document's own label (its "
+            "position when it has none), a paged JSON's own page number, a text page's position."
         ),
     )
-    page_label: Optional[str] = Field(None, description="Document uploads only: the source's own page label.")
 
 
 class AltoPage(BaseModel):
@@ -331,11 +337,11 @@ class AltoPage(BaseModel):
 
     model_config = ConfigDict(extra="allow")
 
-    page: str = Field(description="The page, as its 1-based index (the `page` of its lines).")
-    page_label: Optional[str] = Field(description="The source's own page label; empty when it has none.")
+    page_index: int = Field(description="The page's 1-based position (the `page_index` of its lines).")
+    page: str = Field(description="The page's label (the `page` of its lines).")
     lines: int = Field(description="How many classified lines the page has.")
     text_layer: Optional[str] = Field(description="PDF only: `none`, `garbled`, `ocr` or `digital`; else null.")
-    needs_ocr_reason: Optional[str] = Field(description="Why the page needs OCR; null when it does not.")
+    needs_atr_reason: Optional[str] = Field(description="Why the page needs the ATR; null when it does not.")
 
 
 class ProcessResponse(BaseModel):
@@ -386,7 +392,7 @@ class ProcessResponse(BaseModel):
 
 class ScoredLine(AltoLine):
     """One scored record line (`/score_record` `cleaned_lines[]`): the classifier's fields, keyed
-    by the record's own `page` and `line`."""
+    by the record's own `page` and `line` (no `page_index`: the record's line key is enough)."""
 
     page: str = Field(description="The record's page key (`lines[].page`, e.g. a PDF page label like `iv`).")
     line: int = Field(description="The record's line key (`lines[].line`).")
@@ -613,11 +619,12 @@ def _lines_records_from_result(result: Dict[str, Any], page: str = SERVICE_PAGE_
     `if records:` guard skipped the lines merge on every single call (J1).
 
     Note the two spellings: the inference layer calls the field `category`, the
-    schema calls it `categ`. Values pass through VERBATIM: the five values of the
-    `line-category` scheme (`Clear`, `Noisy`, `Trash`, `Non-text`, `Empty`), whatever
-    `text_util.determine_category()` returned. Since record schema 2.0 (atrium-project#84,
-    D18 rule 2) they are the only values of `lines[].categ`: digital-convert's decode
-    verdicts (`Garbage`, `Inverted`) are flags on docproc lines, never a category. Never
+    schema calls it `categ` (and so does the service's JSON, `_record_names()`). Values pass
+    through VERBATIM: the five values of the `line-category` scheme (`Clear`, `Noisy`, `Trash`,
+    `Non-text`, `Empty`), whatever `text_util.determine_category()` returned. Since record schema
+    2.0 (atrium-project#84, D18 rule 2) they are the only values of `lines[].categ`:
+    digital-convert's decode verdicts (`decode:garbled`, `decode:inverted`) are flags on docproc
+    lines, never a category. Never
     re-spell a category on the way out: a re-spelling would not fail validation, it would
     only put this repo's output out of step with the registry and its consumers, in silence.
     """
@@ -643,6 +650,54 @@ def _lines_records_from_result(result: Dict[str, Any], page: str = SERVICE_PAGE_
                 record[schema_field] = value
         records.append(record)
     return records
+
+
+#: The inference layer's line keys the service answers under the record's names instead
+#: (atrium-project#84, round 8): `line_num` → `line`, `category` → `categ`, a paged upload's
+#: `page`/`page_label` → `page_index`/`page`. The inference layer keeps its own names: the batch
+#: CSVs and the record projection above read them.
+_INTERNAL_LINE_KEYS = ("line_num", "category", "page", "page_label")
+
+
+def _record_names(result: Dict[str, Any]) -> Dict[str, Any]:
+    """`result` with its `cleaned_lines` and `pages` in the record's field names (in place)."""
+    order: Dict[str, int] = {}
+    pages = []
+    for position, row in enumerate(result.get("pages") or [], start=1):
+        if not isinstance(row, dict):
+            continue
+        key = str(row.get("page"))
+        order[key] = position
+        pages.append(
+            {
+                "page_index": position,
+                "page": row.get("page_label") or key,
+                "lines": row.get("lines"),
+                "text_layer": row.get("text_layer"),
+                "needs_atr_reason": row.get("needs_ocr_reason"),
+            }
+        )
+    if result.get("pages") is not None:
+        result["pages"] = pages
+    lines = []
+    for entry in result.get("cleaned_lines") or []:
+        if not isinstance(entry, dict):
+            lines.append(entry)
+            continue
+        out: Dict[str, Any] = {}
+        if entry.get("line_num") is not None:
+            out["line"] = entry["line_num"]
+        out.update({k: v for k, v in entry.items() if k not in _INTERNAL_LINE_KEYS})
+        if "category" in entry:
+            out["categ"] = entry["category"]
+        if entry.get("page") is not None:
+            key = str(entry["page"])
+            if key in order:
+                out["page_index"] = order[key]
+            out["page"] = entry.get("page_label") or key
+        lines.append(out)
+    result["cleaned_lines"] = lines
+    return result
 
 
 def _model_components(cleaned_lines: Any) -> Set[str]:
@@ -798,7 +853,7 @@ async def info() -> Dict[str, Any]:
         ],
         quality_categories=["Clear", "Noisy", "Trash", "Non-text", "Empty"],
         line_fields=[
-            "line_num",
+            "line",
             "text",
             "lang",
             "lang_score",
@@ -813,9 +868,9 @@ async def info() -> Dict[str, Any]:
             "gibberish",
             "word_weird",
             "quality_score",
-            "category",
+            "categ",
+            "page_index",
             "page",
-            "page_label",
         ],
     )
 
@@ -889,7 +944,7 @@ async def process_document(
     gzip/bz2/xz-compressed files and ZIP bundles of page files. `task_type="auto"`
     keeps `.txt` → text and `.json` → json; `.xml` and every other extension are
     decided from the bytes (an uncompressed ALTO root → alto, anything readable →
-    document). Document results carry `page`/`page_label` per line and a `pages`
+    document). Document results carry `page_index`/`page` per line and a `pages`
     summary; so do text uploads with form feeds and JSON uploads of several pages, paged as
     the batch pipeline pages them. The readers use the config's [TEXT_INGEST] settings.
 
@@ -916,13 +971,14 @@ async def process_document(
     pipeline builds records from docproc (`/build_record`); this endpoint stays for batch and
     research inputs (ALTO, text, documents).
 
-    Returns the classified lines (`ProcessLine`): `line_num` (1-based, in reading order, per page
-    of a paged upload; a blank line counts), `text`, `lang` and `lang_score` (after the
-    expected-language remap), `original_lang` and `orig_lang_score` (FastText's own), `perplexity`
-    (the perplexity model's: 0 for a pre-filtered line, 99999 for a batch that could not be
-    scored), the signals (`garbage_density`, `sym_count`, `upper_count`, `repeated_count`,
-    `ldl_fuses`, `gibberish`, `word_weird`), `quality_score`, `category` (`Clear`, `Noisy`,
-    `Trash`, `Non-text`, `Empty`), and on a paged upload `page` and, for a document, `page_label`.
+    Returns the classified lines (`ProcessLine`), in the record's field names (atrium-project#84):
+    `line` (1-based, in reading order, per page of a paged upload; a blank line counts), `text`,
+    `lang` and `lang_score` (after the expected-language remap), `original_lang` and
+    `orig_lang_score` (FastText's own), `perplexity` (the perplexity model's: 0 for a pre-filtered
+    line, 99999 for a batch that could not be scored), the signals (`garbage_density`,
+    `sym_count`, `upper_count`, `repeated_count`, `ldl_fuses`, `gibberish`, `word_weird`),
+    `quality_score`, `categ` (`Clear`, `Noisy`, `Trash`, `Non-text`, `Empty`), and on a paged
+    upload `page_index` and `page` (the label).
     """
     if not file.filename:
         raise HTTPException(status_code=422, detail="Filename is missing from the upload.")
@@ -1142,7 +1198,7 @@ async def process_document(
         para_logger.log_document_success()
         para_logger.finalize()
         result["paradata"] = _run_action(para_logger)
-        return JSONResponse(content=result)
+        return JSONResponse(content=_record_names(result))
 
     except (HTTPException, LimitExceeded):
         raise
@@ -1247,7 +1303,7 @@ async def score_record(
         result: Dict[str, Any] = {
             "type": scored["type"],
             "doc_id": doc_id,
-            "cleaned_lines": cleaned,
+            "cleaned_lines": answer_lines(cleaned),
             "pages": scored["pages"],
             "limits_applied": notes.as_list(),
             "document_json": scored["document_json"],
