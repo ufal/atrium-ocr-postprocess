@@ -4,6 +4,8 @@ build_record.py — build the ATRIUM record from docproc: `POST /build_record` o
 
     python3 build_record.py DOC.docproc.json --seed SEED.document.json --out-dir records/
     python3 build_record.py DOC.docproc.json --doc-id C-1 --out-dir records/ --no-score
+    python3 build_record.py DOC.atr.docproc.json --text-layer-docproc DOC.digital-convert.docproc.json \
+        --seed SEED.document.json --out-dir records/          # a mixed document (H6)
 
 Since ARÚP's output contract of 12 November 2026 (atrium-project#84 §1, D20) ocr-postprocess is the
 record builder: it builds every record from the stored docproc (`atr/docproc-json`), whichever
@@ -11,7 +13,8 @@ producer wrote it — digital-convert for a born-digital document, the ATR for a
 the only scorer of its lines. One run, one action:
 
   * `source`: the seed's identity (`doc_id`, `sha512`, `filename`, `media_type`; first writer wins),
-    with `origin` (`digital` or `atr`), `page_count` and `language`;
+    with `origin` (`digital` or `atr`; a mixed document is `digital` when it kept any text-layer line),
+    `page_count` and `language`;
   * `pages[]`: a row for every page of the original (`page_index`, `page`, `content_status`, the
     canvas when docproc gives a size), `empty` for a page routed empty (D29);
   * `lines[]`: from 1 per page in docproc's reading order, each with its docproc `block`, its
@@ -23,11 +26,18 @@ the only scorer of its lines. One run, one action:
     `/score_record` uses, then the batch's document passes (D18 rules 1–4; an empty page has no score,
     rule 7; a block unit stays out of the page score, rule 5).
 
+**A mixed document** (H4, H6, D21): digital-convert routed some pages to the ATR, so the stored docproc
+is the ATR's (H14) and digital-convert's line-level docproc comes beside it (`--text-layer-docproc`,
+`/build_record`'s `text_layer_docproc`). `docproc_merge.py` keeps the text layer's exact lines on the
+pages digital-convert could use, each linked to the ATR block that holds it, and the ATR's lines on the
+forced pages and in the blocks no kept line falls into; the order is the ATR's (H8).
+
 What fails the job (D13): a docproc that cannot be read (`docproc.DocprocError`), a page neither in
-`pages[]` nor routed empty (H15), a block whose text could not be read, and a born-digital docproc with
-pages that need the ATR: its ATR pages come in the ATR's docproc, and the merge of the two (H6) is not
-built yet. The paradata name the docproc and the seed read, and the record written with its blocks and
-fields, by SHA-512.
+`pages[]` nor routed empty (H15), a block whose text could not be read, digital-convert's docproc with
+pages that need the ATR sent alone (`needs_atr`: the ATR's docproc must come with it), the merge's own
+checks (`docproc_merge.py`), and a baseline whose page rows are not pages of the original
+(`baseline_pages`). The paradata name the docprocs (digital-convert's of a mixed document as not
+stored, D23) and the seed read, and the record written with its blocks and fields, by SHA-512.
 """
 
 from __future__ import annotations
@@ -45,6 +55,7 @@ from atrium_document import DocumentRecord, validate_document
 from atrium_limits import LimitNotes
 from atrium_paradata import ParadataLogger
 from docproc import DocprocError, ReadDocument, read_docproc
+from docproc_merge import merge
 from document_hook import PROGRAM_NAME, RECORD_DISTRIBUTION, _set_quality_summary, document_path
 from record_scoring import document_passes, page_records_from_lines, record_lang, scored_by_model
 
@@ -76,7 +87,7 @@ def _line_rows(document: ReadDocument) -> List[Dict[str, Any]]:
                 "line": number,
                 "text": line.text,
                 "block": line.block,
-                "text_source": document.text_source,
+                "text_source": line.text_source or document.text_source,
                 "bbox_precision": line.bbox_precision,
             }
             if line.bbox is not None:
@@ -101,9 +112,33 @@ def _page_rows(document: ReadDocument, lines: List[Dict[str, Any]]) -> List[Dict
             canvas: Dict[str, Any] = {"width": page.width, "height": page.height, "unit": page.unit}
             if page.user_unit:
                 canvas["user_unit"] = page.user_unit
+            if page.pixel_ratio:
+                canvas["pixel_ratio"] = page.pixel_ratio
             row["canvas"] = canvas
         rows.append(row)
     return rows
+
+
+def _json(data: bytes) -> Dict[str, Any]:
+    try:
+        return json.loads(data.decode("utf-8-sig"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise DocprocError("invalid_docproc", f"not JSON ({exc})") from exc
+
+
+def _check_baseline_pages(seed: Optional[Dict[str, Any]], page_count: int) -> None:
+    """A baseline may already hold page rows (page-classification runs beside the ATR, H3): each must be a
+    page of the original, or the record would gain rows the docproc does not have (H2, H15)."""
+    foreign = sorted(
+        row.get("page_index")
+        for row in (seed or {}).get("pages") or []
+        if isinstance(row, dict) and isinstance(row.get("page_index"), int) and not 1 <= row["page_index"] <= page_count
+    )
+    if foreign:
+        raise DocprocError(
+            "baseline_pages",
+            f"the baseline has page rows {foreign} for an original of {page_count} page(s)",
+        )
 
 
 def build(
@@ -115,27 +150,30 @@ def build(
     classify: Optional[Classifier] = None,
     logger: Optional[ParadataLogger] = None,
     seed_data: Optional[bytes] = None,
+    text_layer_docproc_data: Optional[bytes] = None,
 ) -> Built:
-    """Build (and, with `classify`, score) the record from one docproc and an optional seed; write it
-    to `<out_dir>/<doc_id>.document.json`. See the module docstring. Raises `DocprocError` (the
-    job fails) or ValueError for a missing doc_id."""
-    try:
-        data = json.loads(docproc_data.decode("utf-8-sig"))
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise DocprocError("invalid_docproc", f"not JSON ({exc})") from exc
-    document = read_docproc(data)
-    # A page flagged `needsAtr` is one whose text is not in this docproc (digital-convert's, of a page
-    # the ATR has to read): it comes in the ATR's docproc, the stored one (H14).
-    atr_pages = sorted(i for i, page in document.pages.items() if page.needs_atr)
-    if atr_pages:
-        raise DocprocError(
-            "needs_atr",
-            f"page(s) {atr_pages} need the ATR: their text comes in the ATR's docproc, and the merge of a "
-            "mixed document (H6) is not built yet",
-        )
+    """Build (and, with `classify`, score) the record from the stored docproc and an optional seed;
+    write it to `<out_dir>/<doc_id>.document.json`. For a mixed document, `text_layer_docproc_data` is
+    digital-convert's docproc, merged with the stored (ATR) one (H6). See the module docstring. Raises
+    `DocprocError` (the job fails) or ValueError for a missing doc_id."""
+    document = read_docproc(_json(docproc_data))
+    merged_atr_pages: Optional[List[int]] = None
+    if text_layer_docproc_data is not None:
+        document, merged_atr_pages = merge(document, read_docproc(_json(text_layer_docproc_data)))
+    else:
+        # A page flagged `needsAtr` is one whose text is not in this docproc (digital-convert's, of a
+        # page the ATR has to read): the ATR's docproc is the stored one, with this one beside it (H6).
+        atr_pages = sorted(i for i, page in document.pages.items() if page.needs_atr)
+        if atr_pages:
+            raise DocprocError(
+                "needs_atr",
+                f"page(s) {atr_pages} need the ATR: build from the ATR's docproc, with this one as the "
+                "text-layer docproc (H6)",
+            )
     doc_id = (str((seed or {}).get("doc_id") or "").strip() or (doc_id or "").strip()) or None
     if not doc_id:
         raise ValueError("the record needs a doc_id: send the seed, or name one")
+    _check_baseline_pages(seed, document.page_count)
 
     lines = _line_rows(document)
     entries: List[Dict[str, Any]] = []
@@ -183,12 +221,17 @@ def build(
 
     if logger is not None:
         logger.add_input(DOCPROC_DISTRIBUTION, docproc_data, media_type="application/json")
+        if text_layer_docproc_data is not None:
+            # digital-convert's docproc of a mixed document: not stored, named by its SHA-512 (D23).
+            logger.add_input(DOCPROC_DISTRIBUTION, text_layer_docproc_data, media_type="application/json", stored=False)
         if seed is not None:
             seed_bytes = seed_data if seed_data is not None else json.dumps(seed, ensure_ascii=False).encode("utf-8")
             logger.add_input(RECORD_DISTRIBUTION, seed_bytes, media_type="application/json")
         logger.add_output(RECORD_DISTRIBUTION, data_written, media_type="application/json", record_fields=written)
         logger.set_parameter("docproc_version", document.version)
         logger.set_parameter("scored", bool(entries))
+        if merged_atr_pages is not None:
+            logger.set_parameter("atr_pages", merged_atr_pages)
     return Built(path=path, data=data_written, written=written, entries=entries, document=document)
 
 
@@ -197,7 +240,12 @@ def build_parser() -> argparse.ArgumentParser:
         prog="build_record.py",
         description="Build the ATRIUM record from docproc and score its lines (POST /build_record).",
     )
-    parser.add_argument("docproc", help="the docproc document (atr/docproc-json)")
+    parser.add_argument("docproc", help="the stored docproc document (atr/docproc-json)")
+    parser.add_argument(
+        "--text-layer-docproc",
+        default=None,
+        help="a mixed document: digital-convert's docproc, merged with the stored (ATR) one (H6); not stored",
+    )
     parser.add_argument("--seed", default=None, help="the AMČR seed (doc_id, source.sha512, filename, media_type)")
     parser.add_argument("--doc-id", default=None, help="the record's doc_id when no seed is sent")
     parser.add_argument("--out-dir", default=".", help="where <doc_id>.document.json goes (default: .)")
@@ -211,6 +259,7 @@ def main(argv: Optional[List[str]] = None, classify: Optional[Callable[..., List
     args = build_parser().parse_args(argv)
     try:
         docproc_data = Path(args.docproc).read_bytes()
+        text_layer_data = Path(args.text_layer_docproc).read_bytes() if args.text_layer_docproc else None
         seed_data = Path(args.seed).read_bytes() if args.seed else None
         seed = json.loads(seed_data.decode("utf-8-sig")) if seed_data else None
     except (OSError, ValueError) as exc:
@@ -241,6 +290,7 @@ def main(argv: Optional[List[str]] = None, classify: Optional[Callable[..., List
                 classify=scorer,
                 logger=run,
                 seed_data=seed_data,
+                text_layer_docproc_data=text_layer_data,
             )
         except (DocprocError, ValueError, RuntimeError) as exc:
             run.fail(str(exc))

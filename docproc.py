@@ -16,11 +16,15 @@ asks 3 and 13 applied (block `lines[]`, the page verdict).
 * **Tables**: one line per `cellGrid` row (its cells joined by a tab), with the table's box (`derived`);
   without a grid, its `content` as above.
 * **Image-class blocks** (`image`, `figure`, `chart`, `seal`) give no line unless they carry text.
-* **Failures fail the job** (D13): a block flagged `all_engines_failed` (its text could not be read), and
-  a page of the original that is neither in `pages[]` nor routed `empty` (H15).
+* **Failures fail the job** (D13): a block flagged `all_engines_failed` (its text could not be read), a
+  page of the original that is neither in `pages[]` nor routed `empty` (H15), and a `coordinateUnit`
+  other than `pt` or `px` (D28).
+* **The page's blocks** are kept too, each with its box, reading order and lines, so that the merge of a
+  mixed document (`docproc_merge.py`, H6) can link digital-convert's lines to the ATR's blocks.
 
-The page verdict, `needsAtr` and the decode flags on lines are read, never copied into the record (D27,
-D18 rule 2): the builder decides what to do with them.
+The page verdict, `needsAtr`, the ATR's echo of the forced pages (`forced`, `forced_reason` in routing,
+D27) and the decode flags on lines are read, never copied into the record (D27, D18 rule 2): the builder
+decides what to do with them.
 """
 
 from __future__ import annotations
@@ -36,6 +40,9 @@ IMAGE_TYPES = frozenset({"image", "figure", "chart", "seal"})
 
 #: The ATR's producer id (`pipeline`), with or without its cloud-fallback variant.
 ATR_PIPELINE = "pipeline-e2e"
+
+#: The units a page's boxes may be in (D28): `pt` (1/72 inch x userUnit), `px` only where no PDF size is known.
+COORDINATE_UNITS = frozenset({"pt", "px"})
 
 #: `sourceFormat` values of a born-digital original (digital-convert's): PDF, the office documents and
 #: spreadsheets, and the text-only inputs digital-convert extracts as they are (TXT, CSV, TSV, JSON;
@@ -65,6 +72,20 @@ class ReadLine:
     flags: List[str] = field(default_factory=list)
     #: `block` when the line is a whole block scored as one unit (D18 rule 5); None for a visual line.
     unit: Optional[str] = None
+    #: Where this line's text came from (D25) when it differs per line (a merged mixed document,
+    #: `docproc_merge.py`); None takes the document's `text_source`.
+    text_source: Optional[str] = None
+
+
+@dataclass
+class ReadBlock:
+    """One block of a page, as the merge needs it: its id, box, reading order and the lines it gave."""
+
+    id: str
+    type: Optional[str]
+    bbox: Optional[List[float]]
+    reading_order: int
+    lines: List[ReadLine] = field(default_factory=list)
 
 
 @dataclass
@@ -74,7 +95,11 @@ class ReadPage:
     height: Optional[float] = None
     unit: str = "pt"
     user_unit: Optional[float] = None
+    #: For an image docproc wraps into a PDF: image pixels per unit (`pixelRatio`, D28).
+    pixel_ratio: Optional[float] = None
     lines: List[ReadLine] = field(default_factory=list)
+    #: The page's blocks in reading order (their lines are the ones in `lines`).
+    blocks: List[ReadBlock] = field(default_factory=list)
     needs_atr: bool = False
     text_layer: Optional[str] = None
 
@@ -92,6 +117,9 @@ class ReadDocument:
     pages: Dict[int, ReadPage]
     #: `page_index` → its route, for every page in `metadata.routing.pages[]`.
     routes: Dict[int, str]
+    #: `page_index` → `forced_reason` for every routing entry with `forced: true`: the pages the ATR was
+    #: forced to read, as it echoes them (D27, ask 5). Empty when the producer echoes none.
+    forced: Dict[int, Optional[str]] = field(default_factory=dict)
 
     @property
     def text_source(self) -> str:
@@ -105,7 +133,11 @@ class ReadDocument:
 
     @property
     def origin(self) -> str:
-        """The record's descriptive `source.origin` (#84 §1)."""
+        """The record's descriptive `source.origin` (#84 §1). For a merged mixed document, whose lines
+        carry their own source, `digital` when any line kept the text layer, else `atr`."""
+        sources = {line.text_source for page in self.pages.values() for line in page.lines if line.text_source}
+        if sources:
+            return "digital" if "text-layer" in sources else "atr"
         return "digital" if self.text_source == "text-layer" else "atr"
 
 
@@ -116,6 +148,14 @@ def _box(value: Any) -> Optional[List[float]]:
         except (TypeError, ValueError):
             return None
     return None
+
+
+def _positive(value: Any) -> Optional[float]:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if number > 0 else None
 
 
 def _language(value: Any) -> Optional[str]:
@@ -199,25 +239,43 @@ def read_docproc(data: Dict[str, Any]) -> ReadDocument:
         index = raw["pageNumber"]
         if index in pages:
             raise DocprocError("invalid_docproc", f"page {index} is listed twice")
+        unit = str(raw.get("coordinateUnit") or "pt")
+        if unit not in COORDINATE_UNITS:
+            raise DocprocError("invalid_docproc", f"page {index}: coordinateUnit {unit!r} is not pt or px (D28)")
         page = ReadPage(
             page_index=index,
-            width=float(raw["width"]) if raw.get("width") else None,
-            height=float(raw["height"]) if raw.get("height") else None,
-            unit=str(raw.get("coordinateUnit") or "pt"),
-            user_unit=float(raw["userUnit"]) if raw.get("userUnit") else None,
+            width=_positive(raw.get("width")),
+            height=_positive(raw.get("height")),
+            unit=unit,
+            user_unit=_positive(raw.get("userUnit")),
+            pixel_ratio=_positive(raw.get("pixelRatio")),
             needs_atr=bool(raw.get("needsAtr")),
             text_layer=raw.get("textLayer"),
         )
         blocks = [b for b in raw.get("blocks") or [] if isinstance(b, dict)]
         for block in sorted(blocks, key=lambda b: int(b.get("readingOrder", 0))):
-            page.lines.extend(_block_lines(block))
+            lines = _block_lines(block)
+            page.blocks.append(
+                ReadBlock(
+                    id=str(block.get("id") or ""),
+                    type=block.get("type"),
+                    bbox=_box(block.get("bbox")),
+                    reading_order=int(block.get("readingOrder", 0)),
+                    lines=lines,
+                )
+            )
+            page.lines.extend(lines)
         pages[index] = page
 
     routes: Dict[int, str] = {}
+    forced: Dict[int, Optional[str]] = {}
     routing = ((data.get("metadata") or {}).get("routing") or {}).get("pages") or []
     for row in routing:
         if isinstance(row, dict) and isinstance(row.get("page"), int):
             routes[row["page"]] = str(row.get("route") or "")
+            if row.get("forced") is True:
+                reason = row.get("forced_reason")
+                forced[row["page"]] = str(reason) if reason else None
     page_count = max([*pages, *routes, 0])
     missing = [n for n in range(1, page_count + 1) if n not in pages and routes.get(n) != "empty"]
     if missing:
@@ -233,4 +291,5 @@ def read_docproc(data: Dict[str, Any]) -> ReadDocument:
         page_count=page_count,
         pages=pages,
         routes=routes,
+        forced=forced,
     )

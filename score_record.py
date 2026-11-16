@@ -9,9 +9,10 @@ score_record.py — score the lines of existing ATRIUM records: `POST /score_rec
 Each record's lines (`lines[].text`, in record order) are scored with the common line-quality
 model exactly as they are, and the record gets `lines[].categ/quality_score/lang` and
 `pages[].quality_score/quality_band` on the rows it already has, through the scoring-only write
-path (`document_hook.write_scores`): never `text`, never a new row, never `source`. A line with
-digital-convert's decode verdict (`Garbage`, `Inverted`) is left as it is. The selection and the
-write are `record_scoring.py`'s, the same the service runs (atrium-project#72).
+path (`document_hook.write_scores`): never `text`, never a new row, never `source`. Every line with
+text is scored, whatever its source (D18 rules 1-2, atrium-project#84): digital-convert's decode
+verdict is a docproc line flag, not a reason to skip. The selection and the write are
+`record_scoring.py`'s, the same the service runs (atrium-project#72).
 
 Where the outputs go:
   * the record: in place, as every stage of the batch pipeline updates it, or into `--out-dir`

@@ -398,3 +398,17 @@ def test_a_run_where_the_prefilter_answered_every_line_used_no_model(classifier,
     classifier.side_effect = lambda texts, notes=None: [_prefiltered(t) for t in texts]
     assert _post(_digital_record()).status_code == 200
     assert logged == []
+
+
+def test_a_line_the_model_cannot_score_whole_is_422_not_500(classifier):
+    """D13: a line over the perplexity window fails the call (`ContentLimitError`) as 422
+    `limit_exceeded`, as on /build_record; the catch-all used to turn it into a 500."""
+    from atrium_limits import ContentLimitError
+
+    def refuse(texts, notes=None):
+        raise ContentLimitError("PPL_MAX_TOKENS", "stopped", count=1, detail="a line over the window")
+
+    classifier.side_effect = refuse
+    response = _post(_digital_record())
+    assert response.status_code == 422, response.text
+    assert response.json()["reason"] == "limit_exceeded"

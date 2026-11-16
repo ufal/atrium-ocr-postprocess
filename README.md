@@ -26,10 +26,10 @@ The command line and the service read the same formats with the same code and wr
 | Entry point                      | Takes                                                                   | Returns                                                                                                 |
 |----------------------------------|-------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------|
 | `run_pipeline.py` and its stages | folders of documents in any of the formats above                        | the per-page files, the per-line CSV, page statistics, the record, a paradata file                      |
-| `build_record.py`                | one docproc, optionally the AMČR seed                                   | the record, built and scored, and a paradata file                                                       |
+| `build_record.py`                | one docproc (two for a mixed document), optionally the AMČR seed        | the record, built and scored, and a paradata file                                                       |
 | `score_record.py`                | records (`*.document.json`), or folders of them                         | the records with this tool's scores; with `--scores`, the scored lines                                  |
 | `POST /process`                  | one page or document in any of the formats above, optionally its record | the scored lines (page by page for a document, a paged text or JSON), the record when sent or asked for |
-| `POST /build_record`             | one docproc, optionally the AMČR seed                                   | the record, built and scored                                                                            |
+| `POST /build_record`             | one docproc (two for a mixed document), optionally the AMČR seed        | the record, built and scored                                                                            |
 | `POST /score_record`             | one record                                                              | the scored lines and the record                                                                         |
 
 What only one of them does, and why (the document passes, the GLM method, page statistics):
@@ -96,7 +96,8 @@ the cases the score gets wrong. The batch pipeline then corrects isolated mistak
 It reads what OCR produced for the pages page-classification sent to text recognition, and its lines go on to
 nlp-enrich (morphology, named entities, TEITOK) and keyword-extract. Since ARÚP's output contract of 12 November
 2026 it is the record builder: it builds every record from the stored docproc, the ATR's for a scanned document and
-digital-convert's for a born-digital one (`POST /build_record`), and is the only scorer of its lines. The whole chain: the [hub's workflow page](https://ufal.github.io/atrium-project/workflows/ocr-postprocess/).
+digital-convert's for a born-digital one, and both for a mixed document, whose text-layer lines it keeps beside the
+ATR's (`POST /build_record`); it is the only scorer of its lines. The whole chain: the [hub's workflow page](https://ufal.github.io/atrium-project/workflows/ocr-postprocess/).
 Its SSH Open Marketplace record:
 [OCR output post-processing and quality control (text-line categorization) - ATRIUM](https://marketplace.sshopencloud.eu/tool-or-service/YParYU).
 

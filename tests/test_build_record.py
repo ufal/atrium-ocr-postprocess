@@ -14,6 +14,8 @@ under `tests/fixtures/docproc/` are:
   rendering, in pt, with a text box the rendering does not show kept without a box;
 * `sample-csv.digital-convert.docproc.json`: digital-convert's textual workflow (#9): a CSV extracted
   as it is, every row a line, no page size and no boxes.
+* `mixed.digital-convert.docproc.json` and `mixed.atr.docproc.json`: a mixed document's two docprocs
+  (H6), hand-written; the merge itself is tested in `tests/test_docproc_merge.py`.
 
 The classifier is a stub, so no model is loaded.
 """
@@ -299,8 +301,8 @@ def test_an_office_documents_record_has_its_rendered_pages(tmp_path):
 
 
 def test_a_page_that_needs_the_atr_fails_the_build(tmp_path):
-    """digital-convert's docproc of a page the ATR must read has no text for it: the ATR's docproc
-    is the stored one, and the merge of a mixed document (H6) is not built yet."""
+    """digital-convert's docproc of a page the ATR must read has no text for it: sent alone, it cannot
+    give a complete record. The ATR's docproc is the stored one, with this one beside it (H6)."""
     with pytest.raises(DocprocError) as info:
         build_record.build(_bytes(_docproc("garbled.digital-convert")), str(tmp_path), seed=SEED)
     assert info.value.reason == "needs_atr"
