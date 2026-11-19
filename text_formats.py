@@ -3113,7 +3113,11 @@ def _cell_inline_text(cell) -> str:
 def read_xlsx(path: str, ctx: "_Ctx") -> List[TextPage]:
     """XLSX via zipfile + lxml iterparse: sheet = page (workbook order, label =
     sheet name, hidden sheets included and counted), row = line of its text cells
-    joined by tab. Numbers, dates, booleans and errors are not text and are dropped.
+    joined by tab. Numbers, dates, booleans and errors are dropped here: an XLSX stores
+    their raw values and a number format, and only a spreadsheet engine shows them as
+    the sheet does. atrium-digital-convert therefore converts an XLSX to ODS with
+    LibreOffice and reads it with `read_odf`, which keeps every cell
+    (atrium-digital-convert#9); this reader serves the text-lines path.
     A sheet longer than MAX_LINES_PER_PAGE continues on `<name>+1`… pages."""
     etree = _etree()
     with open_zip(path, ctx.limits) as zf:
@@ -3390,24 +3394,52 @@ def _odf_cell_text(cell) -> str:
     return " ".join(paras)
 
 
+#: Where a typed ODS cell stores its value (ODF 1.2, `office:value-type`): what a cell
+#: whose paragraphs are empty keeps, so that no value is dropped.
+_ODS_STORED_VALUE = {
+    "float": "value",
+    "percentage": "value",
+    "currency": "value",
+    "date": "date-value",
+    "time": "time-value",
+    "boolean": "boolean-value",
+}
+
+
+def _ods_cell_text(cell) -> Tuple[str, bool]:
+    """A spreadsheet cell's text as the sheet displays it, and whether it is the stored value.
+
+    Every cell counts, whatever its type (atrium-digital-convert#9: in AMČR's sheets the
+    numbers and dates are the content). Its paragraphs are the text the application that
+    saved the file displayed: `1,5`, `15.3.2021`, `PRAVDA`. A typed cell whose paragraphs
+    are empty keeps its stored value instead (`1.5`, `2021-03-15`, `true`)."""
+    text = _odf_cell_text(cell)
+    if text:
+        return text, False
+    attr = _ODS_STORED_VALUE.get(_odf_attr(cell, "value-type"))
+    stored = _collapse_ws(_odf_attr(cell, attr)) if attr else ""
+    return stored, bool(stored)
+
+
 def _ods_sheet_lines(table, ctx) -> List[str]:
-    """Rows of an ODS table: its string cells joined by tab. Cells typed as numbers,
-    dates, times, currency, percentages or booleans are not text (parity with
-    XLSX). Repeats are capped at _ODF_REPEAT_CAP (noted: the rest is not read)."""
+    """Rows of an ODS table: every non-empty cell, as the sheet displays it, joined by
+    tab, whether it holds text, a number, a date, a time, a currency, a percentage or
+    a boolean (`_ods_cell_text`). A typed cell without displayed text keeps its stored
+    value and is counted (`ods_values_as_stored=N`; nothing is lost). Repeats are
+    capped at _ODF_REPEAT_CAP (noted: the rest is not read)."""
     lines: List[str] = []
     capped = False
+    stored = 0
     cap = ODF_REPEAT_CAP.get()
     for row in table.iter("{*}table-row"):
         cells = []
         for cell in row:
             if _local(cell.tag) not in ("table-cell", "covered-table-cell"):
                 continue
-            value_type = _odf_attr(cell, "value-type")
-            if value_type and value_type != "string":
-                continue
-            text = _odf_cell_text(cell)
+            text, as_stored = _ods_cell_text(cell)
             if not text:
                 continue
+            stored += as_stored
             try:
                 repeat = int(_odf_attr(cell, "number-columns-repeated", "1"))
             except ValueError:
@@ -3427,7 +3459,19 @@ def _ods_sheet_lines(table, ctx) -> List[str]:
             lines.append(line)
     if capped and "sheet_repeat_capped" not in ctx.notes:
         ctx.notes.append("sheet_repeat_capped")
+    if stored:
+        _add_count_note(ctx, "ods_values_as_stored", stored)
     return lines
+
+
+def _add_count_note(ctx: "_Ctx", name: str, n: int) -> None:
+    """Add `n` to the document's `name=<count>` note (one note across its sheets)."""
+    prefix = f"{name}="
+    for i, note in enumerate(ctx.notes):
+        if note.startswith(prefix):
+            ctx.notes[i] = f"{prefix}{int(note[len(prefix) :]) + n}"
+            return
+    ctx.notes.append(f"{prefix}{n}")
 
 
 def read_odf(path: str, ctx: "_Ctx") -> List[TextPage]:
