@@ -1,21 +1,29 @@
 # Strategy — [atrium-project#84](https://github.com/ufal/atrium-project/issues/84) (doc-schema-v2): ocr-postprocess's part
 
+> _**Refreshed 2026-11-19**: "Status — 11-19": rounds 7–9 and #16 merged, Ronald's answers against the builder, the
+> tag after the cluster run._
 > _**Refreshed 2026-11-14 (afternoon)**: "Status — round 6 (11-14)": the hub merged, the pins moved, round 6._
 > _**Refreshed 2026-11-14**: "Status — PR (11-14)": the PR's checks and round 5's fixes._
 > _**Refreshed 2026-11-13**: "Status — round 2" (the code, pushed 11-13 to `test`) and round 4's notes. The file keeps
 > the name `doc-schema-v2.plan.md` (it was `84.plan.md` on 11-12 and 11-13)._
 > _**Refreshed 2026-11-12** on ARÚP's output contract of 12 November and atrium-project#84 (motyc, 11-12), at this
 > checkout's head `ff3a467` (= `test`). The hub carries the whole change:
-> [plan](https://github.com/ufal/atrium-project/blob/test/agent_dev_logs/plans/doc-schema-v2.plan.md) ·
-> [digest](https://github.com/ufal/atrium-project/blob/test/agent_dev_logs/digests/doc-schema-v2.digest.md) (the docproc schema
+> [plan](https://github.com/ufal/atrium-project/blob/test/agent_dev_logs/plans/84.plan.md) ·
+> [digest](https://github.com/ufal/atrium-project/blob/test/agent_dev_logs/digests/84.digest.md) (the docproc schema
 > of #84's comment 1) · [contract digest](https://github.com/ufal/atrium-project/blob/test/agent_dev_logs/digests/project_state_1211.md).
 > This file is the repository's slice only; its 11-11 version (written before the
 > issue existed), whose reader for "ATR's JSON or ALTO", D14 merge by decode verdict, `pages[].origin`,
 > `lines[].style.region` and `tables[]` are superseded below._
 
+**Status (2026-11-19)**: 🟡 **This repository's part is on `test` (#11–#13, #15, #16), pinned to `02cbd01`. Ronald's
+answers (11-17) match the builder: derived line boxes (ask 7) and `all_engines_failed` as a failure (ask 9). One
+pilot risk from ask 10: the merge refuses a rotated or cropped text-layer page of a mixed document
+(`coordinate_mismatch`) until the open ATR measures the displayed page. The release (`v2.0.0-beta`) goes with the
+batch (atrium-project#77); doc-schema-v2's tag after the cluster run. See "Status — 11-19".**
+
 **Status (2026-11-14, afternoon)**: 🟡 **The hub's PR is merged and this repository is pinned to it: drift is green.
 Round 6 completes this repository's part where no answer is pending; see "Status — round 6". The release (v2.0.0-beta)
-is cut at K4TEL's cadence.**
+is cut at K4TEL's cadence.** _(superseded 11-19: rounds 7–9 merged, the answers in)_
 
 **Status (2026-11-14)**: 🟡 **[atrium-ocr-postprocess#11](https://github.com/ufal/atrium-ocr-postprocess/pull/11) is open
 (`doc-schema-v2` into `test`); see "Status — PR". Drift clears once the hub's PR merges and the pins move; the
@@ -159,7 +167,7 @@ check-drift (canonical), because the callers read the hub at `v1` (`4435ffb`) wh
 because the record schema went from 1.0 to 2.0 without a major version; build / test: `tests/fixtures/docproc/*.json`
 was not committed and `tests/test_ocr_handoff.py` (which imports `OCR_HANDOFF`, gone in 2.0) was still there;
 api-contract also reports `ocr_handoff` and `skipped_decode_verdict` gone. The causes across all seven PRs:
-[hub plan of #84](https://github.com/ufal/atrium-project/blob/test/agent_dev_logs/plans/doc-schema-v2.plan.md),
+[hub plan of #84](https://github.com/ufal/atrium-project/blob/test/agent_dev_logs/plans/84.plan.md),
 "Status — PRs".
 
 Round 5 (not pushed):
@@ -197,7 +205,7 @@ The hub's PR (atrium-project#86) merged; `v1` moved to it and K4TEL pinned this 
 
 The suite passes: 2332. Next: the hub's second PR for #84 (the E2E lanes, rule 5's mark), then `v1` and the pins again;
 then this PR. Hub:
-[plan of #84](https://github.com/ufal/atrium-project/blob/test/agent_dev_logs/plans/doc-schema-v2.plan.md),
+[plan of #84](https://github.com/ufal/atrium-project/blob/test/agent_dev_logs/plans/84.plan.md),
 "Status — round 6".
 
 ## Status — round 7 (11-16)
@@ -217,7 +225,29 @@ atrium-project#84 round 8 (comment 3's update): `forms` gone, decode verdicts ap
 - **Checked:** 2364 passed; the hub's local chain (every record valid, line keys resolve).
 - **Next:** the hub's PR first; then this repository's, with the pins moved to it.
 
+## Status — 11-19: Ronald's answers against the builder
+
+- **On `test`:** #13 (the H6 merge), #15 (round 8), #16 (every ODS cell, digital-convert#9); `master` = `test`.
+- **Ronald (11-17,** [hub digest](https://github.com/ufal/atrium-project/blob/test/agent_dev_logs/digests/84.digest.md#-2026-11-19--ronalds-answers-the-open-atrs-draft-the-storage-contract)**):**
+  - ask 4: every page in routing, empty ones `empty` — the H15 check holds;
+  - ask 7: `\n` per visual line — `docproc.py:10-13,180` splits a block's text on breaks, boxes `derived`;
+  - ask 9: `all_engines_failed` fails the task — `docproc.py:176` raises `DocprocError("all_engines_failed")`;
+  - ask 10: the displayed page (CropBox after `/Rotate`), pt — but the ATR's text-layer fast path still measures the
+    MediaBox without `/Rotate` or `UserUnit`. `docproc_merge.py:86-104` (`_check_geometry`) then finds the two
+    producers' page sizes apart and fails the merge (`coordinate_mismatch`). Fail-fast as agreed (D13), so nothing
+    partial is stored; until the open variant (12/2026, checked in aiscr-docs-pipeline#20), such mixed documents
+    fail the job (hub Q25);
+  - ask 8: no handwriting type: a handwritten block arrives as text; the record has no `handwritten` mark (as
+    planned since 11-12).
+- **The open ATR's draft** (aiscr-atr PR #5): no block `id`, `cellGrid` or inter-block links; the builder reads ids
+  and `cellGrid` today, and #14 would read the links. Waits on aiscr-docs-pipeline#17 (hub Q24).
+- **aiscr-docs-pipeline#3** (this step) still describes ALTO: a question for the meeting.
+- **The tag:** after the pilot run on the cluster (AMČR's storage contract, 11-19).
+
 ## Depends on
+
+_(11-19: Kate's and Ronald's answers given; asks 4, 7, 9, 10 and 13 accepted. Still open: the open ATR's schema
+(hub Q24), Q6–Q8, Q10.)_
 
 - Kate's answer on #84 (16 November) and Ronald's on aiscr-docs-pipeline#17: the two-level contract (D20, D24);
   asks 4 (routing of every page), 7 (line breaks), 9 (fail, not warn), 10 (coordinates), 13 (optional `lines[]`).
@@ -238,7 +268,7 @@ Marked in place in open issues' files; closed issues' files are not edited.
   pilot; validity measured on PCSS + ATR documents first.
 - `plans/10.plan.md`, `digests/10.digest.md`: parked (atrium-project#83), unchanged.
 - Closed, not edited: `plans/6.plan.md:84-88` (a page merged whole → H6, D21); `digests/1.digest.md:21`
-  (`Garbage`/`Inverted` not re-scored → rule 2).
+  (`Garbage`/`Inverted` not re-scored → rule 2). _(11-19: both pairs removed; the issues keep the history.)_
 
 ## Not in scope
 
