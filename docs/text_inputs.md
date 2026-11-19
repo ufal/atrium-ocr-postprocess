@@ -212,7 +212,7 @@ starts with `<` and is not well-formed XML is read as plain text (noted
 | PDF                  | PDF page (label = the PDF's page label, else its number)                                                                                                                                                    | text-layer line, in PDFium's order                                                                                                                                                                                                                                            | **pypdfium2**  |
 | DOCX                 | explicit page break, `pageBreakBefore`, non-continuous section break; in `auto` mode also Word's rendered breaks                                                                                            | paragraph (`w:br`/`w:cr` split it); table cells row by row; text boxes after their anchor paragraph; footnotes and endnotes per `NOTES` (below)                                                                                                                               | zipfile + lxml |
 | ODT                  | `fo:break-before/after="page"` paragraph styles; in `auto` mode also `text:soft-page-break`                                                                                                                 | paragraph / heading (`text:line-break` splits it); table cells; `text:note` per `NOTES`                                                                                                                                                                                       | zipfile + lxml |
-| XLSX / ODS           | sheet, in workbook order (label = sheet name); hidden sheets too (counted)                                                                                                                                  | row: its text cells joined by tab; numbers, dates, booleans (and ODS comments) dropped                                                                                                                                                                                        | zipfile + lxml |
+| XLSX / ODS           | sheet, in workbook order (label = sheet name); hidden sheets too (counted)                                                                                                                                  | row: its non-empty cells joined by tab. ODS: every cell as the sheet displays it (`1,5`, `15.3.2021`), comments dropped; a typed cell without displayed text keeps its stored value. XLSX: text cells only (digital-convert reads an XLSX through LibreOffice)                | zipfile + lxml |
 | PPTX / ODP           | slide, in presentation order; hidden slides too (counted)                                                                                                                                                   | paragraph                                                                                                                                                                                                                                                                     | zipfile + lxml |
 | EPUB                 | spine chapter (label = file stem)                                                                                                                                                                           | as HTML                                                                                                                                                                                                                                                                       | zipfile + lxml |
 | RTF                  | `\page`                                                                                                                                                                                                     | `\par`, `\line`, `\row`; `\cell` → tab; header/footer/footnote/picture/field-instruction groups skipped; `\'xx` decoded with the current font's `\fcharsetN`/`\cpgN`, else `\ansicpgN`; `\u` surrogate pairs combined                                                         | stdlib         |
@@ -247,8 +247,8 @@ page label, JSON page number, bundle member …) is kept in `pages_report.csv` a
   ABBYY, DjVu, Tesseract TSV, every TEI `<pb/>`, every slide. Page numbers stay faithful to the source.
 * a blank form-feed section, or a blank DOCX/ODT page between two breaks, is kept; a trailing one is
   not, and there is never a blank first page before the first break.
-* a block without text (a sheet with only numbers, a JSON child or JSONL record with only ids, an
-  EPUB chapter or e-mail without text) is not a page.
+* a block without text (an empty sheet, an XLSX sheet with only numbers, a JSON child or JSONL
+  record with only ids, an EPUB chapter or e-mail without text) is not a page.
 
 **Page ids.** text-lines numbers pages 1..N in reading order, for every format. The ALTO and JSON
 methods (`page_split.py`) name ALTO pages by `PHYSICAL_IMG_NR` and JSON pages by their page number.
@@ -397,7 +397,8 @@ The lossy notes are `xml_recovered`, `decode_replacement`, `jsonl_bad_records=N`
 `xlsx_bad_shared_string`, `sheet_repeat_capped` (an ODS repeat over 100), `zip_members_skipped=N`,
 `epub_spine_skipped=N`, `email_bad_messages=N`, `lone_surrogates_dropped=N`, and the page flag
 `page_load_failed`. Everything else in `notes` is informational (`encoding_detected`,
-`decompressed:gzip`, `bundle_members=N`, `docx_footnotes=N`, `xlsx_hidden_sheets=N`, …).
+`decompressed:gzip`, `bundle_members=N`, `docx_footnotes=N`, `xlsx_hidden_sheets=N`,
+`ods_values_as_stored=N`, …).
 
 `pages_report.csv`, one row per written page: `file`, `page` (1..N), `page_label`, `text_layer` and
 `needs_ocr_reason` (PDF, §5), `lines` (non-blank), `images` (PDF image objects) and `flags`
@@ -549,8 +550,11 @@ other's, with `text_source: text-layer`.
   Annotations and form fields are not read. A page's `/Rotate` is not part of `rotated_text`.
 * DOCX/ODT: style-inherited page breaks, headers/footers and comments are not read (headers and
   footers are counted). Charts, SmartArt and embedded objects are not read.
-* XLSX/ODS: formulas contribute their cached text result only; numbers and dates are not text lines.
-  PPTX speaker notes are not read.
+* ODS: every non-empty cell is read as the sheet displays it, a formula as its cached result.
+* XLSX: formulas contribute their cached text result only; numbers, dates and booleans are not read
+  here, since an XLSX stores raw values and a number format. atrium-digital-convert reads an XLSX
+  through LibreOffice as ODS, for the values as the sheet displays them (atrium-digital-convert#9).
+* PPTX: speaker notes are not read.
 * CSV/TSV without a recognised text column: the header row is a line too.
 * JSON that exports only words or characters without a line level (Google Vision's symbols) gives
   one line per word or character.

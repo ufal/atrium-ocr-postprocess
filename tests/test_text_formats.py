@@ -1106,7 +1106,7 @@ def test_a_sheet_over_the_line_cap_continues_on_plus_pages(tmp_path):
     assert [p.label for p in ods.pages] == ["S", "S+1", "S+2"]
 
 
-def test_ods_reads_string_cells_without_comments_and_notes_capped_repeats(tmp_path):
+def test_ods_reads_every_cell_without_comments_and_notes_capped_repeats(tmp_path):
     body = (
         '<table:table table:name="T"><table:table-row>'
         '<table:table-cell office:value-type="float" office:value="3"><text:p>3</text:p></table:table-cell>'
@@ -1116,8 +1116,46 @@ def test_ods_reads_string_cells_without_comments_and_notes_capped_repeats(tmp_pa
         "<text:p>opak</text:p></table:table-cell></table:table-row></table:table>"
     )
     doc = _read(tmp_path, "s.ods", odf_bytes("spreadsheet", body))
-    assert doc.pages[0].lines[0] == "popis" and len(doc.pages[0].lines) == 1 + 100
+    assert doc.pages[0].lines[0] == "3\tpopis" and len(doc.pages[0].lines) == 1 + 100
     assert tf.lossy_reasons(doc) == ["sheet_repeat_capped"]
+
+
+def test_ods_keeps_numbers_dates_and_booleans_as_the_sheet_displays_them(tmp_path):
+    """atrium-digital-convert#9: in AMČR's sheets the numbers and dates are the content. A typed
+    cell is its displayed text (the paragraphs the saving application wrote); a typed cell with
+    none keeps its stored value, counted, so nothing is dropped."""
+    cell = '<table:table-cell office:value-type="{t}" {attr}="{v}"{rep}><text:p>{p}</text:p></table:table-cell>'
+    bare = '<table:table-cell office:value-type="{t}" {attr}="{v}"/>'
+    displayed = [
+        ("float", "office:value", "1.5", "1,50"),
+        ("float", "office:value", "12345", "12\u00a0345"),
+        ("percentage", "office:value", "0.25", "25 %"),
+        ("currency", "office:value", "1200", "1\u00a0200,00 Kč"),
+        ("date", "office:date-value", "2021-03-15", "15.3.2021"),
+        ("time", "office:time-value", "PT13H30M00S", "13:30"),
+        ("boolean", "office:boolean-value", "true", "PRAVDA"),
+    ]
+    row1 = "".join(cell.format(t=t, attr=a, v=v, p=p, rep="") for t, a, v, p in displayed)
+    row2 = (
+        '<table:table-cell office:value-type="string"><text:p>S4</text:p></table:table-cell>'
+        "<table:table-cell/>"
+        + bare.format(t="float", attr="office:value", v="0.3")
+        + bare.format(t="date", attr="office:date-value", v="2021-03-16")
+        + cell.format(t="float", attr="office:value", v="7", p="7", rep=' table:number-columns-repeated="2"')
+    )
+    body = (
+        f'<table:table table:name="Nálezy"><table:table-row>{row1}</table:table-row>'
+        f"<table:table-row>{row2}</table:table-row></table:table>"
+        '<table:table table:name="B"><table:table-row>'
+        + bare.format(t="boolean", attr="office:boolean-value", v="false")
+        + "</table:table-row></table:table>"
+    )
+    doc = _read(tmp_path, "n.ods", odf_bytes("spreadsheet", body))
+    assert [(p.label, p.lines) for p in doc.pages] == [
+        ("Nálezy", ["1,50\t12 345\t25 %\t1 200,00 Kč\t15.3.2021\t13:30\tPRAVDA", "S4\t0.3\t2021-03-16\t7\t7"]),
+        ("B", ["false"]),
+    ]
+    assert "ods_values_as_stored=3" in doc.notes and tf.lossy_reasons(doc) == []
 
 
 def test_hidden_sheets_and_slides_are_read_and_counted(tmp_path):

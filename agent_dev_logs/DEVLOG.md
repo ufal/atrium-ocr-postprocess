@@ -2180,3 +2180,16 @@ Documentation only; no code, test or configuration change.
 * **Written here (not pushed):** `/process` and `/score_record` in the record's names (`line`, `categ`, `page_index`, `page`); docproc decode flags read in both spellings. 2364 passed.
 * **Detail:** `plans/doc-schema-v2.plan.md`, "Status — the meeting's follow-ups"; hub: [plan of #84](https://github.com/ufal/atrium-project/blob/test/agent_dev_logs/plans/84.plan.md), "Status — round 8 (implemented)".
 * **Not posted; not pushed.**
+
+## 2026-11-19 — atrium-digital-convert#9: spreadsheets keep every cell
+
+* **Asked:** motyc on atrium-digital-convert#9 (11-18): in AMČR's sheets the numbers and dates are the content, so every
+  non-empty cell is kept as text, numbers and dates as the sheet displays them. K4TEL: digital-convert converts an XLSX or
+  XLS to ODS with LibreOffice, in cs-CZ, and reads it with this repository's shared reader.
+* **Done (local, not pushed):** `text_formats.py` `_ods_sheet_lines` keeps every non-empty cell, its paragraphs being the
+  text the saving application displayed (`1,50`, `15.3.2021`, `PRAVDA`); a typed cell without them keeps its stored value,
+  counted (`ods_values_as_stored=N`, not lossy). `read_xlsx` is unchanged (text cells; the text-lines path) and says why.
+  Tests, `docs/text_inputs.md`, CONTRIBUTING's unreleased row.
+* **Checked:** the full suite (2360 passed).
+* **Next:** digital-convert re-vendors `text_formats.py` and pins this repository's merge commit.
+* **Not posted; not pushed.**
