@@ -4,24 +4,36 @@ Setting up, testing and changing ocr-postprocess. Branches, pull requests, commi
 are in [CONTRIBUTING.md](../CONTRIBUTING.md); the ATRIUM documentation rules in the hub's
 [documentation-style.md](https://github.com/ufal/atrium-project/blob/main/docs/documentation-style.md).
 
+## Set up
+
+The environment, the models and LayoutReader's scripts are set up as in
+[Set up the environment](usage.md#set-up-the-environment). The tests need their own requirements on top, which
+include the service's pinned FastAPI and pydantic:
+
+```bash
+pip install -r requirements-test.txt
+```
+
 ## Tests
 
-- `pytest -m "not slow"` runs the fast suite, as CI does.
+- `pytest -m "not slow"` runs the fast suite, as CI does. It needs no model, GPU or network.
 - `tests/test_categorization_walkthrough.py` follows every worked example through the categoriser and checks the
   table in [the rules](reference/categorization_rules.md#worked-examples); after changing a case, regenerate the
   table as that file's `worked_examples_table()` says.
 - `tests/test_scoring_single_source.py` and `tests/test_service_hardening.py` keep the batch pipeline, the service
   and the re-scorer on one scoring function.
 - The files vendored from the ATRIUM hub (`atrium_*.py`, `para_licenses.py`, `service/atrium_service.py`, the schemas
-  and their tests) are never edited here; see the hub's
-  [shared_components.md](https://github.com/ufal/atrium-project/blob/main/docs/shared_components.md).
+  and their tests) are never edited here. A fix lands in the hub first and is re-vendored with the hub's
+  `scripts/revendor_shared.sh` ([Re-vendoring](https://github.com/ufal/atrium-project/blob/main/docs/shared_components.md#re-vendoring)).
+  `text_formats.py` is owned here and vendored into digital-convert.
 
 ## Measuring a categorisation change
 
 [The evaluation page](evaluation/categorization.md#measuring-a-change) lists the tools:
 `tools/recategorize_from_csv.py`, `tools/corpus_change.py` and `tools/rule_coverage_report.py`.
-`tools/decide_lines.py` tags the lines the rules are least sure of and asks a decision model about them (#10,
-experimental; [usage](usage.md#ask-a-decision-model-about-lines-toolsdecide_linespy)).
+`tools/decide_lines.py` tags the lines the rules are least sure of and asks a decision model about them. It is
+parked during the AMČR pilot: not part of the pipeline or the service
+([usage](usage.md#ask-a-decision-model-about-lines-toolsdecide_linespy)).
 
 ## Vendored code
 

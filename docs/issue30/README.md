@@ -1,5 +1,10 @@
 # Issue #30 — what is in this folder
 
+**Status:** a closed record of the 2026 annotation round (issue #30 of the former repository,
+[ocr-postprocess#3](https://github.com/ufal/atrium-ocr-postprocess/issues/3) here, closed on 13 October 2026).
+Nothing on this page is an open request. What the round settled is in [the decision
+record](../decisions/2026-10-categorization.md) and [the evaluation page](../evaluation/categorization.md).
+
 **For:** @DanaKriv and @david-spacil, and anyone joining
 [issue #30](https://github.com/ufal/atrium-alto-postprocess/issues/30) without having followed it.
 

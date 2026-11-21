@@ -1,16 +1,17 @@
 # data_samples (synthetic)
 
-Synthetic demonstration data for the ALTO postprocessing pipeline. All content is
+Synthetic demonstration data for ocr-postprocess's batch pipeline. All content is
 **fictional** — an invented site "Hradiště u Horní Mezí" (okr. Horní Mezi), with
 made-up researchers Jan Novotný and Eva Procházková. No real archival records,
-CTX identifiers, place names, or restricted ARUP/ARUB data are included.
+CTX identifiers, place names, or restricted ARÚP or ARÚB data are included. The sample docprocs for building a
+record (`build_record.py`, `POST /build_record`) are in `tests/fixtures/docproc/`.
 
 Demo documents:
 - CTX000000001 — 2 pages, clean OCR (baseline)
 - CTX000000002 — 4 pages, mixed quality (Noisy/Trash lines, empty tokens)
 - CTX000000003 — 1 page, short/poor (edge cases)
 
-Inputs for the other two methods (#31) — same fictional world, new ids so nothing clashes:
+Inputs for the other two methods — same fictional world, new ids so nothing clashes:
 - JSON/CTX000000015.json — an Azure-style `analyzeResult.pages` OCR export (`--method json-keys`)
 - TEXT/ — one file per text-lines format (`--method text-lines`):
   - CTX000000004.txt — plain text in **cp1250**, two pages split by a form feed, OCR noise on page 2
@@ -46,11 +47,9 @@ Inputs for the other two methods (#31) — same fictional world, new ids so noth
   ingest_report.csv/pages_report.csv), PAGE_TXT_TEXT/ (classify-ready text) and DOC_LINES_TEXT/
   (per-document line tables), with the stats CSV `text_stats.csv` (`[EXTRACT].INPUT_CSV_TEXT`) — not committed.
 
-Directory roles mirror the real pipeline: ALTO/ (source) -> A-PAGE/, PAGE_ALTO/
-(page splits) -> PAGE_TXT*, (text extraction) -> DOC_LINE_CATEG*, DOC_LINE_STATS*
-(classification + aggregation). The *_gpt variants correspond to the distilgpt2
+Directory roles mirror the batch pipeline: ALTO/ (source) -> PAGE_ALTO/ (page splits) -> PAGE_TXT* (text
+extraction) -> DOC_LINE_CATEG*, DOC_LINE_STATS* (classification + aggregation). The *_gpt variants correspond to the distilgpt2
 perplexity model; the unsuffixed ones to Qwen2.5-0.5B.
 
-`DOC_LINE_STATS*/` are regenerated with each change to `aggregate_STAT.py` (since #8 they carry the five category
-ratios). The two `*_page_stats_SHORT.csv` excerpts are not: they come from an older run, still carry `avg_symbol`
+`DOC_LINE_STATS*/` are regenerated with each change to `aggregate_STAT.py`; they carry the five category ratios. The two `*_page_stats_SHORT.csv` excerpts are not: they come from an older run, still carry `avg_symbol`
 and have no ratio columns. Use them to see the shape of a corpus table, and `DOC_LINE_STATS*/` for today's columns.

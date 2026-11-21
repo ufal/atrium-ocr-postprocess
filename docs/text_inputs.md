@@ -1,7 +1,8 @@
-# Input formats: standards, producers and readers (#31)
+# Input formats: standards, producers and readers
 
 `--method text-lines` accepts any text-bearing file and turns it into an ordered list of **pages**,
-each an ordered list of **lines**. Those lines become the rows of the categorized CSV output: first
+each an ordered list of **lines**. It is a batch method for research collections; in the AMČR pipeline the record
+is built from docproc instead ([usage](usage.md#build-the-record-from-docproc-build_recordpy)). Those lines become the rows of the categorized CSV output: first
 `DOC_LINES_TEXT/<doc>.csv`, then, after Step 4, `DOC_LINE_CATEG/<doc>.csv`. This page is the reference for
 the input formats. [Formats and their standards](#formats-and-their-standards) says which standard
 defines each format, which tools write it and what this repo keeps of it; §1–§8 say what the readers
@@ -30,11 +31,12 @@ character too, how sure the engine was, and sometimes the typography. **Text-bea
 carry text and a logical structure (paragraphs, cells, slides, messages), but no page image and no
 coordinates. Many of them (DOCX, ODT, EPUB, HTML) do not fix pages at all.
 
-This repository keeps the **text** of every format, cut into pages and lines, and each page's
+The text-lines method keeps the **text** of every format, cut into pages and lines, and each page's
 original label (§2). Its outputs keep no coordinates, engine confidences or typography (fonts,
 sizes, bold, italics). The quality score of Step 4 is computed from the text alone. The ALTO
 methods are the exception: LayoutReader orders the lines by their word boxes, and the page statistics
-count ALTO's lines, strings, illustrations and graphics.
+count ALTO's lines, strings, illustrations and graphics. A record built from docproc keeps each line's box
+(`lines[].bbox`).
 
 ### OCR and layout formats
 
@@ -63,8 +65,8 @@ What each of them records, and what this repo keeps:
   order from the boxes, the full form for split words), alto-tools (ALTO order) or GLM (which reads
   the page image again), and count lines, strings, illustrations and graphics per page (Step 2).
   text-lines keeps each `TextLine`'s strings in document order. `page_split.py` splits every ALTO
-  version: it takes the namespace from the root (it used to know only `ns-v3#`, so a v2/v4 file got
-  no pages, until #31 Phase 5), and skips a root that is not a namespaced `<alto>` with its name.
+  version: it takes the namespace from the root, and skips a root that is not a namespaced `<alto>` with its
+  name.
   The engine is named in `Description/OCRProcessing/…/processingSoftware/softwareName`; text-lines
   records a known one as the origin (§6). Tesseract numbers its ALTO pages from 0
   (`PHYSICAL_IMG_NR="0"`), so the ALTO methods' page ids start at 0 for its files.
@@ -97,15 +99,14 @@ What each of them records, and what this repo keeps:
   (block, paragraph, line), joined by spaces; every `page_num` is a page, a blank one too.
   `data_samples/TEXT/CTX000000025.tsv` and `CTX000000026.hocr` are real Tesseract 5.3.4 output of two
   rendered Czech pages (`tools/make_tesseract_samples.py`); its TSV, hOCR, ALTO and searchable PDF of
-  those pages all read, line for line, as Tesseract's own text output (#31 Phase 5).
+  those pages all read, line for line, as Tesseract's own text output.
 * **OCR / Doc-AI JSON.** Each service nests pages, blocks, lines and words its own way and gives
   coordinates in its own shape. Azure: `pages[].lines[].content` with a `polygon` in the page's
   `unit`. Textract: a flat `Blocks` list typed `PAGE`/`LINE`/`WORD` with a relative
   `Geometry.BoundingBox`. docTR: `pages[].blocks[].lines[].words[]` with a relative `geometry`. Google
   Vision: `fullTextAnnotation.pages[].blocks[].paragraphs[].words[].symbols[]`. Kept: json-keys
   splits pages by the page-list and page-tag heuristics of Step 1; both methods then take each text
-  of the page once, at the line (JSON granularity, §2) — json-keys read the whole page file, header
-  and words included, until #31 Phase 5. Checked on four real AWS Textract responses (1–2 pages,
+  of the page once, at the line (JSON granularity, §2). Checked on four real AWS Textract responses (1–2 pages,
   28–74 lines) and Microsoft's Azure `GetAnalyzeDocumentResult` example: both methods give exactly
   the engine's `LINE`s, page by page.
 * **PDF text layer.** The page's content stream places each character at a position in some font.
@@ -127,11 +128,11 @@ What each of them records, and what this repo keeps:
   `sourceDoc` are skipped, and token annotations and boxes are not kept. A TEITOK file that
   nlp-enrich wrote is read back into the pages nlp-enrich's own readers count.
 
-**Where the coordinates go.** This repo writes text only. The page geometry that a TEITOK file shows
-over the page image comes from atrium-nlp-enrich. Its writer reads the ALTO file itself
-(`INPUT_ALTO_DIR`) or a flexiconv conversion of ALTO, PAGE XML or hOCR (`api_flexiconv.sh`). The
-boxes of ABBYY FineReader XML, DjVuXML, Tesseract TSV and OCR JSON reach no ATRIUM output. When a
-TEITOK view over the page image is wanted, export ALTO, PAGE XML or hOCR from the engine as well.
+**Where the coordinates go.** In the AMČR pipeline the record's lines carry the boxes docproc gives them, and
+nlp-enrich draws the TEITOK file's page geometry from the record. For research inputs read by text-lines, which
+writes text only, nlp-enrich's writer can read an ALTO file itself (`INPUT_ALTO_DIR`) or a flexiconv conversion of
+ALTO, PAGE XML or hOCR (`api_flexiconv.sh`). The boxes of ABBYY FineReader XML, DjVuXML, Tesseract TSV and OCR JSON
+reach no ATRIUM output.
 
 ### Text-bearing documents
 
@@ -340,14 +341,13 @@ strict failure stops the pipeline after that stage.
 | `MAX_LINES_PER_PAGE` | 100000  | a real page over it is refused; a block over it (a sheet, a JSON child, a form-feed section) continues on pages labelled `<label>+1`, `+2`, … |
 | `READER_TIMEOUT_S`   | 300     | a PDF that hangs PDFium. PDFs are read in a **separate process**, so a crash or hang costs one file (`timeout`, `reader_crashed`)             |
 
-Each of these keys is also an environment setting (atrium-project#53): `ATRIUM_TEXT_INGEST_<KEY>`, e.g.
+Each of these keys is also an environment setting: `ATRIUM_TEXT_INGEST_<KEY>`, e.g.
 `ATRIUM_TEXT_INGEST_MAX_PAGES=500`. The variable wins over the config file, the file over the default above; a
 malformed value stops the run or the service naming it. The service reports every cap's current value in
 `GET /info` (`limits`; `limits_meta` names the variable and where the value came from). A reader cap that
-used to be fixed is a setting too, not a config key: `ATRIUM_TEXT_INGEST_ODF_REPEAT_CAP` (100 — repeats of one
-ODS/ODT cell or row read; past it the run fails, `sheet_repeat_capped`). A PDF page's text layer is judged on all
-its objects: the object cap (`ATRIUM_TEXT_INGEST_PDF_OBJECT_CAP`, a sample of the first 20,000) is gone
-(atrium-project#84).
+used to be fixed is a setting too, not a config key: `ATRIUM_TEXT_INGEST_ODF_REPEAT_CAP` (100, the repeats of one
+ODS/ODT cell or row read). Past it the batch reads the file as `partial` (`sheet_repeat_capped`), and the service
+refuses it (422 `limit_exceeded`). A PDF page's text layer is judged on all its objects.
 
 XML is parsed without entity resolution, DTD loading or network access, and with libxml2's size and
 depth limits on. A document that declares entities is refused (`xml_entity_declaration`). Broken XML
@@ -360,9 +360,10 @@ fine).
 Input discovery is conservative. Only regular files at the top level of the input directory are
 read. Symbolic links, FIFOs/devices, subdirectories, hidden files, Office lock files (`~$…`,
 `.~lock.…#`) and OS metadata (`._*`, `Thumbs.db`, `desktop.ini`) are listed as `ignored`.
-Document ids come from `canonical_doc_id()` (hub-shared), so `report.v2.pdf` and `report.txt.gz`
-become `report`. Two files that map to the same id (case-insensitively) are a `doc_id_collision`: the
-first in sorted order wins and the other is refused, never silently overwritten.
+Document ids come from `canonical_doc_id()` (hub-shared): a known suffix is stripped
+(`CTX000000001.alto.xml` → `CTX000000001`, `report.v2.pdf` → `report.v2`), and a compressed name keeps the part
+before its first dot (`report.txt.gz` → `report`). Two files that map to the same id (case-insensitively) are a
+`doc_id_collision`: the first in sorted order wins and the other is refused, never silently overwritten.
 
 **Output directories.** Each document's pages are written into `.tmp-<doc>/`, the previous `<doc>/` is
 renamed aside to `.old-<doc>/`, the new one renamed in, and the old one removed; the document record
@@ -375,7 +376,7 @@ stages never read pages its report calls failed. Pages of an input that was dele
 directory, and of a collision's loser, are left as they are. A page whose text did not change keeps its file time
 through the swap, and `extract_TEXT_2_TXT.py` rewrites a page only when its text changed: the extract and
 classify stages resume by file time (an output is current while it is at least as new as its inputs), so a
-full re-run over unchanged inputs skips them again, and a changed page is processed again (#31 Phase 5).
+full re-run over unchanged inputs skips them again, and a changed page is processed again.
 
 ### Reports
 
@@ -408,12 +409,10 @@ The lossy notes are `xml_recovered`, `decode_replacement`, `jsonl_bad_records=N`
 
 The HTTP column is the status the service answers with (§7). Every error body is
 `{"status", "reason", "detail"}` with `detail` starting with the code; the limit codes answer with
-`reason: "limit_exceeded"` and a `limit` member naming the setting (atrium-project#53 — `too_large` and
-`zip_limits_exceeded` were 422 before; they are refusals of an input over a limit, so 413 now).
-Since atrium-project#32 round 2 the four "not a kind this service reads" codes answer 415 with the
-registered `reason: "unsupported_media_type"` (400 with `reason: null` before) and an `accepted` list,
-`dependency_missing` answers 501 (the deployment's gap, not the file's; a 400 before), and every refusal
-but a named limit also carries its code as `cause`.
+`reason: "limit_exceeded"` and a `limit` member naming the setting (`too_large` and `zip_limits_exceeded` are
+refusals of an input over a limit, so 413). The four "not a kind this service reads" codes answer 415 with the
+registered `reason: "unsupported_media_type"` and an `accepted` list, `dependency_missing` answers 501 (the
+deployment's gap, not the file's), and every refusal but a named limit also carries its code as `cause`.
 
 | Code                                  | Meaning                                                                                                                          | HTTP |
 |---------------------------------------|----------------------------------------------------------------------------------------------------------------------------------|------|
@@ -457,7 +456,7 @@ born-digital PDF's record is built from digital-convert's docproc, whose reading
 The `flags` column reports what the text layer looks like. The flags never set a category, since the
 categories stay classify's and the shared vocabulary keeps the tools' category sets apart. The
 `mojibake_cp1252` test is the same one digital-convert's `digital_to_json` applies to a line before flagging
-it `decode:garbled` in its docproc (same thresholds, same letter evidence, since its #18):
+it `decode:garbled` in its docproc (same thresholds, same letter evidence):
 
 | Flag                                 | Set when                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 |--------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
@@ -472,9 +471,9 @@ With `[DOCUMENT].JSON_DIR` set, `text_split.py` writes the record's `source`: `s
 `media_type`, `origin`, and `page_count` for formats with real pages only (PDF, ALTO, PAGE XML,
 hOCR, ABBYY, DjVu, Tesseract TSV, a bundle of such pages). A DOCX or ODT has no page count of its
 own: its pages are the breaks a reader chooses to count, and `set_source()` keeps the first writer's value. The
-origin is **truthful per class**. Record schema 2.0 ([atrium-project#84](https://github.com/ufal/atrium-project/issues/84))
-holds it as `digital`, `atr` or `legacy` (`document_hook.record_origin()`), and each line written gets the matching
-`text_source`; the ingest report keeps the input's own spelling:
+origin is **truthful per class**. The record holds it as `digital`, `atr` or `legacy`
+(`document_hook.record_origin()`), and each line written gets the matching `text_source`; the ingest report keeps the
+input's own spelling:
 
 | Class                      | Formats                                                                                                                  | Default origin                                                                                                                                                                                              | In the record                  |
 |----------------------------|--------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|--------------------------------|
@@ -482,20 +481,17 @@ holds it as `digital`, `atr` or `legacy` (`document_hook.record_origin()`), and 
 | text of unknown provenance | TXT, Markdown, CSV/TSV, JSON/JSONL, TEI, other XML, SRT/VTT; a bundle of mixed kinds                                     | `ocr:generic` (as json-keys)                                                                                                                                                                                | `atr`                          |
 | born-digital               | DOCX, ODT/ODS/ODP, XLSX, PPTX, EPUB, RTF, plain HTML, visible-text PDF, EML/MBOX                                         | `digital-born-<kind>`                                                                                                                                                                                       | `digital`                      |
 
-Since record schema 2.0 this repo is the record builder and writes the positional blocks of every class. Until #84
-a `digital-born-*` origin made the record digital-convert's to originate, and every stage of this repo held its
-`pages`/`content`/`lines` back (the origin guard), except for the pages digital-convert flagged `needs_ocr` (the OCR
-hand-off). Both are gone: in the AMČR pipeline the record of a born-digital document is built from digital-convert's
-docproc (`build_record.py`), and so is a mixed document, from the ATR's docproc and digital-convert's (H6,
-`docproc_merge.py`).
+This tool is the record builder and writes the positional blocks of every class. In the AMČR pipeline the record
+of a born-digital document is built from digital-convert's docproc (`build_record.py`), and so is a mixed document,
+from the ATR's docproc and digital-convert's (`docproc_merge.py`).
 
-**The engine an OCR file names** (#31 Phase 5). ALTO's
+**The engine an OCR file names.** ALTO's
 `Description/OCRProcessing/…/processingSoftware/softwareName` (or `softwareCreator`) and hOCR's
 `<meta name="ocr-system">` name the engine that wrote the file. When it is one this repo knows —
 Tesseract → `ocr:tesseract`, PERO → `ocr:pero`, Kraken → `ocr:kraken`, Transkribus →
 `ocr:transkribus`, eScriptorium → `ocr:escriptorium`, OCR-D → `ocr:ocrd`, Calamari → `ocr:calamari`,
 ABBYY/FineReader → `ABBYY-ALTO` — that is the default origin; any other name keeps the format's
-default. A real Tesseract ALTO used to be recorded as `ABBYY-ALTO`. A ZIP bundle takes its members'
+default. A ZIP bundle takes its members'
 origin when they agree. The ALTO methods (`page_split.py`) keep `ABBYY-ALTO`.
 
 `[DOCUMENT].SOURCE_ORIGIN_BY_KIND` lets an operator state, per kind, what the files really are:
@@ -523,26 +519,26 @@ anything else readable, a compressed ALTO included, is a `document`. Documents a
 `read_document_isolated()` and shaped with `shape_lines()`, the same code as the batch method, and
 classified page by page in batches of `PPL_BATCH_LINES` (32) lines. Each result line carries `page_index`/`page`, and
 `line` restarts per page. A `.txt` upload keeps its `plain_text` response, but it is decoded and
-shaped like the batch path (any common encoding, cp1250 first), and since v1.13.0-beta a form feed starts
-a page there too; a `.json` upload is paged by `page_split.json_pages`, the batch split's own function
-(atrium-project#72).
+shaped like the batch path (any common encoding, cp1250 first), and a form feed starts a page there too; a
+`.json` upload is paged by `page_split.json_pages`, the batch split's own function.
 
 The readers use the config's `[TEXT_INGEST]` settings and `[DOCUMENT].SOURCE_ORIGIN(_BY_KIND)`, read
 from `LANGID_CONFIG` once at start-up; a malformed value fails the start. `KEEP_BLANK_LINES` applies
-here as on the batch path (since v1.14.0-beta; blank lines used to be dropped always), `STRICT` is
-batch-only, and the `DOCUMENT_SOURCE_ORIGIN` env var is not read. Errors name the reason code: `415` `unsupported_media_type` for a file of a kind this
-service does not read (a `400` before atrium-project#32 round 2), `422` for a supported kind that cannot
-be read, a document without a single text line included (`no_text`), and `501` when a reader's optional
-dependency is not installed; the HTTP column of §4 lists them. Since record schema 2.0 a born-digital upload's
-lines accrete into the record sent as `document_json` (or under its deprecated name `document_record`) like any
-other's, with `text_source: text-layer`.
+here as on the batch path, `STRICT` is batch-only, and the `DOCUMENT_SOURCE_ORIGIN` env var is not read. Errors
+name the reason code: `415` `unsupported_media_type` for a file of a kind this service does not read, `422` for a
+supported kind that cannot be read, a document without a single text line included (`no_text`), and `501` when a
+reader's optional dependency is not installed; the HTTP column of §4 lists them. A read with a possible loss, which
+the batch marks `partial`, answers 200 without saying so; `sheet_repeat_capped` and a ZIP member over
+`MAX_FILE_MB` are refused instead (422 `limit_exceeded`). A born-digital upload's lines accrete into the record
+sent as `document_json` (or under its deprecated name `document_record`) like any other's, with
+`text_source: text-layer`.
 
 ## 8. Known limitations
 
 * The ALTO methods: a namespace-less ALTO file, and any other `.xml` in the ALTO input directory
   (PAGE XML, TEI), is skipped by `page_split.py` with its root named, and gets no page files and no
-  document record; the run goes on. Read such files with text-lines, or through the service. (Every
-  namespaced ALTO version is split since #31 Phase 5.) The ALTO methods keep `ABBYY-ALTO` as the
+  document record; the run goes on. Read such files with text-lines, or through the service. The ALTO methods
+  keep `ABBYY-ALTO` as the
   default origin whatever engine the file names; set `SOURCE_ORIGIN = ocr:<engine>` for other exports.
 * The alto-tools extractor joins a line that ends in `-`, `–` or `—` with the next one and drops the
   dash (unchanged ALTO behaviour), so a page footer such as `— 1—` loses its last dash there.
@@ -553,7 +549,7 @@ other's, with `text_source: text-layer`.
 * ODS: every non-empty cell is read as the sheet displays it, a formula as its cached result.
 * XLSX: formulas contribute their cached text result only; numbers, dates and booleans are not read
   here, since an XLSX stores raw values and a number format. atrium-digital-convert reads an XLSX
-  through LibreOffice as ODS, for the values as the sheet displays them (atrium-digital-convert#9).
+  through LibreOffice as ODS, for the values as the sheet displays them.
 * PPTX: speaker notes are not read.
 * CSV/TSV without a recognised text column: the header row is a line too.
 * JSON that exports only words or characters without a line level (Google Vision's symbols) gives
@@ -564,10 +560,8 @@ other's, with `text_source: text-layer`.
   inside them, and `.tar.*`, 7z, RAR and zstd are refused.
 * `mojibake_cp1252` is deliberately conservative and Czech-only; text encoded with a base-14 PDF font
   (`ZprÆva`, `(cid:236)`) is not flagged.
-* `canonical_doc_id()` (hub-shared) strips a known suffix and otherwise truncates a multi-dot name at
-  the first dot. Until the hub's `KNOWN_PIPELINE_SUFFIXES` carries the text-lines suffixes (`.pdf`,
-  `.docx`, … — delivered with #31 Phase 5, active once the hub's `v1` is re-vendored), `scan.2019.pdf`
-  is `scan`, so `report.v1.docx` and `report.v2.docx` collide; collisions are refused rather than
-  merged. Compressed names keep the first-dot answer (`x.txt.gz` → `x`).
+* `canonical_doc_id()` (hub-shared) strips a known suffix (`.pdf`, `.docx`, `.alto.xml`, …) and otherwise cuts a
+  multi-dot name at its first dot, so a compressed name keeps the part before it (`x.txt.gz` → `x`). Two files that
+  map to one id are refused rather than merged.
 * `.doc`, `.xls`, `.ppt`, `.pages`, `.wpd`, `.xlsb` and images are refused with a reason, not
   converted.

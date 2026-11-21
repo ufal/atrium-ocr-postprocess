@@ -31,7 +31,7 @@ baseline ([atrium-project#67](https://github.com/ufal/atrium-project/issues/67))
 | Set                                    | What it is                                                                                           | Where                                                   |
 |----------------------------------------|------------------------------------------------------------------------------------------------------|---------------------------------------------------------|
 | Human gold set                         | 2,067 lines labelled by hand (2,064 scored rows in the sidecar); the adoption gate for a rule change | [`tools/gold/GOLD.md`](../../tools/gold/GOLD.md)        |
-| Annotators' decisions of the #30 round | @david-spacil's re-check of 508 lines; @DanaKriv's 357 decisions on the census and the sample        | [`docs/issue30/`](../issue30/README.md)                 |
+| Annotators' decisions of the #30 round | the data providers' re-check of 508 lines, and 357 decisions on the census and the sample            | [`docs/issue30/`](../issue30/README.md)                 |
 | Both collections                       | 113,101 documents, 71.8 million lines (ARÚP and ARÚB), re-scored in memory for a corpus diff         | `tools/corpus_change.py`; the run `DOC_LINE_CATEG_1210` |
 
 ## Results that bear on using the categories
@@ -53,7 +53,7 @@ baseline ([atrium-project#67](https://github.com/ufal/atrium-project/issues/67))
 | Candidate                                                     | Measured on                          | Result                                                                    | Decision                              |
 |---------------------------------------------------------------|--------------------------------------|---------------------------------------------------------------------------|---------------------------------------|
 | The shape witness for `rule_short_garbage` (wired, ships off) | gold set; #30 annotations            | passes the adoption gate (gold errors 510 → 499, `Clear`-loss 38 = 38)    | held, to be decided with the floor    |
-| The witness floor                                             | both collections, blind annotation   | 25,448 lines moved: about 3,920 fixed against 13,509 broken               | rejected, 2026-10-05 (@david-spacil)  |
+| The witness floor                                             | both collections, blind annotation   | 25,448 lines moved: about 3,920 fixed against 13,509 broken               | rejected, 2026-10-05                  |
 | A real vocabulary in place of the shape-only word test        | gold set                             | 212 fixes against 540 breaks                                              | rejected                              |
 | Page-relative perplexity for one- and two-word lines          | —                                    | needs calibrating on a real ARÚP/ARÚB run first                           | off                                   |
 
@@ -62,7 +62,7 @@ The full figures, with their dates and commits, are in
 
 ## Document passes
 
-The batch pipeline's identical-text vote (`pp_dedup`), measured over both collections: 43,103 groups of the
+The document passes' identical-text vote (`pp_dedup`), measured with the batch pipeline over both collections: 43,103 groups of the
 same text in a document, 43,052 of them unanimous and 51 contested. The vote rescues 51 lines and pulls 10
 readable ones down. The other three passes have not been measured on their own.
 
@@ -75,4 +75,4 @@ readable ones down. The other three passes have not been measured on their own.
    `diff`), and against the gold set.
 3. See which rules a run actually reached with `tools/rule_coverage_report.py`.
 
-After the S2 pilot, the known limits are measured this way before any of them is changed.
+After the AMČR pilot, the known limits are measured this way before any of them is changed.

@@ -3,7 +3,8 @@
 The files the batch pipeline writes, column by column. How to produce them is in [usage](../usage.md); what the
 categories mean is in [How a line is categorised](../categorization_logic.md). The service returns fewer per-line
 fields, some under other names ([the mapping](#the-services-line-fields)); its JSON is typed in
-[`service/openapi.json`](../../service/openapi.json).
+[`service/openapi.json`](../../service/openapi.json). The record that `build_record.py` and the service write follows
+the hub's [document contract](https://ufal.github.io/atrium-project/ecosystem/document-contract/).
 
 ## Step 2: page statistics
 
@@ -21,7 +22,7 @@ The three builders (`alto_stats_create.py`, `json_stats_create.py`, `text_stats_
 
 ## Step 4.1: per-line categories
 
-`DOC_LINE_LANG_CLASS/<doc_name>.csv` (example: [DOC_LINE_CATEG](../../data_samples/DOC_LINE_CATEG)), one row per line.
+`DOC_LINE_CATEG/<doc_name>.csv` (`[CLASSIFY] OUTPUT_LINES_LOG`; example: [DOC_LINE_CATEG](../../data_samples/DOC_LINE_CATEG)), one row per line.
 
 `<doc_name>.csv`: detailed classification results for every single line within a document, **columns**:
 
@@ -59,7 +60,8 @@ The key resulting output **columns** that depict the final classification and qu
 
 **Columns** useful for archive managers apart from the quality score and category:
 
-* `lang` — predicted ISO **language code** from the FastText model (remapped if unknown)
+* `lang` — FastText's **language label**, an ISO 639-3 code with its script (e.g. `ces_Latn`); an unexpected
+  language is remapped to the first of `EXPECTED_LANGS`
 * `lang_score` — the *stored* confidence: FastText's, or the cap (0.75 / 0.50) for a remapped language (`LANG_REMAP_ALWAYS`)
 * `original_lang` — predicted language **before** remapping
 * `orig_lang_score` — original FastText confidence **before** remapping
@@ -70,14 +72,14 @@ The key resulting output **columns** that depict the final classification and qu
 
 **Diagnostic flags.** Five boolean audit columns name the rule that decided the line (exactly one `True`, none for
 `Empty` and `Non-text`): `allcaps_novowel`, `lowppl_clear`, `trash_threshold`, `noisy_threshold`, `clear_threshold`
-(`cleanprose_clear` is always `False` since Override 4 was removed). The hard-sweep and inverted-scan routes are folded
+(`cleanprose_clear` is always `False`: the rule it named no longer exists). The hard-sweep and inverted-scan routes are folded
 into `trash_threshold`, so the CSV is coarser than the categoriser. Four more name the document-level pass that later
 changed the line: `pp_dedup`, `pp_surrounded_trash`, `pp_inverted_run`, `pp_page_context`. A decision flag and a `pp_`
 flag can both be `True`: that is the trail from the original decision to the override.
 
 ## Step 4.2: page statistics
 
-`final_page_stats.csv` (`OUTPUT_STATS`) and `DOC_LINE_STAT/stats_<doc>.csv` (`OUTPUT_DOC_DIR`), one row per page.
+`samples_page_stats.csv` (`OUTPUT_STATS`) and `DOC_LINE_STATS/stats_<doc>.csv` (`OUTPUT_DOC_DIR`), one row per page.
 
 For each page, the aggregation computes features outputted in the following strict schema order:
 
@@ -86,7 +88,7 @@ For each page, the aggregation computes features outputted in the following stri
 * `num_lines` — the total number of valid lines processed on the page
 * `Clear`, `Noisy`, `Trash`, `Non-text`, `Empty` — integer count of lines in each category
 
-**Category ratios** (decimal fractions in [0, 1], rounded to 4 places; [#8](https://github.com/ufal/atrium-ocr-postprocess/issues/8)):
+**Category ratios** (decimal fractions in [0, 1], rounded to 4 places):
 
 * `clear_ratio`, `noisy_ratio`, `trash_ratio`, `non-text_ratio` — the category's share of the page's lines that
   are not `Empty`: `Clear / (num_lines − Empty)`, and so on. On a page with text lines the four sum to 1 (up to
@@ -132,25 +134,25 @@ out of the denominator, this column counts them.
 ## The service's line fields
 
 `POST /process` and `POST /score_record` answer each line with the fields of `AltoLine` in
-[`service/openapi.json`](../../service/openapi.json). They come from the same scorer as the CSV columns of
-[Step 4.1](#step-41-per-line-categories), and match them as follows:
+[`service/openapi.json`](../../service/openapi.json), in the record's field names. They come from the same scorer as
+the CSV columns of [Step 4.1](#step-41-per-line-categories), and match them as follows:
 
-| CSV column (Step 4.1)                                                                                                                                                                                                                        | JSON field (`cleaned_lines[]`)                                                       |
-|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------|
-| `file`                                                                                                                                                                                                                                       | none: the response's `filename`, or `doc_id` from `/score_record`                    |
-| `page_num`                                                                                                                                                                                                                                   | `page`, on a document, a paged text or JSON upload, and `/score_record`              |
-| `line_num`                                                                                                                                                                                                                                   | `line_num`; `/score_record` adds `line`, the record's own line key                   |
-| `text`                                                                                                                                                                                                                                       | `text`                                                                               |
-| `categ`                                                                                                                                                                                                                                      | `category`                                                                           |
-| `quality_score`, `garbage_density`, `ldl_fuses`, `gibberish`, `word_weird`, `lang`, `lang_score`, `original_lang`, `orig_lang_score`                                                                                                         | the same names (the scores rounded to 4 places)                                      |
-| `perplex`                                                                                                                                                                                                                                    | `perplexity` (rounded to 2 places)                                                   |
-| `upper`                                                                                                                                                                                                                                      | `upper_count`                                                                        |
-| `repeated`                                                                                                                                                                                                                                   | `repeated_count`                                                                     |
-| none                                                                                                                                                                                                                                         | `sym_count`: tokens with characters outside the allowed set, reported and not scored |
-| `original_text`, `split_ws`, `split_we`, `word_count`, `char_count`, `fused_words`, `weird_wx`, `vowel_ratio`, `rot_ratio`, `valid_word_ratio`, `structured`, `damaged`, `perplex_raw`, `perplex_blend`, `caps_header`, the diagnostic flags | none: CSV only                                                                       |
+| CSV column (Step 4.1)                                                                                                                                                                                                                        | JSON field (`cleaned_lines[]`)                                                                                                       |
+|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------|
+| `file`                                                                                                                                                                                                                                       | none: the response's `filename`, or `doc_id` from `/score_record`                                                                    |
+| `page_num`                                                                                                                                                                                                                                   | `page_index` (the position) and `page` (the label), on a document, a paged text or JSON upload; `/score_record`: the record's `page` |
+| `line_num`                                                                                                                                                                                                                                   | `line`; `/score_record`: the record's own line key                                                                                   |
+| `text`                                                                                                                                                                                                                                       | `text`                                                                                                                               |
+| `categ`                                                                                                                                                                                                                                      | `categ`                                                                                                                              |
+| `quality_score`, `garbage_density`, `ldl_fuses`, `gibberish`, `word_weird`, `lang`, `lang_score`, `original_lang`, `orig_lang_score`                                                                                                         | the same names (the scores rounded to 4 places)                                                                                      |
+| `perplex`                                                                                                                                                                                                                                    | `perplexity` (rounded to 2 places)                                                                                                   |
+| `upper`                                                                                                                                                                                                                                      | `upper_count`                                                                                                                        |
+| `repeated`                                                                                                                                                                                                                                   | `repeated_count`                                                                                                                     |
+| none                                                                                                                                                                                                                                         | `sym_count`: tokens with characters outside the allowed set, reported and not scored                                                 |
+| `original_text`, `split_ws`, `split_we`, `word_count`, `char_count`, `fused_words`, `weird_wx`, `vowel_ratio`, `rot_ratio`, `valid_word_ratio`, `structured`, `damaged`, `perplex_raw`, `perplex_blend`, `caps_header`, the diagnostic flags | none: CSV only                                                                                                                       |
 
-The service runs no document passes, so some of its categories differ from the CSV's on the same file; its
-`line_num` is the CSV's: [The command line and the service](../usage.md#the-command-line-and-the-service).
+`/process` runs no document passes, so some of its categories differ from the CSV's on the same file; its `line`
+is the CSV's `line_num`: [The command line and the service](../usage.md#the-command-line-and-the-service).
 
 ## Step 1: the text-lines reports
 

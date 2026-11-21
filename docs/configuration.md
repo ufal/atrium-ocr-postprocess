@@ -1,7 +1,7 @@
 # Configuration
 
 How ocr-postprocess is configured: the pipeline's config file, the categoriser's constants and what ships
-for the S2 pilot. The service's own environment (port, limits, models) is in
+for the AMČR pilot. The service's own environment (port, limits, models) is in
 [service/README.md](../service/README.md#configuration-environment); the complete list of variables is
 [`.env.example`](../.env.example).
 
@@ -20,24 +20,24 @@ for the S2 pilot. The service's own environment (port, limits, models) is in
 
 The sections: `[PIPELINE]` (the orchestrator: `METHOD`, input directories), `[EXTRACT]` (Step 3), `[CLASSIFY]` and
 `[TEXT_UTILS]` (Step 4.1, the categoriser), `[AGGREGATE]` (Step 4.2), `[TEXT_INGEST]` (the text-lines readers' caps,
-listed with their defaults in [service/README.md § Limits](../service/README.md#limits)) and `[DOCUMENT]` (the
+listed with their defaults in [the runbook's limits](../service/README.md#limits)) and `[DOCUMENT]` (the
 document record: `JSON_DIR`, `SOURCE_ORIGIN`, `SOURCE_ORIGIN_BY_KIND`).
 
 ## What ships for the pilot
 
-The category semantics are **frozen for the S2 pilot** (decision of 2026-09-30 on
-[#2](https://github.com/ufal/atrium-ocr-postprocess/issues/2)); a change afterwards is measured on a corpus diff with
+The category semantics are **frozen for the AMČR pilot**
+([the decision record](decisions/2026-10-categorization.md)); a change afterwards is measured on a corpus diff with
 `tools/corpus_change.py`. What ships (the measurements behind each are on
 [the evaluation page](evaluation/categorization.md)):
 
 | Setting                                                   | Shipped                                | Meaning                                                                                                                            |
 |-----------------------------------------------------------|----------------------------------------|------------------------------------------------------------------------------------------------------------------------------------|
 | `DOMAIN_NOTATION_CATEG` (`[TEXT_UTILS]`)                  | `Clear`                                | every recognised web or e-mail address gets this category (empty = off); a mis-scanned address gets it too                         |
-| `[allowed]` in `setup/word_lists.txt`                     | reviewed entries                       | a listed word scores 0 weirdness, is out of the valid-word ratio and is **never evidence of damage** (Q5a/Q5b)                     |
+| `[allowed]` in `setup/word_lists.txt`                     | reviewed entries                       | a listed word scores 0 weirdness, is out of the valid-word ratio and is **never evidence of damage**                               |
 | `SHORT_GARBAGE_WITNESS_ENABLE`                            | `false`                                | the shape witness that would narrow the short-garbage route is wired and held                                                      |
-| `SHORT_GARBAGE_WITNESS_FLOOR`                             | `false`                                | its companion floor, rejected on 2026-10-05                                                                                        |
+| `SHORT_GARBAGE_WITNESS_FLOOR`                             | `false`                                | its companion floor, measured and rejected                                                                                         |
 | `LANG_REMAP_ALWAYS`                                       | `true`                                 | the stored score of a remapped language is the cap (0.75 / 0.50), whatever FastText said                                           |
-| `LOWPPL_CLEAR_MAX`                                        | `35.0`                                 | perplexity under which three or more words are `Clear` (lowered from 50 on 2026-10-11, the one change that broke no labelled line) |
+| `LOWPPL_CLEAR_MAX`                                        | `35.0`                                 | perplexity under which three or more words are `Clear`                                                                             |
 | `SHORT_NOISY_QS_PENALTY`                                  | `0.20`                                 | score penalty of a very short string with OCR oddities (0 switches it off)                                                         |
 | `QUALITY_VOCABULARY_ENABLE`                               | `false`                                | a real vocabulary in place of the shape-only word test; measured and rejected (212 fixes against 540 breaks)                       |
 | `PAGE_PPL_BLEND_ENABLE`                                   | `false`                                | page-relative perplexity for one- and two-word lines; needs calibrating on a real run first                                        |
@@ -79,7 +79,7 @@ QS_LENGTH_MAX = 100.0
 # Band edges of the stored score: Trash < 0.55 <= Noisy < 0.80 <= Clear.
 CATEG_TRASH_SCORE_MAX = 0.55
 CATEG_NOISY_SCORE_MAX = 0.80
-# Gate 8: perplexity under which three or more words are Clear (2026-10-11: 50 -> 35).
+# Gate 8: perplexity under which three or more words are Clear.
 LOWPPL_CLEAR_MAX = 35.0
 # Gate 1: FastText confidence under which, with a high perplexity, a line is Trash.
 HARD_SWEEP_LANG_MAX = 0.45
@@ -111,7 +111,7 @@ Parameters that are model-independent (ratios and score fractions, stable across
 `WEIRD_RATIO_INVERTED_MIN` is still loaded (and swept) but no rule reads it; the `CLEAN_PROSE_*` keys no longer
 exist ([removed mechanisms](decisions/2026-10-categorization.md#removed-and-renamed-mechanisms)).
 
-Language- and collection-specific data lives in the config rather than in Python (#7 Tier 1):
+Language- and collection-specific data lives in the config rather than in Python:
 
 | Parameter                                | Section        | Default                                                               | What it controls                                                                                                                                                                                                                    |
 |------------------------------------------|----------------|-----------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
@@ -119,7 +119,7 @@ Language- and collection-specific data lives in the config rather than in Python
 | `ROT_WHITELIST`                          | `[TEXT_UTILS]` | `po,pod,do,od,on,ony,by,bez,ne,nebo,ven,den,zde,se,ve,mez,pouze,bude` | Czech function words recognisable upright; a line containing one counts as *upright Czech*. Their mirror/rotation ghost images (`ROT_GHOSTLIST`) are **derived at import time**: changing this key requires a re-import.            |
 | `GHOST_WORD_COLLISIONS`                  | `[TEXT_UTILS]` | `no,bo`                                                               | Ghost images that collide with real words and must never count as ghost hits.                                                                                                                                                       |
 | `TRAILING_FILL_CHARS`                    | `[TEXT_UTILS]` | `\x20._:-<–—`                                                         | Trailing filler characters stripped before headline/short-line checks. Unicode-escape decoded; the leading space is written `\x20` because configparser strips leading whitespace from values.                                      |
-| `NONTEXT_MARKERS`                        | `[TEXT_UTILS]` | `IVerc`                                                               | Collection-specific literal markers (the ARUP/B stamp) forcing `Non-text` in `pre_filter_line()`.                                                                                                                                   |
+| `NONTEXT_MARKERS`                        | `[TEXT_UTILS]` | `IVerc`                                                               | Collection-specific literal markers (the ARÚP and ARÚB stamp) forcing `Non-text` in `pre_filter_line()`.                                                                                                                            |
 | `DEU_DIACS`, `DIACRITIC_INFER_THRESHOLD` | `[TEXT_UTILS]` | `äöüßÄÖÜ`, `0.07`                                                     | Reserved: read only by `infer_lang_from_diacritics()`, which no scoring path calls.                                                                                                                                                 |
 | `FASTTEXT_MODEL`                         | `[CLASSIFY]`   | `lid.176.bin`                                                         | Path to the FastText language-ID weights loaded by each CPU worker.                                                                                                                                                                 |
 | `TRUST_TIER_TRUSTED`                     | `[CLASSIFY]`   | 0.85                                                                  | Trust multiplier on the FastText confidence for a *known but unexpected* language. The product (`trust_lang_score`) feeds **both** the quality score and the structural gates, never the stored `lang_score`.                       |

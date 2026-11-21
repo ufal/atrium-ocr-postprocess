@@ -1,30 +1,36 @@
 # ATRIUM OCR post-processing API service
 
-The HTTP service of ocr-postprocess: upload an OCR page (ALTO XML), a text file or another text-bearing
-document, and get back its ordered lines, each with a language, a quality score and one of the five categories
-(`Clear`, `Noisy`, `Trash`, `Non-text`, `Empty`). `POST /score_record` scores the lines of an ATRIUM record another
-stage wrote. The service version is read from `setup/para_config.txt` `[tool]`.
+The HTTP service of ocr-postprocess. In the AMČR pipeline it builds the ATRIUM document record from docproc, the
+layout format of the ATR (AIS CR's text-recognition service) and of digital-convert, and scores every line
+(`POST /build_record`). It also scores the lines of an existing record again (`POST /score_record`) and, for research
+inputs, the lines of an uploaded OCR page, text file or other text-bearing document (`POST /process`). Every line
+gets a language, a quality score and one of five categories (`Clear`, `Noisy`, `Trash`, `Non-text`, `Empty`). The
+service version is read from `setup/para_config.txt` `[tool]`.
 
 ## Start
 
 **At a glance:**
 
-| Image                                               | CPU / GPU                                                                     | Memory                                                                                                                                                                        | Volumes                                             | Calls out to                                                          | Ready after                                                     |
-|-----------------------------------------------------|-------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------|-----------------------------------------------------------------------|-----------------------------------------------------------------|
-| `ghcr.io/ufal/atrium-ocr-postprocess-api:<version>` | a CUDA GPU when present, otherwise the CPU (slower); the image is a CPU build | GPU: about 9.5 GB at the default `PPL_BATCH_LINES` of 32 ([hub deployment guide](https://github.com/ufal/atrium-project/blob/main/docs/k8s_deployment.md)); RAM: not measured | `/cache/huggingface`, for the two downloaded models | the Hugging Face Hub at first start (two models); no host per request | not measured; the image's health check has a 180 s start period |
+| Image                                               | CPU / GPU                                                                                                                | Memory                                                                                                                                                                                                                                         | Volumes                                             | Calls out to                                                          | Ready after                                                                                           |
+|-----------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------|-----------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------|
+| `ghcr.io/ufal/atrium-ocr-postprocess-api:<version>` | the CPU: the image carries CPU-only torch; an image built with CUDA torch (`TORCH_INDEX_URL`) uses a GPU when it has one | RAM: about 5.1 GB resident with the three models loaded, on a CPU; GPU, on a CUDA build: about 9.5 GB at the default `PPL_BATCH_LINES` of 32 ([hub deployment guide](https://github.com/ufal/atrium-project/blob/main/docs/k8s_deployment.md)) | `/cache/huggingface`, for the two downloaded models | the Hugging Face Hub at first start (two models); no host per request | 35 to 155 s on a 4-core CPU with the models cached; the image's health check has a 180 s start period |
 
-**The published image** (the release without its leading `v`; a named volume keeps the models it downloads on
-first start, see [Models and caches](#models-and-caches)):
+**The published image** (2.0.0-beta or later, the release without its leading `v`; a named volume keeps the
+models it downloads on first start, see [Models and caches](#models-and-caches)). From a checkout, which has the
+sample docproc, start it in the background, wait until it is ready, build a record, and stop it:
 
 ```bash
-docker run --rm -p 8000:8000 -v ocr-hf-cache:/cache/huggingface ghcr.io/ufal/atrium-ocr-postprocess-api:<version>
-curl --fail-with-body -sS http://localhost:8000/ready                       # 200 once the models are loaded
-curl --fail-with-body -sS -X POST http://localhost:8000/process \
-     -F "file=@data_samples/PAGE_ALTO/CTX000000001/CTX000000001-1.alto.xml" -F task_type=alto -o out.json
+docker run -d --name atrium-ocr-postprocess -p 8000:8000 -v ocr-hf-cache:/cache/huggingface \
+     ghcr.io/ufal/atrium-ocr-postprocess-api:<version>
+until curl -fsS http://localhost:8000/ready >/dev/null; do sleep 5; done
+curl --fail-with-body -sS -X POST http://localhost:8000/build_record --create-dirs -o out/record.json \
+     -F "docproc=@tests/fixtures/docproc/scan.atr.docproc.json" -F doc_id=CTX000000001
+docker rm -f atrium-ocr-postprocess
 ```
 
-Expected: HTTP 200 and `out.json` with `"type": "alto_xml"` and `cleaned_lines`, each line with `line`, `text`,
-`lang`, `quality_score` and `categ`.
+Expected: HTTP 200 and `out/record.json` with `"type": "record"`, the record in `document_json` (three pages, six
+lines, each line with `categ`, `quality_score` and `lang`), `"limits_applied": []` and the run's `paradata`. Releases
+before 2.0.0-beta have no `/build_record` and are described by the README at their tag.
 
 **With Compose**, from a checkout: `docker compose --profile api up -d`. Compose sets its own `ALLOWED_ORIGINS`
 default, `http://localhost:8080,http://localhost:5500`; the code default is `*` (every origin).
@@ -108,12 +114,14 @@ Every request and response field, and the error body, is typed in [`openapi.json
     `422`.
   * An unreadable document (encrypted, corrupt, no text), a JSON upload that does not parse, or an ALTO upload
     that is not ALTO (broken XML, no `<Page>`; `cause: "malformed"`) is a `422`.
+* `page` (optional): the record's page key a one-page upload is written under. A page the record does not have is
+  refused (`422`), as is `page` with a multi-page ALTO, text or JSON upload, or a document upload.
 
   See [Errors](#errors).
 * `document_json` (optional): a baseline ATRIUM document record, or an AMČR seed (`doc_id`, `source`). The
   response then carries `document_json`: the record with this tool's `pages` and `lines` fields merged in, its
   `quality_summary` recomputed from them (numbers only), and `source` given what it lacks. As the record builder
-  it records `source.origin` (`digital`, `atr` or `legacy`; record schema 2.0). Every value the record already has
+  it records `source.origin` (`digital`, `atr` or `legacy`). Every value the record already has
   is kept (first writer wins): a seed's `sha512` names the archive's original, and the upload's SHA-512 (an ALTO is
   not the original) is not written over it. A record that
   cannot be opened (not JSON, not an object, a newer `schema_version` major) is a `422` `invalid_record`; an empty
@@ -160,15 +168,15 @@ A `document` result also carries `format` (the detected kind), `origin` (the tru
 `DOC_LINE_CATEG`. A text upload with form feeds and a JSON upload of several pages come back the same way (their
 `text_layer` and `needs_atr_reason` are null), and each page goes into the record under its own key. One page comes
 back without `page`. The reader's page verdict is in the response only; the record carries none (record schema
-2.0). The service's JSON uses the record's field names (`line`, `categ`, `page_index`, `page`; atrium-project#84);
-the batch CSVs keep theirs.
+2.0). The service's JSON uses the record's field names (`line`, `categ`, `page_index`, `page`); the batch CSVs keep
+theirs.
 
 Lines are read and shaped by the same `text_formats.py` code as the batch text-lines method: blank lines are dropped
 unless `[TEXT_INGEST] KEEP_BLANK_LINES` is set, and lines over 1000 characters are wrapped. With a record
 (`document_json`), lines accrete per page, keyed by `page_index`, each with its `text_source` (`text-layer`, `atr`
-or `legacy`, from the origin) and, when it has a box, `bbox_precision: measured`. Since record schema 2.0 this
-service writes the lines of every record, a born-digital one too (atrium-project#84): the OCR hand-off into a
-born-digital record is gone, and a mixed document is built by `/build_record` from its two docprocs (H6).
+or `legacy`, from the origin) and, when it has a box, `bbox_precision: measured`. This service writes the lines of
+every record it is sent, born-digital ones included. A mixed document is built by `/build_record` from its two
+docprocs.
 
 Each item in `cleaned_lines` carries the fields used by the classification pipeline. Every field is typed in
 [`openapi.json`](openapi.json) (`ProcessResponse`, `AltoLine`, `AltoPage`); the table below is the short form.
@@ -181,7 +189,7 @@ Each item in `cleaned_lines` carries the fields used by the classification pipel
     {
       "line": 1,
       "text": "The quick brown fox jumps over the lazy dog.",
-      "lang": "eng",
+      "lang": "eng_Latn",
       "lang_score": 0.9821,
       "perplexity": 12.5,
       "sym_count": 0,
@@ -193,7 +201,7 @@ Each item in `cleaned_lines` carries the fields used by the classification pipel
     {
       "line": 2,
       "text": "TYRSOVA5===aras T>r«l",
-      "lang": "ces",
+      "lang": "ces_Latn",
       "lang_score": 0.4201,
       "perplexity": 4800.0,
       "sym_count": 2,
@@ -224,7 +232,7 @@ Each item in `cleaned_lines` carries the fields used by the classification pipel
 |-----------------|--------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `line`          | int    | 1-based line position after layout reordering (the record's `lines[].line`).                                                                                                                                               |
 | `text`          | string | Cleaned line text with split-word merges applied.                                                                                                                                                                          |
-| `lang`          | string | ISO language code predicted by FastText (e.g., `eng`, `ces`).                                                                                                                                                              |
+| `lang`          | string | FastText's label after the expected-language remap: an ISO 639-3 code with its script (e.g., `eng_Latn`, `ces_Latn`); `N/A` for a pre-filtered line.                                                                       |
 | `lang_score`    | float  | FastText confidence score `[0, 1]`.                                                                                                                                                                                        |
 | `perplexity`    | float  | Qwen2.5-0.5B perplexity. `0` means the line was pre-filtered and inference was skipped.                                                                                                                                    |
 | `sym_count`     | int    | Tokens containing characters outside the allowed internal set (`detect_strange_symbols`).                                                                                                                                  |
@@ -235,26 +243,26 @@ Each item in `cleaned_lines` carries the fields used by the classification pipel
 
 ### Building the record (`POST /build_record`)
 
-Since ARÚP's output contract of 12 November 2026 ([atrium-project#84](https://github.com/ufal/atrium-project/issues/84)
-§1, D20) this service is the record builder: it builds every record from the stored docproc (`atr/docproc-json`),
-whichever producer wrote it, the ATR for a scanned document or atrium-digital-convert for a born-digital one, and
-is the only scorer of its lines.
+This service is the record builder: it builds every record from the stored docproc (`atr/docproc-json`), whichever
+producer wrote it, the ATR for a scanned document or digital-convert for a born-digital one, and it is the only
+scorer of its lines. The examples send the sample docprocs of this repository:
 
 ```bash
 curl -X POST "http://localhost:8000/build_record" \
-  -F "docproc=@C-202000543A-DT-27.docproc.json" \
-  -F "document_json=@C-202000543A-DT-27.seed.json"     # or: -F "doc_id=C-202000543A-DT-27"
+  -F "docproc=@tests/fixtures/docproc/scan.atr.docproc.json" \
+  -F "doc_id=CTX000000001"                                   # or the AMČR seed: -F "document_json=@seed.json"
 # a mixed document: the ATR's docproc, with digital-convert's beside it
 curl -X POST "http://localhost:8000/build_record" \
-  -F "docproc=@R-1.atr.docproc.json" -F "text_layer_docproc=@R-1.digital-convert.docproc.json" \
-  -F "document_json=@R-1.seed.json"
+  -F "docproc=@tests/fixtures/docproc/mixed.atr.docproc.json" \
+  -F "text_layer_docproc=@tests/fixtures/docproc/mixed.digital-convert.docproc.json" \
+  -F "doc_id=CTX000000003"
 ```
 
-* **In:** `docproc` (required): the stored docproc, the ATR's schema as delivered (#84 comment 1) or
-  atrium-digital-convert's (the same schema with asks 3 and 13 applied); `text_layer_docproc` (a mixed document
-  only): digital-convert's docproc, whose `needsAtr` pages the ATR read; `document_json` (optional): the AMČR seed,
-  or a record page-classification already wrote (its page rows must be pages of the original); `doc_id` when no
-  seed is sent; `score` (default `true`).
+* **In:** `docproc` (required): the stored docproc, in the ATR's schema or in digital-convert's (the same schema,
+  with block `lines[]` and the page verdict); `text_layer_docproc` (a mixed document only): digital-convert's
+  docproc, whose `needsAtr` pages the ATR read; `document_json` (optional): the AMČR seed, or a record
+  page-classification already wrote (its page rows must be pages of the original); `doc_id` when no seed is sent;
+  `score` (default `true`; `false` builds the record unscored, to inspect what docproc gives).
 * **Read** ([`docproc.py`](../docproc.py)): pages by `pageNumber`, blocks in `readingOrder`. A block's own
   `lines[]` are its lines, each with its box (`bbox_precision: measured`); otherwise its `content` split at line
   breaks, each line with the block's box (`derived`), and a block without a line break is one line. A table gives
@@ -263,49 +271,49 @@ curl -X POST "http://localhost:8000/build_record" \
   page of the original: `page_index`, `page`, `content_status`, and `canvas` when docproc gives the page a size),
   `lines[]` (from 1 per page in reading order, each with its docproc `block`, `text_source` and `bbox_precision`)
   and `content.text`; the canvas carries the page's `user_unit` and an image's `pixel_ratio` when docproc gives
-  them (`userUnit`, `pixelRatio`; D28); with `score`, every line's `categ`, `quality_score` and `lang`, each page's `quality_score`
-  and `quality_band`, and `quality_summary`, as `/score_record` writes them. A page routed `empty` has
-  `content_status: empty` and no score (D18 rule 7).
-* **A mixed document** ([`docproc_merge.py`](../docproc_merge.py); H6, D21): a page digital-convert routed to the
+  them (`userUnit`, `pixelRatio`); with `score`, every line's `categ`, `quality_score` and `lang`, each page's
+  `quality_score` and `quality_band`, and `quality_summary`, as `/score_record` writes them. A page routed `empty` has
+  `content_status: empty` and no score.
+* **A mixed document** ([`docproc_merge.py`](../docproc_merge.py)): a page digital-convert routed to the
   ATR takes the ATR's lines (`text_source: atr`). Any other page keeps digital-convert's exact lines
   (`text_source: text-layer`), each linked (`block`) to the ATR block holding the largest share of its box, else the
   nearest; a nested block (a figure's `.t0` OCR child) wins over its parent. An ATR block no kept line went to adds
-  its own lines. Lines follow the ATR's reading order (H8); `source.origin` is `digital` while a text-layer line is
+  its own lines. Lines follow the ATR's reading order; `source.origin` is `digital` while a text-layer line is
   kept, else `atr`.
-* **Refused (`422`, `cause` the reader's or the merge's code), nothing returned (D13):** a docproc that cannot be read
+* **Refused (`422`, `cause` the reader's or the merge's code), nothing returned:** a docproc that cannot be read
   (`invalid_docproc`, an unknown `coordinateUnit` included), a page neither in `pages[]` nor routed `empty`
-  (`unread_pages`, H15), a block whose text could not be read (`all_engines_failed`), a page flagged `needsAtr` in a
+  (`unread_pages`), a block whose text could not be read (`all_engines_failed`), a page flagged `needsAtr` in a
   docproc sent alone (`needs_atr`), baseline page rows the original does not have (`baseline_pages`), and for a mixed
   document: no `needsAtr` page in `text_layer_docproc` (`not_mixed`), the two swapped (`docproc_roles`), different
   pages (`page_mismatch`), forced pages the ATR echoes other than digital-convert's (`forced_mismatch`), a page whose
-  unit or size differs beyond 2 pt or 1 % (`coordinate_mismatch`, D28), a text-layer page the ATR has no block on
-  (`atr_page_missing`, H9).
+  unit or size differs beyond 2 pt or 1 % (`coordinate_mismatch`), a text-layer page the ATR has no block on
+  (`atr_page_missing`).
 * **Out** (`BuildRecordResponse`): `document_json`, `limits_applied` and `paradata`: `object` the docproc (and
-  digital-convert's, `stored: false`, D23) and the seed, `result` the record with the blocks and fields written,
-  each by SHA-512; `parameters.atr_pages` for a mixed document.
+  digital-convert's, `stored: false`) and the seed, `result` the record with the blocks and fields written, each by
+  SHA-512; `parameters.atr_pages` for a mixed document.
 
-**On the command line:** `python3 build_record.py DOC.docproc.json --seed SEED.json --out-dir records/`
-(`--text-layer-docproc` for a mixed document, `--doc-id` without a seed, `--no-score`, `--paradata-dir`) runs the same code
-([build_record.py](../build_record.py)). A failed build exits 1, writes no record, and its paradata say
-`action_status: failed`.
+**On the command line:** `python3 build_record.py DOC.docproc.json --seed SEED.json --out-dir out/`
+(`--text-layer-docproc` for a mixed document, `--doc-id` without a seed, `--no-score`, `--paradata-dir`) runs the same
+code ([build_record.py](../build_record.py), [usage](../docs/usage.md#build-the-record-from-docproc-build_recordpy)).
+A failed build exits 1, writes no record, and its paradata say `action_status: failed`; an input file that cannot be
+opened is exit 2.
 
 ### Scoring a record (`POST /score_record`)
 
 `/score_record` scores the lines of an existing record with the common quality model, in place: one model, one set
-of constants and one band scheme for every text source (D18 rules 1–3). `/build_record` scores as it builds; this
-endpoint re-scores a record, and is what the batch stages and a record built elsewhere use.
+of constants and one band scheme for every text source. `/build_record` scores as it builds; this endpoint scores a
+record again, for example one built with `score=false`, and runs the document passes over its lines.
 
 ```bash
 curl -X POST "http://localhost:8000/score_record" \
-  -F "document_json=@report.document.json"          # optional: -F "pages=i,ii,3"
+  -F "document_json=@out/CTX000000001.document.json"          # optional: -F "pages=1,2"
 ```
 
 * **In:** `document_json` (required): any record; `pages` (optional): the record's own page keys, comma-separated
   (a key the record lacks is refused, `422`).
 * **Scored:** each `lines[]` row with text, **exactly as it is**: not re-read, split or reordered, so every answer
   maps back onto its row, in batches of `PPL_BATCH_LINES`, by the same scorer as every other path. Every line with
-  text is scored, whatever its text source; until #84 a line carrying atrium-digital-convert's decode verdict was
-  left out, and that verdict is now a docproc flag, not a category. A line without text is not scored.
+  text is scored, whatever its text source; a line without text is not.
 * **Written into the record** (`document_hook.write_scores()`): `lines[].categ` / `quality_score` / `lang` and
   `pages[].quality_score` / `quality_band`, on rows the record already has: never `text`, never `bbox`, never a new
   row, never `source`, and no page score on an empty page. The record's `quality_summary` is recomputed from the
@@ -318,7 +326,8 @@ curl -X POST "http://localhost:8000/score_record" \
   `ATRIUM_TEXT_INGEST_MAX_LINES_PER_PAGE` for the lines of one page (`413 limit_exceeded`). A record that cannot be
   opened, or has no `doc_id`, is `422 invalid_record`.
 
-atrium-digital-convert's `POST /describe` (parked, H11) still calls this endpoint when `OCR_POSTPROCESS_URL` is set.
+digital-convert's `POST /describe`, parked during the AMČR pilot, calls this endpoint when its `OCR_POSTPROCESS_URL`
+is set.
 
 **On the command line:** `python3 score_record.py <record or folder> [--pages i,ii] [--out-dir DIR] [--scores]`
 runs the same code ([record_scoring.py](../record_scoring.py)) over `*.document.json` files, in place unless
@@ -328,7 +337,7 @@ is byte for byte the one its paradata name by SHA-512.
 
 ## Errors
 
-Every error has one JSON body (hub `docs/agent_skill_strategy.md` §4.4):
+Every error has one JSON body, the same in every ATRIUM service (`ErrorBody` in [`openapi.json`](openapi.json)):
 `{"status": <int>, "reason": <code or null>, "detail": "<text>"}`. `detail` starts with the reader's own code where
 there is one (`too_large: …`, `corrupt: …`); a `limit_exceeded` body adds `limit` (`key`, `env`, `value`,
 `observed`, `unit`), and a request-validation 422 adds `errors`. A reader refusal also carries the reader's code as
@@ -361,13 +370,13 @@ variable that sets it in `limits_meta`. The `[TEXT_INGEST]` caps are also keys o
 file over the default below. A malformed value stops the service at startup, naming it. Over a limit the
 service **refuses** (`reason: "limit_exceeded"`) or **processes the input in full** and says how the limit
 shaped the result, in the response's `limits_applied` (and the paradata). A limit that would trim, skip or stop
-content refuses: nothing partial is returned (D13, atrium-project#84). `tests/test_limits_contract.py`
-checks this table against `tool_limits.py` and `.env.example`.
+content refuses: nothing partial is returned. `tests/test_limits_contract.py` checks this table against
+`tool_limits.py` and `.env.example`.
 
 | Key (`/info`)        | Variable                                | Default | Unit    | Over the limit                                                                                              |
 |----------------------|-----------------------------------------|---------|---------|-------------------------------------------------------------------------------------------------------------|
 | `max_upload_mb`      | `MAX_UPLOAD_MB`                         | 25      | MB      | 413 `limit_exceeded` — per part: the file and the document record                                           |
-| `max_file_mb`        | `ATRIUM_TEXT_INGEST_MAX_FILE_MB`        | 256     | MB      | 413 `limit_exceeded` (`too_large`); a ZIP member over it: 422 `limit_exceeded` (D13)                        |
+| `max_file_mb`        | `ATRIUM_TEXT_INGEST_MAX_FILE_MB`        | 256     | MB      | 413 `limit_exceeded` (`too_large`); a ZIP member over it: 422 `limit_exceeded`                              |
 | `zip_max_members`    | `ATRIUM_TEXT_INGEST_ZIP_MAX_MEMBERS`    | 10000   | members | 413 `limit_exceeded` (`zip_limits_exceeded`)                                                                |
 | `zip_max_total_mb`   | `ATRIUM_TEXT_INGEST_ZIP_MAX_TOTAL_MB`   | 1024    | MB      | 413 `limit_exceeded`                                                                                        |
 | `zip_max_member_mb`  | `ATRIUM_TEXT_INGEST_ZIP_MAX_MEMBER_MB`  | 256     | MB      | 413 `limit_exceeded`                                                                                        |
@@ -376,31 +385,32 @@ checks this table against `tool_limits.py` and `.env.example`.
 | `max_lines_per_page` | `ATRIUM_TEXT_INGEST_MAX_LINES_PER_PAGE` | 100000  | lines   | a paged format: 413 `limit_exceeded`; any other: split onto continuation pages, read in full — `split` note |
 | `reader_timeout_s`   | `ATRIUM_TEXT_INGEST_READER_TIMEOUT_S`   | 300     | s       | 422 `limit_exceeded` (`timeout`, PDF reader) — a per-input budget, a retry will not help                    |
 | `max_line_chars`     | `ATRIUM_TEXT_INGEST_MAX_LINE_CHARS`     | 1000    | chars   | wrapped at a word boundary, classified in full as several lines — `split` note                              |
-| `odf_repeat_cap`     | `ATRIUM_TEXT_INGEST_ODF_REPEAT_CAP`     | 100     | repeats | repeated ODS/ODT cells or rows past it would not be read: 422 `limit_exceeded` (D13)                        |
+| `odf_repeat_cap`     | `ATRIUM_TEXT_INGEST_ODF_REPEAT_CAP`     | 100     | repeats | repeated ODS/ODT cells or rows past it would not be read: 422 `limit_exceeded`                              |
 | `lr_chunk_size`      | `LR_CHUNK_SIZE`                         | 350     | lines   | an ALTO page is ordered window by window — `split` note                                                     |
-| `lr_min_chunk_size`  | `LR_MIN_CHUNK_SIZE`                     | 50      | lines   | out of memory below it: 422 `limit_exceeded` (D13), the page is not left unordered                          |
-| `ppl_batch_lines`    | `PPL_BATCH_LINES`                       | 32      | lines   | lines per perplexity pass; out of memory splits it; a line that fails alone: 422 `limit_exceeded` (D13)     |
-| `ppl_max_tokens`     | — (derived from `GPT2_MODEL_NAME`)      | —       | tokens  | a line longer than N tokens: 422 `limit_exceeded` (D13; `null` until the model loads)                       |
+| `lr_min_chunk_size`  | `LR_MIN_CHUNK_SIZE`                     | 50      | lines   | out of memory below it: 422 `limit_exceeded`, the page is not left unordered                                |
+| `ppl_batch_lines`    | `PPL_BATCH_LINES`                       | 32      | lines   | lines per perplexity pass; out of memory splits it; a line that fails alone: 422 `limit_exceeded`           |
+| `ppl_max_tokens`     | — (derived from `GPT2_MODEL_NAME`)      | —       | tokens  | a line longer than N tokens: 422 `limit_exceeded` (`null` until the model loads)                            |
 
 Platform limits (not settings): libxml2's default limits (parsed without `huge_tree`); Starlette's multipart
 defaults.
 
 ## Partial results
 
-A 200 can be a result a limit or a reader shaped. It says so in three places:
+`/build_record` returns nothing partial: a docproc it cannot read completely fails the call. A 200 from any endpoint
+can still be a result a limit shaped, and it says so:
 
-- **`limits_applied`** (also in the paradata): `split` (a long line or page read in pieces, classified in full) and
-  `sampled` (a PDF's text layer judged on its first objects). [Limits](#limits) says which limit produces which
-  note. Since atrium-project#84 (D13) a limit that would trim, skip or stop content fails the call instead
-  (`422 limit_exceeded`, nothing returned): repeated spreadsheet cells over the cap, a line's tokens past the
-  perplexity model's length, a ZIP member over the size limit, a page layout ordering could not order for lack of
-  memory, a line that failed perplexity even alone.
-- **A document's `pages`**: per page, a PDF's `text_layer` and its `needs_atr_reason` when the page's text should
-  come from the ATR instead.
+- **`limits_applied`** (also in the paradata): `split`, a long line or page read in pieces and classified in full.
+  [Limits](#limits) says which limit produces it. A limit that would trim, skip or stop content fails the call
+  instead (`422 limit_exceeded`, nothing returned): repeated spreadsheet cells over the cap, a line's tokens past
+  the perplexity model's length, a ZIP member over the size limit, a page whose reading order could not be computed
+  for lack of memory, a line that failed perplexity even alone.
+- **A document's `pages`** (`/process`): per page, a PDF's `text_layer` and its `needs_atr_reason` when the page's
+  text should come from the ATR instead.
 - **`/score_record`'s `pages`**: `lines_scored` and `skipped_empty`.
 
-The batch pipeline has the same notes in its paradata, and a text-lines input read with a possible loss is
-`partial` in its `ingest_report.csv`.
+One case is not reported: `/process` answers 200 for a document read with a possible loss, such as recovered XML, a
+skipped bundle member or a bad record of a JSON Lines file, and its response does not say so. The batch pipeline
+marks such a file `partial` in its `ingest_report.csv`. Send documents for the record through `/build_record`.
 
 ## Known limits
 
@@ -408,9 +418,9 @@ The batch pipeline has the same notes in its paradata, and a text-lines input re
   ([details](../docs/categorization_logic.md#foreign-language-lines)).
 - **Short lines without Czech diacritics** read `Clear` more often than they should
   ([measurements](../docs/evaluation/categorization.md)).
-- **No document passes in the service:** each line is answered on its own, so a whole document's categories can
-  differ from a batch run's. Every difference from the command line, and why:
-  [docs/usage.md](../docs/usage.md#the-command-line-and-the-service).
+- **`/process` runs no document passes:** each line is answered on its own, so a whole document's categories can
+  differ from those `/build_record`, `/score_record` and a batch run give. Every difference from the command line,
+  and why: [docs/usage.md](../docs/usage.md#the-command-line-and-the-service).
 - **Two models are downloaded on first start** at the Hub's current revision (see
   [Models and caches](#models-and-caches)).
 - **FastText is CC BY-NC 4.0** and runs on every request; what a run records about licences is in
@@ -463,13 +473,14 @@ Inference runs in a worker thread, and the GPU work of concurrent requests takes
 `POST /score_record` scores the lines of a record as they are, in batches of `PPL_BATCH_LINES`.
 
 Every `/process`, `/build_record` and `/score_record` response carries **`paradata`**, the call's provenance
-(paradata 3.0, atrium-project#84): one Process Run Crate `CreateAction`, built by
+(paradata 3.0): one Process Run Crate `CreateAction`, built by
 `atrium_rocrate.action_from_paradata()`. `object` names what the call read, by AMČR distribution name and SHA-512:
 the upload as `original` (AMČR's name for that distribution is still open), the docproc as `atr/docproc-json`, the
 record or seed sent as `atrium/document-json`. `result` names the record written, with the blocks and fields the
 call wrote. The classified lines are the answer, not a stored output, so they are not named. `agent` is
-`ATRIUM_RUN_AGENT` when set. The record itself carries no run data, and the service writes no paradata file. Hub
-[`docs/rocrate_export.md`](https://github.com/ufal/atrium-project/blob/main/docs/rocrate_export.md) §5 describes it.
+`ATRIUM_RUN_AGENT` when set. The record itself carries no run data, and the service writes no paradata file. The
+hub's [RO-Crate guide](https://github.com/ufal/atrium-project/blob/main/docs/rocrate_export.md#5-one-run-the-createaction)
+describes it.
 
 ## Shutdown behaviour
 

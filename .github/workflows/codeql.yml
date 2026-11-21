@@ -9,8 +9,6 @@
 name: CodeQL
 
 on:
-  push:
-    branches: [test, master]
   pull_request:
     branches: [test, master]
   schedule:

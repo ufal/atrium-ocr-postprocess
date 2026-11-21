@@ -1,5 +1,10 @@
 # Issue #30 — findings from the gold-scored parameter runs
 
+**Status:** a closed record of the 2026 annotation round (issue #30 of the former repository,
+[ocr-postprocess#3](https://github.com/ufal/atrium-ocr-postprocess/issues/3) here, closed on 13 October 2026).
+Nothing on this page is an open request. What the round settled is in [the decision
+record](../decisions/2026-10-categorization.md) and [the evaluation page](../evaluation/categorization.md).
+
 *Analysis date 2026-09-18. Sources: the stage 1–5 logs of the issue-30 runbook job, the
 two non-log artefacts (`token_df.tsv`, `04_witness_candidates.csv`), and
 `ufal/atrium-alto-postprocess` at `test` HEAD `b8a38f6`. Every figure below that is not
