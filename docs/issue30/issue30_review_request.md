@@ -1,5 +1,10 @@
 # What we need from you on issue #30, and why
 
+**Status:** a closed record of the 2026 annotation round (issue #30 of the former repository,
+[ocr-postprocess#3](https://github.com/ufal/atrium-ocr-postprocess/issues/3) here, closed on 13 October 2026).
+Nothing on this page is an open request. What the round settled is in [the decision
+record](../decisions/2026-10-categorization.md) and [the evaluation page](../evaluation/categorization.md).
+
 **For:** @david-spacil
 **Issue:** [ufal/atrium-alto-postprocess#30](https://github.com/ufal/atrium-alto-postprocess/issues/30)
 **Time needed:** none for the items below. **You answered this on 2026-09-22 and every question below is now closed or

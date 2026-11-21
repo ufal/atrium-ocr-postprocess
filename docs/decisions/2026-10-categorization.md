@@ -1,15 +1,15 @@
 # Categorisation decisions, 2026
 
 **In short:** The category semantics (the rules, thresholds and weights that give a line its category) are frozen for
-the S2 pilot by the decision of 2026-09-30. A later change is measured on a corpus diff first. One threshold moved
+the AMČR pilot by the decision of 2026-09-30. A later change is measured on a corpus diff first. One threshold moved
 inside the pilot: `LOWPPL_CLEAR_MAX` went from 50 to 35, which moves 62,859 lines and breaks no labelled one. For a
 user, the same text keeps the same category through the pilot. The page does not show the accuracy of the categories
 on a validated gold set, which the AMČR baseline deferred.
 
-**Decision:** Freeze the category semantics for the S2 pilot. A change after the freeze is measured on a corpus diff
+**Decision:** Freeze the category semantics for the AMČR pilot. A change after the freeze is measured on a corpus diff
 with `tools/corpus_change.py` before it is adopted.
 
-**Status:** In force for the S2 pilot. Decided on 2026-09-30 (ocr-postprocess#2); the pilot's parameter work ended on
+**Status:** In force for the AMČR pilot. Decided on 2026-09-30 (ocr-postprocess#2); the pilot's parameter work ended on
 2026-10-12, with `LOWPPL_CLEAR_MAX` 35 as the one change.
 
 **Why:** The accuracy of the categories is measured, not validated. Validating them on a gold set and fine-tuning a
@@ -26,9 +26,9 @@ rules themselves are in [the reference](../reference/categorization_rules.md); t
 not already state. Moved here from `docs/categorization_logic.md` on 2026-10-20 (atrium-project#79), unchanged except
 for links and headings.
 
-## Frozen for the S2 pilot
+## Frozen for the AMČR pilot
 
-The category semantics are frozen for the S2 pilot (the decision of 2026-09-30 on ocr-postprocess#2). A change after it
+The category semantics are frozen for the AMČR pilot (the decision of 2026-09-30 on ocr-postprocess#2). A change after it
 is measured on a corpus diff with `tools/corpus_change.py`. One threshold moved inside the pilot: `LOWPPL_CLEAR_MAX`
 50 → 35 (ocr-postprocess#3, stage 16, 2026-10-11), which broke no line on any labelled set. Measured in memory over
 both collections (`tools/corpus_change.py reach`, stage 17, 2026-10-12), it moves 62,859 lines and the page band of

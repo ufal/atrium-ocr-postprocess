@@ -1,43 +1,64 @@
 # Usage
 
-How to run ocr-postprocess from a checkout: the batch pipeline, stage by stage, and where the service fits.
-For the service itself (the published image, its endpoints, errors and limits) read
-[service/README.md](../service/README.md). Every output column is listed in
-[the output reference](reference/outputs.md); every setting in [configuration](configuration.md).
+How to run ocr-postprocess from a checkout: building a record from docproc and scoring records, the path the
+AMČR pilot uses, and the batch pipeline for research collections, stage by stage. For the service itself (the
+published image, its endpoints, errors and limits) read [service/README.md](../service/README.md). Every output
+column is listed in [the output reference](reference/outputs.md); every setting in
+[configuration](configuration.md).
 
-On this page: [Set up the environment](#set-up-the-environment) · [Run the whole pipeline](#run-the-whole-pipeline) ·
+On this page: [Set up the environment](#set-up-the-environment) ·
+[Build the record from docproc](#build-the-record-from-docproc-build_recordpy) ·
+[Score an existing record](#score-an-existing-record-score_recordpy) ·
+[Run the whole pipeline](#run-the-whole-pipeline) ·
 [Step 1: split documents into pages](#step-1-split-documents-into-pages) ·
 [Step 2: build the page statistics](#step-2-build-the-page-statistics) ·
 [Step 3: extract the text](#step-3-extract-the-text) · [Step 4.1: classify lines](#step-41-classify-lines) ·
 [Step 4.2: aggregate page statistics](#step-42-aggregate-page-statistics) ·
-[Score an existing record](#score-an-existing-record-score_recordpy) ·
-[Ask a decision model about lines](#ask-a-decision-model-about-lines-toolsdecide_linespy) ·
+[A file that cannot be read](#a-file-that-cannot-be-read) ·
 [Call the service instead](#call-the-service-instead) ·
-[The command line and the service](#the-command-line-and-the-service)
+[The command line and the service](#the-command-line-and-the-service) ·
+[Ask a decision model about lines](#ask-a-decision-model-about-lines-toolsdecide_linespy)
 
 ## Set up the environment
 
-1.  Create and activate a new **virtual environment** in the project directory.
-2.  Install the required Python packages:
+1. Create and activate a virtual environment with Python 3.11, the version of the images and the CI:
     ```bash
+    python3.11 -m venv .venv && . .venv/bin/activate
+    ```
+2. Install the required Python packages. On a machine without a GPU, install torch from its CPU index first, as
+   the images do; it is much smaller:
+    ```bash
+    pip install torch --index-url https://download.pytorch.org/whl/cpu      # optional, CPU only
     pip install -r setup/requirements.txt
     ```
-3. Download the FastText model for language identification, at the revision the Docker image pins:
+3. Download the FastText model for language identification, at the revision the Docker image pins, into
+   `models/`, and link it where the batch stages look for it:
     ```bash
-    wget "https://huggingface.co/facebook/fasttext-language-identification/resolve/3af127d4124fc58b75666f3594bb5143b9757e78/model.bin" -O lid.176.bin
-    echo "8ded5749a2ad79ae9ab7c9190c7c8b97ff20d54ad8b9527ffa50107238fc7f6a  lid.176.bin" | sha256sum -c -
+    mkdir -p models
+    wget "https://huggingface.co/facebook/fasttext-language-identification/resolve/3af127d4124fc58b75666f3594bb5143b9757e78/model.bin" -O models/lid.176.bin
+    echo "8ded5749a2ad79ae9ab7c9190c7c8b97ff20d54ad8b9527ffa50107238fc7f6a  models/lid.176.bin" | sha256sum -c -
+    ln -s models/lid.176.bin lid.176.bin
     ```
-    The file is the Hub's `model.bin` — the NLLB fastText language-ID model, 1.18 GB, CC BY-NC 4.0 —
-    saved under the name the pipeline's config expects (`FASTTEXT_MODEL = lid.176.bin`); it is not the
-    126 MB fastText `lid.176.bin`. The Docker image fetches the same file pinned to a Hub revision and
-    checked against its SHA-256 (the `FASTTEXT_REVISION` / `FASTTEXT_SHA256` build args in the
-    [Dockerfile](../Dockerfile)).
-4. Copy the `v3` folder from the `layoutreader` repository to the project directory for the LR-based text extraction method:
+    The file is the Hub's `model.bin`: the NLLB fastText language-identification model, 1.18 GB, CC BY-NC 4.0.
+    It is saved under the name the code expects; it is not the 126 MB fastText `lid.176.bin`. `build_record.py`,
+    `score_record.py` and the service read `$MODEL_DIR/lid.176.bin` (`MODEL_DIR` defaults to `models/` in the
+    checkout); the batch classification reads `[CLASSIFY] FASTTEXT_MODEL` (`lid.176.bin`, from the folder it runs
+    in). The image does the same, with the file checked against its size and SHA-256 (the `FASTTEXT_REVISION` and
+    `FASTTEXT_SHA256` build arguments in the [Dockerfile](../Dockerfile)).
+4. For the LayoutReader reading order only (the batch's default extraction method, and `/process` on ALTO), get
+   LayoutReader's `v3` scripts at the commit the image pins:
     ```bash
-    git clone https://github.com/ppaanngggg/layoutreader.git
-    cp -r layoutreader/v3/ ./
-    rm -rf layoutreader/
+    git init _layoutreader && cd _layoutreader
+    git remote add origin https://github.com/FreeOCR-AI/layoutreader.git
+    git sparse-checkout set v3
+    git fetch --depth 1 origin 3b46ee82cd02dcea94ee4064152e5f4de91e205e && git checkout FETCH_HEAD
+    cd .. && mv _layoutreader/v3 ./ && rm -rf _layoutreader
     ```
+    Building and scoring records need neither these scripts nor the LayoutReader model.
+
+The perplexity model, Qwen2.5-0.5B, and the LayoutReader model (`hantian/layoutreader`) are downloaded from the
+Hugging Face Hub the first time they are used, into the Hugging Face cache (`HF_HOME`). `models/`, `v3/` and
+`lid.176.bin` are ignored by git.
 
 > [!NOTE]
 > **Docker on Linux: run as yourself.** The published images are `ghcr.io/ufal/atrium-ocr-postprocess:<version>`
@@ -47,18 +68,90 @@ On this page: [Set up the environment](#set-up-the-environment) · [Run the whol
 > once — `echo "ATRIUM_UID=$(id -u)" >> .env`. With `docker run`, pass `--user "$(id -u):0"`. Docker Desktop
 > (macOS, Windows) needs neither.
 
-The batch image passes its arguments to `run_pipeline.py` (`docker run IMAGE --config /data/config.txt`). Since
-`v1.15.4-beta` its entry point is the hub-canonical `container_entrypoint.py`, which names `run_pipeline.py` by its
-absolute path: a first argument that names a shell or Python runs that program instead (`docker run IMAGE /bin/sh
-job.sh`), which is how Galaxy starts a tool's container. Only those interpreters run; the pipeline starts its stages
-by name from `/app`, the image's `WORKDIR`, so a job script that runs it changes there first.
+The batch image passes its arguments to `run_pipeline.py` (`docker run IMAGE --config /data/config.txt`). Its entry
+point, `container_entrypoint.py`, names `run_pipeline.py` by its absolute path. A first argument that names a shell
+or Python runs that program instead (`docker run IMAGE /bin/sh job.sh`), so a job script can run in the image. Only
+those interpreters run. The pipeline starts its stages by name from `/app`, the image's `WORKDIR`, so a job script
+that runs it changes there first.
 
 > [!NOTE]
 > `alto-tools` needs no install step. The statistics and text-extraction code paths this
 > pipeline uses are **vendored** in [alto_tools.py](../alto_tools.py) — see [Vendored code](development.md#vendored-code).
 
+## Build the record from docproc: `build_record.py`
+
+In the AMČR pipeline this tool builds the record from the stored docproc (`atr/docproc-json`): the ATR's for a
+scanned document, digital-convert's for a born-digital one, and both for a mixed document. `build_record.py` is the
+command line of `POST /build_record`. The examples read the sample docprocs in `tests/fixtures/docproc/` and write
+into `out/`:
+
+```bash
+python3 build_record.py tests/fixtures/docproc/scan.atr.docproc.json --doc-id CTX000000001 \
+    --out-dir out --paradata-dir out/paradata
+python3 build_record.py tests/fixtures/docproc/rich.digital-convert.docproc.json --doc-id CTX000000002 \
+    --out-dir out --paradata-dir out/paradata
+python3 build_record.py tests/fixtures/docproc/mixed.atr.docproc.json \
+    --text-layer-docproc tests/fixtures/docproc/mixed.digital-convert.docproc.json \
+    --doc-id CTX000000003 --out-dir out --paradata-dir out/paradata          # a mixed document
+```
+
+With AMČR's seed instead of `--doc-id` (`--seed seed.json`: `doc_id`, `source.sha512`, `filename`, `media_type`), the
+record carries the identity of the original. The record holds `source` (the seed's identity, `origin`,
+`page_count`, `language`), a `pages[]` row for every page of the original (`content_status`, the canvas), `lines[]`
+from 1 per page in docproc's reading order (each with its `block`, `text_source` and `bbox_precision`) and
+`content.text`. Every line and page is then scored with the models of `score_record.py`, and the document passes
+run over the whole record, as in the batch pipeline.
+
+**A mixed document.** When digital-convert found pages that need the ATR, the whole document went through the ATR,
+and the ATR's docproc is the stored one; digital-convert's docproc comes beside it with `--text-layer-docproc`. The
+record keeps the text layer's exact lines on the pages digital-convert could read (`text_source: text-layer`), each
+linked to the ATR block that holds it. It takes the ATR's lines on the pages the ATR was asked to read, the forced
+pages, and in ATR blocks no kept line falls into, such as a figure's text (`text_source: atr`). The order is the
+ATR's. Its `source.origin` is `digital` while any text-layer line is kept. The paradata name digital-convert's
+docproc by its SHA-512 as not stored, and the forced pages as the parameter `atr_pages`
+([docproc_merge.py](../docproc_merge.py)).
+
+**A build fails as a whole.** A docproc it cannot read completely fails the build: a page neither listed nor routed
+`empty`, a block whose text could not be read, digital-convert's docproc with pages that need the ATR sent alone,
+two docprocs that do not describe the same pages or the same page sizes, and seed page rows the original does not
+have. Then nothing is written, the exit status is 1, and the run's paradata (`--paradata-dir`, default `paradata/`
+in the folder it runs in) say `action_status: failed`. An input file that cannot be opened, or a seed that is not
+JSON, is exit status 2, before any paradata are written. What docproc gives and how it is read:
+[service/README.md](../service/README.md#building-the-record-post-build_record).
+
+`--no-score` builds the record without scoring its lines, to inspect what docproc gives; the pipeline scores every
+line.
+
+## Score an existing record: `score_record.py`
+
+A record to score again, or one built with `--no-score`, is scored by `score_record.py`, the command line of
+`POST /score_record`. Both run [record_scoring.py](../record_scoring.py):
+
+```bash
+python3 score_record.py out/CTX000000001.document.json --paradata-dir out/paradata      # in place
+python3 score_record.py out/ --out-dir scored/ --scores --paradata-dir out/paradata      # a folder; scored copies and their answers
+python3 score_record.py out/CTX000000001.document.json --pages 1 --paradata-dir out/paradata   # only these pages, by the record's own keys
+```
+
+Each line with text is scored as it is, not re-read, split or reordered, whatever its text source, and the document
+passes run over the record's lines. The record gets `lines[].categ`, `quality_score` and `lang`, and
+`pages[].quality_score` and `quality_band`, on the rows it already has; an empty page gets no page score. `--scores`
+also writes `<doc>.scores.json`: the endpoint's answer without the record (`cleaned_lines`, `pages`,
+`limits_applied`). The run's paradata go to `--paradata-dir` (default `paradata/`) and name the record read and
+written by SHA-512; the record file is byte for byte the one they name.
+
+The models are the service's, without LayoutReader; `GPT2_MODEL_NAME` picks the perplexity model. The service's
+`MAX_PAGES` and `MAX_LINES_PER_PAGE` do not apply. Exit status: 0 when every record was scored. It is 1 when one was
+not (a file that is not a record, a page key it lacks); the others are still scored. It is 2 for a path that does not
+exist, or a folder without records.
 
 ## Run the whole pipeline
+
+The batch pipeline reads folders of OCR output and text-bearing files, for research collections and for measuring
+the categories. It is not the AMČR pilot's path, which builds each record from docproc: a batch run goes on past a
+file it cannot read ([A file that cannot be read](#a-file-that-cannot-be-read)). The examples read the samples in
+`data_samples/` and, with the shipped `setup/config.txt`, write their outputs there too; copy the config and point
+its folders elsewhere (`--config`) to keep the committed samples as they are.
 
 The [run_pipeline.py](../run_pipeline.py) orchestrator runs every stage sequentially
 (**split → statistics → text extraction → classification → aggregation**). At the end it
@@ -216,7 +309,7 @@ replaced when it holds nothing but that document's page files. DOCX/ODT footnote
 that cites them (`[TEXT_INGEST].NOTES`). All caps live in `[TEXT_INGEST]` in
 [config.txt](../setup/config.txt) ; each can also be set as the environment variable
 `ATRIUM_TEXT_INGEST_<KEY>`, which wins over the file (the full list is
-[service/README.md § Limits](../service/README.md#limits)).
+[the runbook's limits](../service/README.md#limits)).
 
 ```
 PAGE_TEXT/
@@ -233,8 +326,7 @@ PAGE_TEXT/
 This is the pipeline's **first** stage to see the original file, so when
 `[DOCUMENT].JSON_DIR` is configured it is also the first writer of the record's `source`
 block (`sha512`, `filename`, `media_type`, `page_count`, `origin`). `source` is
-immutable: the first writer wins. Record schema 2.0 ([atrium-project#84](https://github.com/ufal/atrium-project/issues/84))
-holds the origin as `digital`, `atr` or `legacy`, and each line gets the matching `text_source` (`text-layer`,
+immutable: the first writer wins. The record holds the origin as `digital`, `atr` or `legacy`, and each line gets the matching `text_source` (`text-layer`,
 `atr`, `legacy`). The tables below give the input's own spelling, which `document_hook.record_origin()` maps:
 `digital-born-*` is `digital`, `ocr:`/`vlm:` is `atr`, `ABBYY-ALTO` is `legacy`. A value that matches no known
 prefix leaves the record without an origin, so it warns.
@@ -250,14 +342,13 @@ invisible OCR layer under the page image) and `ocr:generic` (TXT, Markdown, CSV/
 subtitles). An ALTO or hOCR file that names its engine in its header gets that engine instead (`ocr:tesseract`,
 `ocr:pero`, `ocr:kraken`, `ocr:transkribus`, `ocr:ocrd`, …). A ZIP bundle takes its members' origin. Born-digital
 documents are `digital-born-<kind>` (DOCX, ODT/ODS/ODP,
-XLSX, PPTX, EPUB, RTF, plain HTML, e-mail, a PDF with visible text). Since record schema 2.0 this repo is the record
-builder and writes the positional blocks of every record, a born-digital one too: the hold-back of a born-digital
-record and the OCR hand-off into it are gone. In the AMČR pipeline the record is built from docproc instead
+XLSX, PPTX, EPUB, RTF, plain HTML, e-mail, a PDF with visible text). This tool writes the positional blocks of every
+record it builds, born-digital ones included. In the AMČR pipeline the record is built from docproc instead
 ([`build_record.py`](#build-the-record-from-docproc-build_recordpy)). `--source-origin ocr:<engine>` overrides the
 default when the files are known OCR output, and `[DOCUMENT].SOURCE_ORIGIN_BY_KIND` does so per kind:
 `xlsx = ocr:generic, pptx = ocr:generic`. For text-lines the precedence is CLI flag > env var >
 `SOURCE_ORIGIN_BY_KIND` > `SOURCE_ORIGIN` > per-format default
-([docs/text_inputs.md §6](text_inputs.md#6-provenance-sourceorigin)).
+([provenance in the input reference](text_inputs.md#6-provenance-sourceorigin)).
 
 Override it when the engine **is** known (`ABBYY-ALTO`, `ocr:<engine>`, `vlm:<engine>`):
 
@@ -328,7 +419,8 @@ Choose the method by the input and by the hardware you have:
 python3 extract_LytRdr_ALTO_2_TXT.py
 ```
 
-Uses the LayoutReader framework (https://github.com/ppaanngggg/layoutreader) to extract the text and bounding boxes
+Uses the LayoutReader framework ([FreeOCR-AI/layoutreader](https://github.com/FreeOCR-AI/layoutreader), its `v3`
+scripts, with the `hantian/layoutreader` model) to extract the text and bounding boxes
 of XML elements (specifically, `<TextLine>` elements containing `String`s with `CONTENT` attribute). It reconstructs
 the reading order of lines (columns-friendly) and handles words split between two lines, adding the full form of the
 word. It groups page contents into paragraphs based on the vertical spread of text lines.
@@ -442,12 +534,10 @@ PAGE_TXT_JSON/
 When [`[DOCUMENT].JSON_DIR`](reference/paradata.md) (or the `DOCUMENT_JSON_DIR` env var) is
 configured, a second, separate **Accretion Layer** runs after extraction. For every document,
 it reads back that document's already-written `.txt` pages and merges them into
-`<doc_id>.document.json` as this repo's owned fields: `pages[].ocr`
-(`ocr-postprocess`'s share of the field-split `pages` block) and the whole `content` block.
-Every other block (`page_categories`, `entities`, `source`, ...) is left untouched, per the
-`atrium_document.schema.json` paired-hook contract. With no baseline `doc.json` yet on disk,
-the record is created holding just this contribution (accretion rule 3). This mirrors what
-the other three extraction methods above already do.
+`<doc_id>.document.json`: a `pages[]` row per page (`page_index`, `page`, `content_status`) and the whole
+`content` block. The extraction method is recorded in the run's paradata, not in the record. Every other block is
+left untouched. With no record on disk yet, the record is created holding just this contribution. The other three
+extraction methods above do the same. A page whose text cannot be read back is left out of `pages[]`.
 
 `--force-single-page` is a **document-assembly policy**, not an extraction-rule change — it
 only decides how many `pages[]` rows describe the pages already extracted above:
@@ -459,7 +549,7 @@ python3 extract_JSON_2_TXT.py --force-single-page
 |                       | `pages[]` shape                                                                                                                             | `content.text`                                                           |
 |-----------------------|---------------------------------------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------|
 | default               | one row per source page (`page: "1"`, `"2"`, ...)                                                                                           | always the full document: every page's text concatenated in source order |
-| `--force-single-page` | every source page collapses into **one** row (`page: "1"`), with `ocr.source_pages` listing the original page labels in concatenation order | unchanged — same joined text either way                                  |
+| `--force-single-page` | every source page collapses into **one** row (`page: "1"`)                                                                                  | unchanged — same joined text either way                                  |
 
 `--force-single-page` can also be set as a config-file default —
 `[EXTRACT].FORCE_SINGLE_PAGE_JSON = true` in [`setup/config.txt`](../setup/config.txt) — so
@@ -490,9 +580,8 @@ stays **one line**.
   The script refuses to write it into the `DOC_LINE_CATEG` directory.
 
 Page files in any encoding are accepted, so a hand-made directory of page TXT files works
-with `--skip-split`. With `[DOCUMENT].JSON_DIR` set, `pages[].ocr` (`engine: text-lines`) and
-`content` are accreted like the other methods (not into born-digital records, see Step 1). A
-page, a line table or a document record that fails costs that page or document only; `--strict`
+with `--skip-split`. With `[DOCUMENT].JSON_DIR` set, `pages[]` and `content` are accreted like the other
+methods. A page, a line table or a document record that fails costs that page or document only; `--strict`
 (or `[TEXT_INGEST].STRICT`) turns such a failure into exit code 1.
 
 ## Step 4.1: classify lines
@@ -518,7 +607,7 @@ python3 classify_TEXT.py [--input-csv <stats.csv>]
 
 * **Input 1:** `../PAGE_TXT/` from Step 3
 * **Input 2:** `output.csv` from Step 2 (`--input-csv`, else `[CLASSIFY].INPUT_CSV`)
-* **Output:** `DOC_LINE_LANG_CLASS/` containing per-document **CSVs** (e.g., [DOC_LINE_CATEG](../data_samples/DOC_LINE_CATEG))
+* **Output:** `DOC_LINE_CATEG/` (`[CLASSIFY] OUTPUT_LINES_LOG`) containing per-document **CSVs** (e.g., [DOC_LINE_CATEG](../data_samples/DOC_LINE_CATEG))
 * **Exit status:** non-zero when the stage did not complete: every document failed, or the GPU worker was lost, or the
   scoring constants are invalid. Some documents failing while the rest are classified exits 0 (see the paradata's
   `skipped_files_detail`).
@@ -541,7 +630,7 @@ Example of per-document CSV files: [DOC_LINE_CATEG](../data_samples/DOC_LINE_CAT
 and [DOC_LINE_CATEG_gpt](../data_samples/DOC_LINE_CATEG_gpt) by distilgpt2.
 
 ```
-DOC_LINE_LANG_CLASS/
+DOC_LINE_CATEG/
 ├── <docname1>.csv
 ├── <docname2>.csv
 └── ...
@@ -549,16 +638,16 @@ DOC_LINE_LANG_CLASS/
 
 ## Step 4.2: aggregate page statistics
 
-This script processes the `DOC_LINE_LANG_CLASS/` directory with CSV files in chunks to produce
+This script processes the `DOC_LINE_CATEG/` directory with CSV files in chunks to produce
 final page-level statistics. It is CPU-bound and parallelized with `ProcessPoolExecutor`.
 
 ```
 python3 aggregate_STAT.py
 ```
 
-* **Input:** `DOC_LINE_LANG_CLASS/` (directory with CSV files from the previous step)
-* **Output 1:** `final_page_stats.csv` (configurable via `OUTPUT_STATS`) — global page-level summary across all documents
-* **Output 2:** `DOC_LINE_STAT/` (configurable via `OUTPUT_DOC_DIR`) — per-document **CSVs** with the same schema
+* **Input:** `DOC_LINE_CATEG/` (directory with CSV files from the previous step)
+* **Output 1:** `samples_page_stats.csv` (configurable via `OUTPUT_STATS`) — global page-level summary across all documents
+* **Output 2:** `DOC_LINE_STATS/` (configurable via `OUTPUT_DOC_DIR`) — per-document **CSVs** with the same schema
 
 The page-level schema is in [the output reference](reference/outputs.md#step-42-page-statistics).
 
@@ -577,78 +666,104 @@ Example of per-document aggregate CSV files: [DOC_LINE_STATS](../data_samples/DO
 and [DOC_LINE_STATS_gpt](../data_samples/DOC_LINE_STATS_gpt) by distilgpt2:
 
 ```
-DOC_LINE_STAT/
+DOC_LINE_STATS/
 ├── stats_<docname1>.csv
 ├── stats_<docname2>.csv
 └── ...
 ```
 
-This is the end of the text quality classification and filtering step. You can now use [arup_page_stats_SHORT.csv](../data_samples/arup_page_stats_SHORT.csv) to
-identify files that need another round of OCR or manual correction based on the line type counts. Pages with the
-majority of **Clear** lines can be marked for further processing. The absence of clear lines combined with a high proportion
-of **Trash** lines may also indicate handwritten content, which can be excluded before Handwritten Text Recognition (HTR) is applied.
+This is the end of the batch pipeline. The page statistics show, page by page, how many lines are **Clear**,
+**Noisy** and **Trash** ([arup_page_stats_SHORT.csv](../data_samples/arup_page_stats_SHORT.csv) is an example). A
+page with mostly **Clear** lines is ready for further processing. A page without **Clear** lines and with many
+**Trash** lines may be handwriting, or a poor scan: a basis for choosing pages for manual correction or a later
+re-recognition campaign. No stage of this tool re-reads a page.
 
-## Build the record from docproc: `build_record.py`
+## A file that cannot be read
 
-In the AMČR pipeline this repo builds the record from the stored docproc (`atr/docproc-json`): the ATR's for a
-scanned document, atrium-digital-convert's for a born-digital one ([atrium-project#84](https://github.com/ufal/atrium-project/issues/84)
-§1). `build_record.py` is the command line of `POST /build_record`:
+What happens to a file, a page or a line that cannot be read or scored depends on the path. Building a record fails
+as a whole, so nothing partial reaches AMČR; the research paths go on.
 
-```bash
-python3 build_record.py C-202000543A-DT-27.docproc.json --seed C-202000543A-DT-27.seed.json --out-dir records/
-python3 build_record.py report.docproc.json --doc-id R-1 --out-dir records/ --no-score
-python3 build_record.py report.atr.docproc.json --text-layer-docproc report.digital-convert.docproc.json \
-    --seed report.seed.json --out-dir records/                    # a mixed document (H6)
-```
+| Path                                    | What it does                                                                                                                                                                                                                                                                                                                              |
+|-----------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `build_record.py`, `POST /build_record` | fails the build and writes nothing: exit status 1 with `action_status: failed` in the paradata, or 422 ([Build the record](#build-the-record-from-docproc-build_recordpy))                                                                                                                                                                |
+| `score_record.py`, `POST /score_record` | a record that cannot be scored is exit status 1, and the others are still scored; the service answers 413 or 422                                                                                                                                                                                                                          |
+| the batch stages                        | a file that cannot be read is listed with its reason and the run goes on; a file read with a possible loss is `partial`, processed downstream with its reasons listed; `--strict` makes either exit status 1 (text-lines only)                                                                                                            |
+| Step 4.1, classification                | a document that fails is listed in the paradata (`skipped_files_detail`) and the stage exits 0 while others were classified; a line that cannot be scored even on its own gets the perplexity 99999 and the run goes on                                                                                                                   |
+| Step 3, LayoutReader                    | a page that runs out of GPU memory at the smallest window keeps the ALTO's own order                                                                                                                                                                                                                                                      |
+| `POST /process`                         | a file that cannot be read is 422, one over a cap 413; a page out of LayoutReader's memory, a ZIP member over its size cap and capped spreadsheet repeats fail the call (422 `limit_exceeded`); other reads with a possible loss (recovered XML, a skipped bundle member, a bad record of a JSON Lines file) answer 200 without saying so |
 
-It writes `source` (the seed's identity, `origin`, `page_count`, `language`), a `pages[]` row for every page of the
-original (`content_status`, the canvas), `lines[]` from 1 per page in docproc's reading order (each with its
-`block`, `text_source` and `bbox_precision`) and `content.text`, then scores every line and page with the models of
-`score_record.py`.
+The reason codes and the caps are in [docs/text_inputs.md](text_inputs.md) and in the runbook's
+[limits](../service/README.md#limits).
 
-**A mixed document** (H6, D21): when digital-convert routed some pages to the ATR, the whole document went through
-the ATR and its docproc is the stored one; digital-convert's docproc comes beside it with `--text-layer-docproc`. The
-record keeps the text layer's exact lines on the pages digital-convert could read (`text_source: text-layer`), each
-linked to the ATR block that holds it, and takes the ATR's lines on the forced pages and in ATR blocks no kept line
-falls into, such as a figure's OCR child (`text_source: atr`); the order is the ATR's. Its `source.origin` is
-`digital` while any text-layer line is kept. The paradata name digital-convert's docproc by its SHA-512 as not
-stored (D23), and the forced pages as the parameter `atr_pages` ([docproc_merge.py](../docproc_merge.py)).
+## Call the service instead
 
-A docproc it cannot read completely fails the build: a page neither listed nor routed `empty` (H15), a block whose
-text could not be read, digital-convert's docproc with pages that need the ATR sent alone, two docprocs that do not
-describe the same pages or the same page sizes (D28), and baseline page rows the original does not have. Then
-nothing is written, the exit status is 1, and the run's paradata (`--paradata-dir`, default `paradata/`) say
-`action_status: failed`. What docproc gives and how it is read:
-[service/README.md](../service/README.md#building-the-record-post-build_record).
+The service, `service/text_api.py`, runs the same categoriser with the same `setup/config.txt` and the same
+default perplexity model (Qwen2.5-0.5B). Both run the CPU pre-filter first, so a numeric, code-like or blank line
+is answered `Non-text` or `Empty` without a model call.
 
-## Score an existing record: `score_record.py`
+`POST /process` takes ALTO XML, plain text, OCR JSON and every text-lines format (PDF, DOCX, ODT, XLSX, PPTX,
+EPUB, RTF, HTML/hOCR, PAGE XML, TEI, ABBYY/DjVu XML, Tesseract TSV, Markdown, CSV/TSV, JSONL, SRT/VTT, EML/MBOX,
+compressed files and ZIP bundles). A text with form feeds, a paged JSON and a document come back page by page
+(`page` on every line, a `pages` summary). A file of a kind the service does not read is a 415
+`unsupported_media_type`, a supported file that cannot be read is a 422, and one over a `[TEXT_INGEST]` cap is a
+413 `limit_exceeded`. `POST /build_record` builds a record from docproc, as `build_record.py` does, and
+`POST /score_record` scores the lines of a record in place.
 
-A record to score again, or one built without scores, is scored by `score_record.py`, the command line of
-`POST /score_record`. Both run [record_scoring.py](../record_scoring.py):
+Endpoints, fields, errors and limits: the **[service documentation](../service/README.md)**.
 
-```bash
-python3 score_record.py records/C-202000543A-DT-27.document.json    # in place, as every batch stage writes
-python3 score_record.py records/ --out-dir scored/ --scores          # a folder; scored copies and their answers
-python3 score_record.py records/ --pages i,ii                        # only these pages, by the record's own keys
-```
+## The command line and the service
 
-Each line with text is scored as it is, not re-read, split or reordered, whatever its text source (D18; until #84 a
-line with digital-convert's decode verdict was left out). The record gets `lines[].categ`, `quality_score` and
-`lang`, and `pages[].quality_score` and `quality_band`, on the rows it already has; an empty page gets no page
-score. `--scores` also writes `<doc>.scores.json`: the endpoint's answer without the record (`cleaned_lines`,
-`pages`, `limits_applied`). The run's paradata goes to `--paradata-dir` (default `paradata/`) and names the record
-read and written by SHA-512; the record file is byte for byte the one it names.
+The command line (`run_pipeline.py` and its stages, `build_record.py`, `score_record.py`) and the service
+(`service/text_api.py`) share their parts: the readers (`text_formats.py`, `page_split.json_pages`), the split-word merge
+(`text_util.merge_split_words`), the scorer (`classify_TEXT.score_line`), the record scoring
+(`record_scoring.py`) and the record writer (`document_hook.py`). The same input gives the same pages, lines and
+categories, except where this table says otherwise.
+[tests/test_cli_service_parity.py](../tests/test_cli_service_parity.py) runs the batch's own functions and the
+service on the same ALTO, text, JSON and record inputs. It compares `(page, line_num, text)`, the categories and the
+page scores, and it covers ALTO without coordinates, a LayoutReader out of memory, the page score's precision and the
+perplexity model.
 
-The models are the service's, without LayoutReader; `GPT2_MODEL_NAME` picks the perplexity model. The service's
-`MAX_PAGES` and `MAX_LINES_PER_PAGE` do not apply. Exit status: 0 when every record was scored. It is 1 when one was
-not (a file that is not a record, a page key it lacks); the others are still scored. It is 2 for a path that does not
-exist.
+| What                               | Command line                                                                                                                                    | Service                                                                                                       | Why they differ                                                             |
+|------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------|
+| How much per run                   | folders of documents                                                                                                                            | one page or document per request                                                                              | the service is stateless                                                    |
+| ALTO XML of several pages          | split into pages (`page_split.py`)                                                                                                              | classified as one flattened page and not written into a record                                                | the service's ALTO reader keeps no page per line; post one page per request |
+| ALTO reading order                 | `--method layoutreader` (default), `alto-tools` or `glm`                                                                                        | `reading_order=layoutreader` (default) or `alto`; `alto` gives the lines of `alto-tools`                      | GLM needs about 48 GB of GPU memory                                         |
+| Plain text                         | a form feed starts a page (`text_split.py`)                                                                                                     | the same pages                                                                                                |                                                                             |
+| OCR JSON of several pages          | pages by `page_split.py`                                                                                                                        | the same pages                                                                                                |                                                                             |
+| Other text-bearing files           | `--method text-lines`                                                                                                                           | `task_type=document`                                                                                          |                                                                             |
+| The kind of a file                 | the method, for the whole run                                                                                                                   | `task_type`; `auto` routes `.txt` and `.json` by name and every other file by its bytes                       |                                                                             |
+| Blank lines                        | an `Empty` row, numbered with the rest (below)                                                                                                  | the same                                                                                                      |                                                                             |
+| The document passes                | applied by the batch stages, `build_record.py` and `score_record.py` (identical-text vote, surrounded Trash, page context, inverted-scan sweep) | applied by `/build_record` and `/score_record`; not by `/process`, which answers each line on its own         | they need the whole document                                                |
+| Line fields                        | the CSV columns of [Step 4.1](reference/outputs.md#step-41-per-line-categories)                                                                 | the JSON fields of `AltoLine`: fewer, some renamed ([mapping](reference/outputs.md#the-services-line-fields)) | the JSON keeps what a client reads                                          |
+| A page's `quality_score`           | the mean of its `Clear` and `Noisy` lines (`aggregate_STAT.py`)                                                                                 | the same; 4 decimals on both                                                                                  |                                                                             |
+| ALTO without size or coordinates   | kept: a missing value counts as 0                                                                                                               | the same                                                                                                      |                                                                             |
+| LayoutReader out of memory         | at the smallest window, the page keeps the ALTO's order                                                                                         | the call fails: 422 `limit_exceeded`                                                                          | the service returns nothing partial                                         |
+| LayoutReader windows               | `[EXTRACT] LR_CHUNK_SIZE`, `LR_MIN_CHUNK_SIZE` (350, 50)                                                                                        | the `LR_CHUNK_SIZE`, `LR_MIN_CHUNK_SIZE` environment settings (350, 50)                                       | set per deployment                                                          |
+| The perplexity model               | `[CLASSIFY] MODEL_NAME`                                                                                                                         | `GPT2_MODEL_NAME`, else `[CLASSIFY] MODEL_NAME`                                                               |                                                                             |
+| Perplexity batch                   | `[CLASSIFY] BATCH_SIZE` (128 lines)                                                                                                             | `PPL_BATCH_LINES` (32 lines)                                                                                  | a dedicated GPU against one shared with page-classification                 |
+| Page-relative perplexity blend     | `[CLASSIFY] PAGE_PPL_BLEND_ENABLE` (off)                                                                                                        | not applied                                                                                                   | it needs the whole page's lines; off by default                             |
+| Where the input came from          | `--source-origin`, else `DOCUMENT_SOURCE_ORIGIN`, else `[DOCUMENT] SOURCE_ORIGIN`                                                               | `[DOCUMENT] SOURCE_ORIGIN` only                                                                               | a batch names its collection's origin                                       |
+| One page per document              | `extract_JSON_2_TXT.py --force-single-page`                                                                                                     | none                                                                                                          | a batch option for legacy collections                                       |
+| The page of an upload              | the file's own page number                                                                                                                      | `page`, the record's key for a one-page upload                                                                |                                                                             |
+| A compressed ALTO (`.alto.xml.gz`) | read by the shared reader as a document (`--method text-lines`): no reading-order model                                                         | the same (`task_type=document`)                                                                               | the same: the ALTO stages take `*.xml`                                      |
+| Page statistics, reports           | CSV files                                                                                                                                       | not returned                                                                                                  | batch outputs                                                               |
+| The record                         | `[DOCUMENT] JSON_DIR`, with a baseline there or without                                                                                         | `document_json` in and out; `include_record=true` returns a new one when none is sent                         |                                                                             |
+| Building the record from docproc   | `build_record.py`                                                                                                                               | `POST /build_record`                                                                                          |                                                                             |
+| Scoring a record                   | `score_record.py`                                                                                                                               | `POST /score_record`                                                                                          | the service applies `MAX_PAGES` and `MAX_LINES_PER_PAGE`                    |
+| Paradata                           | a file in `paradata/`                                                                                                                           | the response's `paradata`, a `CreateAction`                                                                   | the service writes no file                                                  |
 
+**A blank line** is not an element of the ALTO: the extraction writes one where the page's layout breaks. The
+`layoutreader` method writes one where the next line in reading order starts more than 1.5 line heights below the
+previous one. It also writes one where the next line starts more than one line height above it (a new column).
+`alto-tools` writes one before each `<TextBlock>`. In a text-lines input it is a line with nothing visible on it
+(empty, or only spaces, control
+characters or zero-width spaces), such as an empty paragraph of a DOCX; both sides keep those only with
+`[TEXT_INGEST] KEEP_BLANK_LINES = true`.
 ## Ask a decision model about lines: `tools/decide_lines.py`
 
-An offline, experimental tool of [#10](https://github.com/ufal/atrium-ocr-postprocess/issues/10)
-([atrium-project#83](https://github.com/ufal/atrium-project/issues/83)). Neither the pipeline nor the service runs
-it, so it has no service counterpart. It changes no category, record, rule or default: its answers go to files of
+Parked during the AMČR pilot: not part of the pipeline or the service.
+
+An offline research tool. It has no service counterpart. It changes no category, record, rule or default: its answers go to files of
 their own. It reads the per-line CSVs of [Step 4.1](#step-41-classify-lines) and scores every line again with the
 pipeline's scorer (`classify_TEXT.score_line`), skipping the pre-filter's `Empty` and `Non-text` lines.
 
@@ -692,8 +807,7 @@ and `--sample-rate` leave) gets the questions of [decisions/line_quality.v2.json
 * a score from 0 (garbage) to 4 (clean).
 
 Every question is about the text. The page's orientation and its script are its form, read from the image by
-atrium-page-classification; the two symptom factors name a pattern in the text and assert nothing about the page
-([atrium-project#83](https://github.com/ufal/atrium-project/issues/83)).
+atrium-page-classification; the two symptom factors name a pattern in the text and assert nothing about the page.
 
 A line tagged S1–S5 is also asked, in the same request, the category choice of
 [decisions/line_category.v1.json](../decisions/line_category.v1.json): `Clear`, `Noisy`, `Trash` or `Non-text`, with
@@ -745,69 +859,5 @@ The outputs of `--decide`, in `--out-dir`:
   ([the components a run lists](reference/paradata.md#the-components-a-run-lists)). The URL is not recorded.
 
 Exit status: 0 when the run completed, 2 for a wrong option or an input without CSVs, 1 when `DOC_LINE_DECIDE.csv`
-exists and `--resume` was not given. Which archive text may go to which server is settled on atrium-project#83; the
-three sample documents are public.
-
-## Call the service instead
-
-The service, `service/text_api.py`, runs the same categoriser with the same `setup/config.txt` and the same
-default perplexity model (Qwen2.5-0.5B). Both run the CPU pre-filter first, so a numeric, code-like or blank line
-is answered `Non-text` or `Empty` without a model call.
-
-`POST /process` takes ALTO XML, plain text, OCR JSON and every text-lines format (PDF, DOCX, ODT, XLSX, PPTX,
-EPUB, RTF, HTML/hOCR, PAGE XML, TEI, ABBYY/DjVu XML, Tesseract TSV, Markdown, CSV/TSV, JSONL, SRT/VTT, EML/MBOX,
-compressed files and ZIP bundles). A text with form feeds, a paged JSON and a document come back page by page
-(`page` on every line, a `pages` summary). A file of a kind the service does not read is a 415
-`unsupported_media_type`, a supported file that cannot be read is a 422, and one over a `[TEXT_INGEST]` cap is a
-413 `limit_exceeded`. `POST /score_record` scores the lines of a record in place.
-
-Endpoints, fields, errors and limits: the **[service documentation](../service/README.md)**.
-
-## The command line and the service
-
-The batch pipeline (`run_pipeline.py`, its stages and `score_record.py`) and the service (`service/text_api.py`)
-share their parts: the readers (`text_formats.py`, `page_split.json_pages`), the split-word merge
-(`text_util.merge_split_words`), the scorer (`classify_TEXT.score_line`), the record scoring
-(`record_scoring.py`) and the record writer (`document_hook.py`). The same input gives the same pages, lines and
-categories, except where this table says otherwise.
-[tests/test_cli_service_parity.py](../tests/test_cli_service_parity.py) runs the batch's own functions and the
-service on the same ALTO, text, JSON and record inputs. It compares `(page, line_num, text)`, the categories and the
-page scores, and it covers ALTO without coordinates, a LayoutReader out of memory, the page score's precision and the
-perplexity model.
-
-| What                               | Command line                                                                            | Service                                                                                                       | Why they differ                                                             |
-|------------------------------------|-----------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------|
-| How much per run                   | folders of documents                                                                    | one page or document per request                                                                              | the service is stateless                                                    |
-| ALTO XML of several pages          | split into pages (`page_split.py`)                                                      | classified as one flattened page and not written into a record                                                | the service's ALTO reader keeps no page per line; post one page per request |
-| ALTO reading order                 | `--method layoutreader` (default), `alto-tools` or `glm`                                | `reading_order=layoutreader` (default) or `alto`; `alto` gives the lines of `alto-tools`                      | GLM needs about 48 GB of GPU memory                                         |
-| Plain text                         | a form feed starts a page (`text_split.py`)                                             | the same pages                                                                                                |                                                                             |
-| OCR JSON of several pages          | pages by `page_split.py`                                                                | the same pages                                                                                                |                                                                             |
-| Other text-bearing files           | `--method text-lines`                                                                   | `task_type=document`                                                                                          |                                                                             |
-| The kind of a file                 | the method, for the whole run                                                           | `task_type`; `auto` routes `.txt` and `.json` by name and every other file by its bytes                       |                                                                             |
-| Blank lines                        | an `Empty` row, numbered with the rest (below)                                          | the same                                                                                                      |                                                                             |
-| The document passes                | applied (identical-text vote, surrounded Trash, page context, inverted-scan sweep)      | not applied: each line is answered on its own                                                                 | they need the whole document                                                |
-| Line fields                        | the CSV columns of [Step 4.1](reference/outputs.md#step-41-per-line-categories)         | the JSON fields of `AltoLine`: fewer, some renamed ([mapping](reference/outputs.md#the-services-line-fields)) | the JSON keeps what a client reads                                          |
-| A page's `quality_score`           | the mean of its `Clear` and `Noisy` lines (`aggregate_STAT.py`)                         | the same; 4 decimals on both                                                                                  |                                                                             |
-| ALTO without size or coordinates   | kept: a missing value counts as 0                                                       | the same                                                                                                      |                                                                             |
-| LayoutReader out of memory         | at the smallest window, the page keeps the ALTO's order                                 | the same, with a `skipped` note                                                                               |                                                                             |
-| LayoutReader windows               | `[EXTRACT] LR_CHUNK_SIZE`, `LR_MIN_CHUNK_SIZE` (350, 50)                                | the `LR_CHUNK_SIZE`, `LR_MIN_CHUNK_SIZE` environment settings (350, 50)                                       | set per deployment                                                          |
-| The perplexity model               | `[CLASSIFY] MODEL_NAME`                                                                 | `GPT2_MODEL_NAME`, else `[CLASSIFY] MODEL_NAME`                                                               |                                                                             |
-| Perplexity batch                   | `[CLASSIFY] BATCH_SIZE` (128 lines)                                                     | `PPL_BATCH_LINES` (32 lines)                                                                                  | a dedicated GPU against one shared with page-classification                 |
-| Page-relative perplexity blend     | `[CLASSIFY] PAGE_PPL_BLEND_ENABLE` (off)                                                | not applied                                                                                                   | it needs the whole page's lines; off by default                             |
-| Where the input came from          | `--source-origin`, else `DOCUMENT_SOURCE_ORIGIN`, else `[DOCUMENT] SOURCE_ORIGIN`       | `[DOCUMENT] SOURCE_ORIGIN` only                                                                               | a batch names its collection's origin                                       |
-| One page per document              | `extract_JSON_2_TXT.py --force-single-page`                                             | none                                                                                                          | a batch option for legacy collections                                       |
-| The page of an upload              | the file's own page number                                                              | `page`, the record's key for a one-page upload                                                                |                                                                             |
-| A compressed ALTO (`.alto.xml.gz`) | read by the shared reader as a document (`--method text-lines`): no reading-order model | the same (`task_type=document`)                                                                               | the same: the ALTO stages take `*.xml`                                      |
-| Page statistics, reports           | CSV files                                                                               | not returned                                                                                                  | batch outputs                                                               |
-| The record                         | `[DOCUMENT] JSON_DIR`, with a baseline there or without                                 | `document_json` in and out; `include_record=true` returns a new one when none is sent                         |                                                                             |
-| Building the record from docproc   | `build_record.py`                                                                       | `POST /build_record`                                                                                          |                                                                             |
-| Scoring a record                   | `score_record.py`                                                                       | `POST /score_record`                                                                                          | the service applies `MAX_PAGES` and `MAX_LINES_PER_PAGE`                    |
-| Paradata                           | a file in `paradata/`                                                                   | the response's `paradata`, a `CreateAction`                                                                   | the service writes no file                                                  |
-
-**A blank line** is not an element of the ALTO: the extraction writes one where the page's layout breaks. The
-`layoutreader` method writes one where the next line in reading order starts more than 1.5 line heights below the
-previous one. It also writes one where the next line starts more than one line height above it (a new column).
-`alto-tools` writes one before each `<TextBlock>`. In a text-lines input it is a line with nothing visible on it
-(empty, or only spaces, control
-characters or zero-width spaces), such as an empty paragraph of a DOCX; both sides keep those only with
-`[TEXT_INGEST] KEEP_BLANK_LINES = true`.
+exists and `--resume` was not given. The three sample documents are public; which archive text may go to which
+server is not settled ([atrium-project#83](https://github.com/ufal/atrium-project/issues/83)).

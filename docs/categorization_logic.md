@@ -1,26 +1,27 @@
 # How a line is categorised
 
 ocr-postprocess gives every text line one of five categories. A reader of the output then knows which
-lines can go on to NLP, which need correcting, and which need another OCR pass. This page explains how it
-decides and where the decision is weak. The complete rules, with every constant, are in
+lines can go on to language processing, which need correcting, and which cannot be read at all. This page
+explains how it decides and where the decision is weak. The complete rules, with every constant, are in
 [the reference](reference/categorization_rules.md); what was measured is on
 [the evaluation page](evaluation/categorization.md); the dated decisions are in
 [the decision record](decisions/2026-10-categorization.md).
 
 ## The five categories
 
-| Category   | Meaning                                                                                                | What to do with it                         |
-|------------|--------------------------------------------------------------------------------------------------------|--------------------------------------------|
-| `Clear`    | Legible. Whatever mistakes it has, nobody needs the page image to read it.                             | pass it on to NLP                          |
-| `Noisy`    | Easily decipherable through a mistake: a swapped letter, a digit inside a word, a few lost characters. | correct the readable words                 |
-| `Trash`    | Illegible: nobody can read it.                                                                         | re-process the page with another OCR tool  |
-| `Non-text` | Structured but not language: numbers, codes, stamps, dates, measurements.                              | check it for identifiers of finds or sites |
-| `Empty`    | Nothing on the line.                                                                                   | ignore it                                  |
+| Category   | Meaning                                                                                                | In the pipeline                                                 |
+|------------|--------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------|
+| `Clear`    | Legible. Whatever mistakes it has, nobody needs the page image to read it.                             | goes on to language processing and keywords                     |
+| `Noisy`    | Easily decipherable through a mistake: a swapped letter, a digit inside a word, a few lost characters. | goes on as well; its readable words can be corrected            |
+| `Trash`    | Illegible: nobody can read it.                                                                         | left out of language processing and keywords; it is not re-read |
+| `Non-text` | Structured but not language: numbers, codes, stamps, dates, measurements.                              | goes on; worth checking for identifiers of finds or sites       |
+| `Empty`    | Nothing on the line.                                                                                   | left out                                                        |
 
 The definition is the data providers': **`Trash` means illegible**, however useful the line is, so a correctly
-scanned web address is `Clear` (@david-spacil, 2026-09-22; agreed by @DanaKriv, 2026-10-01). `Non-text` cannot be
-told from `Trash` without the page image, so hand annotation leaves it out. The program approximates this
-definition; [Known limits](#known-limits) says where it falls short.
+scanned web address is `Clear` ([the definition note](decisions/2026-10-categorization.md#the-definition-note-2026-10-01-revision)).
+No step sends a `Trash` page back for another recognition pass: re-processing is a later, separate campaign.
+`Non-text` cannot be told from `Trash` without the page image, so hand annotation leaves it out. The program
+approximates this definition; [Known limits](#known-limits) says where it falls short.
 
 ## The idea
 
@@ -28,8 +29,8 @@ A line is judged on its own text, with two models as witnesses. A language ident
 language the line looks like and how sure it is. A small language model (Qwen2.5-0.5B) says how surprising
 the line is (its perplexity). Neither decides alone. Most lines are decided by a **quality score** built from
 nine measurements of the text. A short list of **rules** decides the cases the score gets wrong, such as an
-upside-down scan or a web address. In the batch pipeline, a few **document passes** use the rest of the
-page to correct isolated mistakes.
+upside-down scan or a web address. When a whole document is scored, a few **document passes** use the rest
+of the page to correct isolated mistakes.
 
 ## The steps
 
@@ -47,9 +48,10 @@ page to correct isolated mistakes.
    perplexity, and six structural red flags.
 6. **The score decides the rest.** Under 0.55 the line is `Trash`, unless a rescue applies. Above it, the line is
    `Clear`, or `Noisy` when too few of its words pass the word test or a word is damaged.
-7. **Document passes** (batch pipeline only): the same text gets the same category throughout a document. A
-   `Noisy` line inside four `Trash` lines becomes `Trash`. Very clean and very bad pages correct their
-   outliers. A run of upside-down lines becomes `Trash`. They change the category, never the score.
+7. **Document passes** (whenever a whole document is scored, not in `/process`): the same text gets the same
+   category throughout a document. A `Noisy` line inside four `Trash` lines becomes `Trash`. Very clean and very
+   bad pages correct their outliers. A run of upside-down lines becomes `Trash`. They change the category, never
+   the score.
 
 Each step, with its constants: [the reference](reference/categorization_rules.md).
 
@@ -77,27 +79,31 @@ score. The category, not the score, is the decision.
 
 ## Who runs it
 
-One function, `classify_TEXT.score_line()`, decides every line. Three entry points call it and none reimplements
-it:
+One function, `classify_TEXT.score_line()`, decides every line. Every entry point calls it and none
+reimplements it:
 
-| Caller                           | Role                                | Pre-filter                      | Model values                                     | Document passes |
-|----------------------------------|-------------------------------------|---------------------------------|--------------------------------------------------|-----------------|
-| `classify_TEXT.py`               | the batch pipeline (Step 4.1)       | yes                             | FastText and the perplexity model, live          | yes             |
-| `service/text_inference.py`      | `/process` and `/score_record`      | yes                             | FastText and the perplexity model, per request   | **no**          |
-| `tools/recategorize_from_csv.py` | the offline re-scorer               | already applied in the CSV rows | the frozen `orig_lang_score` / `perplex` columns | yes             |
+| Caller                                                                     | Role                                           | Pre-filter                      | Model values                                     | Document passes |
+|----------------------------------------------------------------------------|------------------------------------------------|---------------------------------|--------------------------------------------------|-----------------|
+| `build_record.py`, `score_record.py`, `/build_record`, `/score_record`     | build a record from docproc, or re-score one   | yes                             | FastText and the perplexity model, per run       | yes             |
+| `classify_TEXT.py`                                                         | the batch pipeline (Step 4.1)                  | yes                             | FastText and the perplexity model, live          | yes             |
+| `/process` (`service/text_inference.py`)                                   | one uploaded page or document                  | yes                             | FastText and the perplexity model, per request   | **no**          |
+| `tools/recategorize_from_csv.py`                                           | the offline re-scorer                          | already applied in the CSV rows | the frozen `orig_lang_score` / `perplex` columns | yes             |
 
 - Only the model-derived inputs differ: language, language confidence and perplexity. Every other measurement
   is recomputed from the text by the same code. The re-scorer can therefore replay a configuration change over
   existing CSVs without a GPU (`tests/test_scoring_single_source.py`; `tests/test_service_hardening.py` pins the
   service against the batch path line by line).
-- The document passes need a whole document, so the service answers each line as the scorer gave it. For a
-  whole document its categories can differ from a batch run's. Its `pages[].quality_score` is the batch
-  `avg_quality_score`: the mean of the page's `Clear` and `Noisy` lines.
-- `/score_record` scores the lines of a record another tool wrote (a born-digital record)
-  with the same categories and constants, without reading, splitting or reordering
-  them. A line carrying the converter's decode flag (`decode:garbled`, `decode:inverted`) is scored like any other
-  (D18 rules 1 and 2): the flag is a verdict on the characters, apart from this one on the text. `text` is never
-  written back.
+- Building and re-scoring a record run the batch's document passes over the record's lines
+  (`record_scoring.document_passes()`), so a record gets the categories a batch run gives. `/process` answers each
+  line as the scorer gave it, and for a whole document its categories can differ.
+- A page's `quality_score` is the mean of its `Clear` and `Noisy` lines, and its `quality_band` the category
+  most of its `Clear`, `Noisy` and `Trash` lines have, as the batch aggregation computes them. A block the
+  layout gave as one unit (`unit: block`, a block without line breaks) is scored as one line and left out of the
+  page's figures.
+- Re-scoring a record scores its lines as they are, without reading, splitting or reordering them; `text` is
+  never written back. When a record is built from digital-convert's docproc, a line it flagged as garbled or
+  inverted (`decode:garbled`, `decode:inverted`) is scored like any other: the flag is a verdict on the
+  characters, apart from this one on the text, and it is not copied into the record.
 
 ## Foreign-language lines
 
@@ -123,15 +129,15 @@ The cases, each pinned by a test, are in
   than it looks. The rule that would narrow this is built and held for the pilot.
 - **Other languages,** as above.
 - **A mis-scanned address** gets the same category as a correct one.
-- **The service and the batch pipeline** can differ on a whole document: only the batch pipeline runs the
-  document passes.
+- **`/process` and a whole-document run** can differ on the same document: `/process` runs no document
+  passes.
 
 The measurements behind these: [the evaluation page](evaluation/categorization.md).
 
 ## What is frozen
 
-The category semantics are frozen for the S2 pilot (decision of 2026-09-30, kept in
-[the decision record](decisions/2026-10-categorization.md)); only `LOWPPL_CLEAR_MAX` moved inside
-it (50 → 35, 2026-10-11). After the pilot, a change is measured over the collections and the gold set before it is
-adopted ([Measuring a change](evaluation/categorization.md#measuring-a-change)). The settings are listed in
+The category semantics, the rules, thresholds and weights that give a line its category, are frozen for the
+AMČR pilot ([the decision record](decisions/2026-10-categorization.md)). After the pilot, a change is measured
+over the collections and the gold set before it is adopted
+([Measuring a change](evaluation/categorization.md#measuring-a-change)). The settings are listed in
 [configuration](configuration.md).
