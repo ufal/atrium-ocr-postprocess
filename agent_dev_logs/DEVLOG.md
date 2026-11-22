@@ -2224,3 +2224,22 @@ Documentation only; no code, test or configuration change.
 * **Next:** #14's task 8 (docs) when K4TEL takes it; tasks 1–2 after aiscr-docs-pipeline#17; the release batch
   (atrium-project#77).
 * Logs only; no code changed. Files delivered as full files.
+
+## 2026-11-22 — atrium-project#79: documentation and CI triggers, merged as #17
+
+* **Merged 11-22** as #17 (`a0509c1`), squash: this repository's documentation round for atrium-project#79 and the CI
+  trigger change of atrium-project#40. Its last commit re-pinned the hub reusables to `fbffe25` (`v1`, the merge of
+  atrium-project#93), so Workflow Policy Lint now refuses a branch push and a schedule outside `codeql` and
+  `security`.
+* **Checked after the merge:** the merged pull request's `docker.yml` run (its `closed` event) passed on the new
+  reusable and published `:test` from the merge commit. `docs_check.py` and `runbook_check.py` pass on `test`.
+* **Not yet in effect:** GitHub reads `schedule:` and `dependabot.yml` from the default branch, `master`, which still
+  has the old workflows: `scheduled-smoke.yml` keep their schedules there, and Dependabot its version updates, until
+  `test` is merged into it with the 2.0.0-beta release batch (atrium-project#77).
+* **Follow-ups the PR left:** the committed `paradata/*.json` samples still carry licence fields; the comments of
+  `setup/para_config.txt` describe a calculated licence floor; some `.env.example` limit comments are stale;
+  `/process` does not report a lossy read.
+* **Detail:** hub [plan of #79](https://github.com/ufal/atrium-project/blob/test/agent_dev_logs/plans/79.plan.md),
+  "Where it stands — 2026-11-22";
+  [plan of #40](https://github.com/ufal/atrium-project/blob/test/agent_dev_logs/plans/40.plan.md).
+* Logs only; not pushed.
