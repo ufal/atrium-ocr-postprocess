@@ -9,7 +9,7 @@ in the order the code applies it. For the ideas behind them, read
 [the decision record](../decisions/2026-10-categorization.md).
 
 Constants are read from `setup/config.txt` (sections `[CLASSIFY]` and `[TEXT_UTILS]`), with defaults declared in
-`text_util.py`, and are frozen for the S2 pilot. Every value and how to change it:
+`text_util.py`, and are frozen for the AMČR pilot. Every value and how to change it:
 [configuration](../configuration.md).
 
 ## Contents
@@ -224,7 +224,7 @@ argument, which has no effect on the value.
 >
 > **A listed word is never evidence of damage** (issue #30 Q5b, answered yes by @david-spacil and
 > @DanaKriv on 2026-10-01). Because a line made only of listed words has no gibberish and no
-> weirdness, `rule_short_garbage` (gate 5) cannot open on it; and the shape witness (5c) skips a
+> weirdness, `rule_short_garbage` (gate 6) cannot open on it; and the shape witness skips a
 > listed token in every clause, so it can never be the reason a line is convicted. Before the answer
 > it could: with `ssuti` listed and the witness on, `ssuti vfetennl` was `Trash` on `ssuti`'s
 > `initial_geminate` clause alone (probed 2026-09-22). The other words on a line are still read.
@@ -510,7 +510,7 @@ Pinned as `known_limit` cases in the walkthrough tests, so that fixing one shows
 | `Москва` (rus 0.99 · 900)                                          | `Noisy`, from the Latin-only vowel class                                                                                     | `tier_unknown_non_latin_language`            |
 | `denní`, `oddělení`                                                | a doubled consonant occurring twice counts as a "repeated character" (weirdness 0.35 each), although they are ordinary Czech | `test_known_limit_czech_doubled_consonants…` |
 
-None of these is a release fix: the category semantics are frozen for the S2 pilot (decision of 2026-09-30
+None of these is a release fix: the category semantics are frozen for the AMČR pilot (decision of 2026-09-30
 on ocr-postprocess#2), and each would move categories over millions of lines. **After the pilot**, measure
 each candidate with `tools/corpus_change.py` (`reach`, then `recat` and `diff`) against the labelled sets in
 `tools/gold/` before adopting it:

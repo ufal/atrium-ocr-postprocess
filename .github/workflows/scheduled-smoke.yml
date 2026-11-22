@@ -1,14 +1,16 @@
-# atrium-ocr-postprocess — scheduled "slow lane" smoke tests
+# atrium-ocr-postprocess — on-demand "slow lane" smoke tests
+# Run by dispatch only (Actions -> this workflow -> Run workflow), for example before a release: the CI
+# agreement of 11 November 2026 allows no scheduled runs. The file keeps its name so links still work.
 #
 # PR CI runs `pytest -m "not slow"` (hermetic, no network/models). The slow
 # tests — LayoutReader / Qwen2.5 perplexity / GLM-4v and the HuggingFace
 # `lid.176.bin` fetch — never run there, so upstream breakage (a moved/renamed
 # HF model, a vanished revision, a LayoutReader repo move) stays invisible until
-# a user hits it. This nightly job closes that gap.
+# a user hits it. This job, run before a release, closes that gap.
 #
 # PARAM block is filled from this repo's docker.yml caller.
 
-name: Scheduled Smoke Tests
+name: Fresh-environment Smoke Tests (manual)
 
 # Mirrors the hub's e2e-pipeline-smoke.yml: a smoke run that is already executing is
 # the one carrying the signal, so a later trigger queues rather than killing it.
@@ -17,13 +19,11 @@ concurrency:
   cancel-in-progress: false
 
 on:
-  schedule:
-    - cron: "0 3 * * *"    # daily 03:00 UTC
   workflow_dispatch:
 
 env:
   APT_PACKAGES: "build-essential g++"
-  # (12-factor X) Must match docker.yml's pre-install-torch, or the nightly
+  # (12-factor X) Must match docker.yml's pre-install-torch, or this lane
   # smoke tests a torch the published image never ships.
   PRE_INSTALL_TORCH: "torch>=2.1,<3.0"
   # requirements-finetune.txt: scikit-learn for the slow training smoke (tests/test_quality_model_train.py),
@@ -36,7 +36,6 @@ jobs:
     timeout-minutes: 30
     permissions:
       contents: read
-      issues: write          # only used by the "open issue on failure" step below
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -81,15 +80,3 @@ jobs:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}   # only needed by repos pulling gated models
         # -rs lists every skip with its reason, so a slow test that stops running shows in the log.
         run: python -m pytest -m slow -v --tb=short -rs
-
-      # One open issue per failing lane, commented on by each later failure; scheduled runs only
-      # (atrium-project#81). It used to open a new issue on every failing run.
-      - name: Open or update the lane's issue on scheduled failure
-        if: failure() && github.event_name == 'schedule'
-        uses: ufal/atrium-project/.github/actions/lane-failure-issue@02cbd0144cfa2d39d981d43eea7f4cd72bed53ba  # v1
-        with:
-          lane: scheduled-smoke
-          title: Scheduled smoke tests failed
-          labels: ci,upstream
-          body: >-
-            The scheduled `slow` test run failed. Likely an upstream change (a moved/renamed HuggingFace model or revision, or the LayoutReader source repo).

@@ -100,7 +100,7 @@ jobs:
       contents: read
       packages: write
       security-events: write
-    uses: ufal/atrium-project/.github/workflows/docker-tool.reusable.yml@02cbd0144cfa2d39d981d43eea7f4cd72bed53ba  # v1
+    uses: ufal/atrium-project/.github/workflows/docker-tool.reusable.yml@fbffe25a9d1bcf681274d74f0dd026045d0478de  # v1
     secrets:
       CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
     with:
@@ -154,7 +154,7 @@ jobs:
           # record_scoring.py: service/text_api.py and service/text_inference.py import it since
           # v1.13.0-beta (/score_record, shared with score_record.py, atrium-project#72). v1.13.0-beta
           # published its images but no release because this list did not name it;
-          # tests/test_release_bundle.py now runs this step's closure check on every push.
+          # tests/test_release_bundle.py now runs this step's closure check on every pull request.
           # alto_tools.py: service/text_inference.py reads `reading_order=alto` with it since
           # v1.14.0-beta, as `--method alto-tools` (atrium-project#72); its Apache-2.0 licence rides along.
           # build_record.py, docproc.py, docproc_merge.py: service/text_api.py builds the record

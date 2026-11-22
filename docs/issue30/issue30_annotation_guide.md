@@ -1,5 +1,10 @@
 # How to help us decide what the text-quality program keeps and throws away
 
+**Status:** a closed record of the 2026 annotation round (issue #30 of the former repository,
+[ocr-postprocess#3](https://github.com/ufal/atrium-ocr-postprocess/issues/3) here, closed on 13 October 2026).
+Nothing on this page is an open request. What the round settled is in [the decision
+record](../decisions/2026-10-categorization.md) and [the evaluation page](../evaluation/categorization.md).
+
 **For:** @DanaKriv, and anyone else reading the archive's scanned text.
 **Time needed:** about two to four hours in total. You can stop at any point and send what you have.
 **Issue:** [ufal/atrium-alto-postprocess#30](https://github.com/ufal/atrium-alto-postprocess/issues/30)

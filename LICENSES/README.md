@@ -24,4 +24,4 @@ text above is upstream's `LICENSE`, copied verbatim.
 Vendored under [issue #50](https://github.com/ufal/atrium-alto-postprocess/issues/50):
 the published image used to re-resolve `alto-tools` from a `git+…` requirement,
 and the E2E lane then re-installed it from a moving `master` *inside the released
-image at run time*. See the "Vendored code" section of the [README](../README.md).
+image at run time*. See [Vendored code](../docs/development.md#vendored-code) in the development guide.
