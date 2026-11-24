@@ -8,8 +8,12 @@ repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0          # PARAM: pre-commit autoupdate to pin latest
     hooks:
+      # The generated samples stay byte for byte as the tools wrote them: their paradata
+      # name each record by its SHA-512, which a whitespace fix would break.
       - id: trailing-whitespace
+        exclude: ^data_samples/(RECORD|paradata)/
       - id: end-of-file-fixer
+        exclude: ^data_samples/(RECORD|paradata)/
       - id: check-yaml
       - id: check-added-large-files
         args: ["--maxkb=6024"]   # keep model/data blobs out of git
