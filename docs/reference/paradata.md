@@ -40,10 +40,10 @@ if a file fails to process.
 
 **Log Location**
 
-By default, JSON logs are written to the [paradata](../../paradata) directory following the naming convention
-`<YYMMDD-HHmmss>_<program>.json`. The sample logs committed there are from June 2026: they predate paradata 3.0 and
-still carry the licence fields it dropped, so read them as history, not as the current format. Paradata are meant to
-live alongside the **outputs**, not in the repository.
+By default, JSON logs are written to the `paradata/` directory following the naming convention
+`<YYMMDD-HHmmss>_<program>.json`. The June 2026 sample logs that were committed there predate paradata 3.0 and carried
+the licence fields it dropped; they are no longer in the repository (git history up to `v1.15.4-beta` keeps them).
+Paradata are meant to live alongside the **outputs**, not in the repository.
 
 ## The components a run lists
 
