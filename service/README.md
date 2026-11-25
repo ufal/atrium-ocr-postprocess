@@ -326,9 +326,6 @@ curl -X POST "http://localhost:8000/score_record" \
   `ATRIUM_TEXT_INGEST_MAX_LINES_PER_PAGE` for the lines of one page (`413 limit_exceeded`). A record that cannot be
   opened, or has no `doc_id`, is `422 invalid_record`.
 
-digital-convert's `POST /describe`, parked during the AMČR pilot, calls this endpoint when its `OCR_POSTPROCESS_URL`
-is set.
-
 **On the command line:** `python3 score_record.py <record or folder> [--pages i,ii] [--out-dir DIR] [--scores]`
 runs the same code ([record_scoring.py](../record_scoring.py)) over `*.document.json` files, in place unless
 `--out-dir` is given, without the two page and line limits; `--scores` writes the answer without the record as

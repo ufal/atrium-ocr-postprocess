@@ -1,0 +1,73 @@
+{
+  "schema_version": "3.0",
+  "program": "ocr-postprocess",
+  "tool_version": "v2.0.0-beta",
+  "repository": "https://github.com/ufal/atrium-ocr-postprocess",
+  "runner_ref": "87ce4859e7d848a9959abb251b05670149405efd",
+  "docker_image": "",
+  "python_version": "3.11.4 (main, Jul 26 2023, 14:53:35) [GCC 11.3.0]",
+  "run_id": "261125-102145",
+  "run_uuid": "urn:uuid:b70e4814-75b1-41cc-9a71-4ee3cee27400",
+  "run_agent": "",
+  "action_status": "completed",
+  "start_time": "2026-11-25T10:21:45.816841+00:00",
+  "end_time": "2026-11-25T10:21:55.770485+00:00",
+  "duration_seconds": 9.954,
+  "config": {
+    "batch_size": 128,
+    "max_workers": 32,
+    "input_csv": "_work_batch/test_alto_stats.csv",
+    "text_dir": "_work_batch/PAGE_TXT_LR",
+    "output_dir": "_work_batch/DOC_LINE_CATEG",
+    "model_name": "Qwen/Qwen2.5-0.5B"
+  },
+  "parameters": {},
+  "inputs": [],
+  "outputs": [],
+  "components": [
+    {
+      "name": "alto_tools",
+      "license": "Apache-2.0",
+      "license_url": "https://www.apache.org/licenses/LICENSE-2.0"
+    },
+    {
+      "name": "fasttext",
+      "license": "CC BY-NC 4.0",
+      "license_url": "https://creativecommons.org/licenses/by-nc/4.0/"
+    },
+    {
+      "name": "qwen2.5_0.5b",
+      "license": "Apache-2.0",
+      "license_url": "https://www.apache.org/licenses/LICENSE-2.0"
+    }
+  ],
+  "statistics": {
+    "input_files_total": 3,
+    "successfully_processed": 0,
+    "skipped_files": 3,
+    "output_counts_by_type": {
+      "csv": 0
+    },
+    "performance_per_minute": {
+      "csv": 0.0
+    }
+  },
+  "skipped_files_detail": [
+    {
+      "file": "CTX000000001",
+      "reason": "Worker crashed unexpectedly: A process in the process pool was terminated abruptly while the future was running or pending.",
+      "timestamp": "2026-11-25T10:21:46.820140+00:00"
+    },
+    {
+      "file": "CTX000000002",
+      "reason": "Worker crashed unexpectedly: A process in the process pool was terminated abruptly while the future was running or pending.",
+      "timestamp": "2026-11-25T10:21:46.821083+00:00"
+    },
+    {
+      "file": "CTX000000003",
+      "reason": "Worker crashed unexpectedly: A process in the process pool was terminated abruptly while the future was running or pending.",
+      "timestamp": "2026-11-25T10:21:46.821403+00:00"
+    }
+  ],
+  "limits": []
+}
