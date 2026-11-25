@@ -40,10 +40,13 @@ if a file fails to process.
 
 **Log Location**
 
-By default, JSON logs are written to the [paradata](../../paradata) directory following the naming convention
-`<YYMMDD-HHmmss>_<program>.json`. The sample logs committed there are from June 2026: they predate paradata 3.0 and
-still carry the licence fields it dropped, so read them as history, not as the current format. Paradata are meant to
-live alongside the **outputs**, not in the repository.
+By default, JSON logs are written to the `paradata/` directory following the naming convention
+`<YYMMDD-HHmmss>_<program>.json`; a run's logs belong beside its **outputs**, and `paradata/` itself is git-ignored.
+The samples of this version are in `data_samples/paradata/` ([data_samples/README.md](../../data_samples/README.md)):
+`record/` holds the logs of the records `build_record.py` made from the three docproc fixtures, beside the records in
+`data_samples/RECORD/`, and `batch/` the stage logs and the merged run summary of one batch pipeline run. The June
+2026 sample logs predate paradata 3.0 and carried the licence fields it dropped (git history up to `v1.15.4-beta`
+keeps them).
 
 ## The components a run lists
 

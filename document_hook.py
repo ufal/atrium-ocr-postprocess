@@ -25,8 +25,8 @@ Ownership note: every write here uses PROGRAM_NAME = "ocr-postprocess" (named "a
 ParadataLogger stamps that same `program` (classify, aggregate and the text-lines
 stages import PROGRAM_NAME from here; the other stages spell the literal) and names
 the script in `config.script`. The older per-stage names (`langID-classify`,
-`langID-aggregate`) survive only in the 2026-06 sample logs under `paradata/`, so
-atrium-llm-enrich#13's "normalise the alto-postprocess program names" TODO is done
+`langID-aggregate`) survive only in the 2026-06 sample logs in git history (removed from
+`paradata/` before v2.0.0-beta), so atrium-llm-enrich#13's "normalise the alto-postprocess program names" TODO is done
 (the plan of atrium-alto-postprocess#31, Phase 4; it stayed with that repository).
 
 (#31 Phase 4) `SOURCE_ORIGIN_BY_KIND` — a per-kind `source.origin` override for the

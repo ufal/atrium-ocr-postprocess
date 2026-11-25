@@ -1,5 +1,5 @@
 # 📓 atrium-ocr-postprocess — agent_dev_logs/DEVLOG.md (timeline index)
-> _OCR/ALTO post-processing and line categorization; the successor of atrium-alto-postprocess since 2026-10-01 (#56 there; the open issues were transferred and renumbered). Open issues: #4 (fine-tuning the quality model, deferred past the pilot phase) and #10 (decision models on ambiguous lines, opened 2026-11-06; a sub-issue of atrium-project#83; parked during the pilot phase since 2026-11-11) and #14 (the ATR's docproc as the builder's input, opened 2026-11-16; waits for the open ATR's field list). This repository's part of doc-schema-v2 (atrium-project#84, opened 2026-11-12): `plans/doc-schema-v2.plan.md` — the record builder and scorer from 12 November. #9 (the scheduled-smoke failure of 11-04, scipy) closed 2026-11-04; #8 closed 2026-10-26, #2 2026-10-22, #5 2026-10-20, #1 2026-10-16, #3 2026-10-13 and #6 2026-10-07 (the pairs of #1, #2, #6 and #8 removed 2026-11-19; #3's stays, cited by `setup/config.txt` and a test; #5's, cited by `plans/4.plan.md`). **Starting set of the pilot phase: v1.15.3-beta** (`9ab887a`, 2026-11-04; immutable, with `images.json`; atrium-project#77); **v1.15.4-beta** (11-06, the Galaxy entry point). `test` (= `master`, `fac15d4`) is 21 commits past it and declares the unreleased v2.0.0-beta (record 2.0, the docproc builder). Hub workflows pinned to `02cbd01` (`v1`). Latest entry: 2026-11-19 (log round). The entries of 2026-10-15 to 10-25 sit before the September ones (not reordered). #3's parameter stages after 2026-10-09, up to `v1.11.0-beta`, are recorded in its digest and plan, not here. Entries before 2026-10-01 use atrium-alto-postprocess's issue numbers._
+> _OCR/ALTO post-processing and line categorization; the successor of atrium-alto-postprocess since 2026-10-01 (#56 there; the open issues were transferred and renumbered). Open issues: #4 (fine-tuning the quality model, deferred past the pilot phase) and #10 (decision models on ambiguous lines, opened 2026-11-06; a sub-issue of atrium-project#83; parked during the pilot phase since 2026-11-11) and #14 (the ATR's docproc as the builder's input, opened 2026-11-16; waits for the open ATR's field list). This repository's part of doc-schema-v2 (atrium-project#84, opened 2026-11-12): `plans/doc-schema-v2.plan.md` — the record builder and scorer from 12 November. #9 (the scheduled-smoke failure of 11-04, scipy) closed 2026-11-04; #8 closed 2026-10-26, #2 2026-10-22, #5 2026-10-20, #1 2026-10-16, #3 2026-10-13 and #6 2026-10-07 (the pairs of #1, #2, #6 and #8 removed 2026-11-19; #3's stays, cited by `setup/config.txt` and a test; #5's, cited by `plans/4.plan.md`). **Starting set of the pilot phase: v1.15.3-beta** (`9ab887a`, 2026-11-04; immutable, with `images.json`; atrium-project#77); **v1.15.4-beta** (11-06, the Galaxy entry point). `test` (= `master`, `fac15d4`) is 21 commits past it and declares the unreleased v2.0.0-beta (record 2.0, the docproc builder). Hub workflows pinned to `02cbd01` (`v1`). Latest entry: 2026-11-25 (v2.0.0-beta release prep). The entries of 2026-10-15 to 10-25 sit before the September ones (not reordered). #3's parameter stages after 2026-10-09, up to `v1.11.0-beta`, are recorded in its digest and plan, not here. Entries before 2026-10-01 use atrium-alto-postprocess's issue numbers._
 > _Per-issue detail: `digests/{id}.digest.md` · `plans/{id}.plan.md` · `issues/` exports (source of truth). Cross-repo/hub history lives in `ufal/atrium-project/agent_dev_logs/DEVLOG.md` (deduplicated out of this file)._
 
 ## 2026-03-13
@@ -2242,4 +2242,17 @@ Documentation only; no code, test or configuration change.
 * **Detail:** hub [plan of #79](https://github.com/ufal/atrium-project/blob/test/agent_dev_logs/plans/79.plan.md),
   "Where it stands — 2026-11-22";
   [plan of #40](https://github.com/ufal/atrium-project/blob/test/agent_dev_logs/plans/40.plan.md).
+* Logs only; not pushed.
+
+## 2026-11-24 → 2026-11-25 — v2.0.0-beta release prep (#18), the samples
+
+* **PR #18** (`v2-beta-prep` → `test`, head `46e1ee1`): `CITATION.cff` dated 2026-11-26; the five June paradata
+  removed; the follow-ups of #17 (`setup/para_config.txt`, `.env.example`, docs).
+* **Samples** (`14f8a3b`, runner `ed86807`): `data_samples/RECORD/` holds the records built from the three docproc
+  fixtures (the ATR's, digital-convert's, a mixed document), with their paradata in `data_samples/paradata/record/`;
+  `data_samples/paradata/batch/` one batch pipeline run. The 8 older paradata of `87ce485` removed (`46e1ee1`).
+* **Checked 11-25:** 9 of 9 paradata `completed`, every SHA-512 resolves; the three records are valid 2.0 and every
+  line names a block of its docproc; the mixed record passes the hub's `e2e_assert.py --docproc`. CI green.
+* **Open (v2.0.1):** `/process` answers 200 for a lossy read; a rotated or cropped mixed document fails until the
+  ATR measures the displayed page.
 * Logs only; not pushed.

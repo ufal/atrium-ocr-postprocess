@@ -20,9 +20,9 @@ coverage.xml
 .env
 .idea/
 ./.idea/
-# Paradata emitted by local runs. The handful of sample logs already committed
-# under paradata/ stay tracked (gitignore does not untrack tracked files) —
-# this only stops every local pipeline run from showing up as untracked noise.
+# Paradata emitted by local runs: every stage writes into ./paradata/, so this
+# stops each local pipeline run from showing up as untracked noise. The committed
+# samples live under data_samples/paradata/ (data_samples/README.md).
 paradata/*.json
 # ./data is the compose bind mount; the directory is committed (data/.gitkeep) so a
 # clone owns it, and everything a run writes into it stays untracked. (atrium-project#69)

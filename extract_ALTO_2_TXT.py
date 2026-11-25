@@ -153,10 +153,9 @@ def main(argv=None) -> None:
         output_types=["txt"],
         config_dir=str(Path(__file__).resolve().parent / "setup"),
     )
-    # alto_tools is already seeded as an "always" component, so its Apache-2.0
-    # license is recorded automatically; FastText (CC BY-NC 4.0, also "always")
-    # keeps the calculated licence label at the project baseline. No explicit
-    # log_component call is needed for the alto-tools method.
+    # alto_tools and FastText are "always" components in setup/para_config.txt, so the
+    # paradata list them with their terms (Apache-2.0, CC BY-NC 4.0) without an
+    # explicit log_component call for the alto-tools method.
     _total_inputs = len(tasks)
 
     # (#2) Always finalize, and record per-file successes/skips.

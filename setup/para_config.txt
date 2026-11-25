@@ -8,12 +8,11 @@ repository_fallback = https://github.com/ufal/atrium-ocr-postprocess
 
 [components]
 # name = <license> ; <always|conditional> ; <role>
-# "always"      -> component is part of every run (worst-case baseline)
-# "conditional" -> only counts toward the license when log_component() is called
+# "always"      -> listed among every run's paradata components
+# "conditional" -> only listed when log_component() is called
 #
-# Baseline (worst-case) components are flagged "always" so every run inherits at
-# least the project-wide CC BY-NC 4.0 floor set by the FastText LID weights —
-# the shared invariant asserted by tests/test_paradata.py across all four repos.
+# The components are facts, each with its own licence: paradata 3.0 computes no output
+# licence from them (atrium-project#6, #84).
 #
 # The perplexity model and the GPU-bound extraction backends are conditional:
 # they are recorded only by the script that actually loads them.

@@ -187,7 +187,7 @@ text-lines run does not overwrite the ALTO methods' `data_samples/test_alto_stat
 (`data_samples/TEXT`); `--strict` / `--no-strict` reach `text_split.py` and
 `extract_TEXT_2_TXT.py` (a strict failure stops the pipeline); `--source-origin ocr:<engine>`
 reaches the split stage of every method.
-* **Output:** a merged `<YYMMDD-HHmmss>_pipeline-run.json` in the [paradata](../paradata)
+* **Output:** a merged `<YYMMDD-HHmmss>_pipeline-run.json` in the `paradata/`
 directory, alongside the individual per-stage logs.
 
 > [!NOTE]

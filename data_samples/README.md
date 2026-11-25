@@ -47,6 +47,15 @@ Inputs for the other two methods — same fictional world, new ids so nothing cl
   ingest_report.csv/pages_report.csv), PAGE_TXT_TEXT/ (classify-ready text) and DOC_LINES_TEXT/
   (per-document line tables), with the stats CSV `text_stats.csv` (`[EXTRACT].INPUT_CSV_TEXT`) — not committed.
 
+Records and paradata of this version (paradata 3.0, `tool_version` in each file):
+- RECORD/ — the records `build_record.py` builds from the docproc fixtures in `tests/fixtures/docproc/`, the AMČR
+  pilot's route: CTX000000001 from the ATR's docproc (`scan.atr`), CTX000000002 from digital-convert's
+  (`rich.digital-convert`), CTX000000003 from a mixed document (`mixed.atr` with `mixed.digital-convert`).
+- paradata/record/ — one log per record: the docproc read and the record written, by distribution name and SHA-512.
+  The files are as the tool wrote them; the whitespace hooks leave them alone, so the SHA-512s still match.
+- paradata/batch/ — the stage logs and the merged run summary (`*_pipeline-run.json`) of one batch pipeline run over
+  ALTO/ (LayoutReader), written to a scratch folder so that the committed outputs below stay as they are.
+
 Directory roles mirror the batch pipeline: ALTO/ (source) -> PAGE_ALTO/ (page splits) -> PAGE_TXT* (text
 extraction) -> DOC_LINE_CATEG*, DOC_LINE_STATS* (classification + aggregation). The *_gpt variants correspond to the distilgpt2
 perplexity model; the unsuffixed ones to Qwen2.5-0.5B.

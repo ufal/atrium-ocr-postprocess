@@ -1,0 +1,369 @@
+{
+  "schema_version": "2.0",
+  "record_type": "atrium-document",
+  "doc_id": "CTX000000002",
+  "source": {
+    "origin": "digital",
+    "page_count": 3
+  },
+  "pages": [
+    {
+      "page_index": 1,
+      "page": "1",
+      "content_status": "text",
+      "canvas": {
+        "width": 595.304,
+        "height": 841.89,
+        "unit": "pt"
+      },
+      "quality_score": 0.9495,
+      "quality_band": "Clear"
+    },
+    {
+      "page_index": 2,
+      "page": "2",
+      "content_status": "text",
+      "canvas": {
+        "width": 595.304,
+        "height": 841.89,
+        "unit": "pt"
+      },
+      "quality_score": 0.8989,
+      "quality_band": "Clear"
+    },
+    {
+      "page_index": 3,
+      "page": "3",
+      "content_status": "text",
+      "canvas": {
+        "width": 595.304,
+        "height": 841.89,
+        "unit": "pt"
+      },
+      "quality_score": 0.9484,
+      "quality_band": "Clear"
+    }
+  ],
+  "content": {
+    "text": "Archeologický ústav – nálezová zpráva\nHradiště u Horní Mezi\nPrůběh výzkumu\nSonda II\nNalezena bronzová spona, viz katalog.\nPrvní řádek\nDruhý řádek\nDílčí závěr\nKotva rámečku.\nPoznámka v rámečku.\nKatalog nálezů je uložen v archivu.\nDruhá strana začíná zde.\nNálezy\tNálezy\nKeramika\t12 ks\nKonec první sekce.\nStrana 1\nText třetí strany pokračuje na čtvrté.\nZávěr."
+  },
+  "lines": [
+    {
+      "page": "1",
+      "line": 1,
+      "text": "Archeologický ústav – nálezová zpráva",
+      "block": "p1-b0",
+      "text_source": "text-layer",
+      "bbox_precision": "measured",
+      "bbox": [
+        72.1,
+        38.449,
+        241.159,
+        49.449
+      ],
+      "categ": "Clear",
+      "quality_score": 0.9687,
+      "lang": "ces_Latn"
+    },
+    {
+      "page": "1",
+      "line": 2,
+      "text": "Hradiště u Horní Mezi",
+      "block": "p1-b1",
+      "text_source": "text-layer",
+      "bbox_precision": "measured",
+      "bbox": [
+        72.1,
+        78.155,
+        318.668,
+        106.155
+      ],
+      "categ": "Clear",
+      "quality_score": 0.9453,
+      "lang": "ces_Latn"
+    },
+    {
+      "page": "1",
+      "line": 3,
+      "text": "Průběh výzkumu",
+      "block": "p1-b2",
+      "text_source": "text-layer",
+      "bbox_precision": "measured",
+      "bbox": [
+        72.1,
+        108.649,
+        148.209,
+        119.649
+      ],
+      "categ": "Clear",
+      "quality_score": 0.981,
+      "lang": "ces_Latn"
+    },
+    {
+      "page": "1",
+      "line": 4,
+      "text": "Sonda II",
+      "block": "p1-b3",
+      "text_source": "text-layer",
+      "bbox_precision": "measured",
+      "bbox": [
+        72.1,
+        122.099,
+        108.752,
+        133.099
+      ],
+      "categ": "Clear",
+      "quality_score": 0.8848,
+      "lang": "ces_Latn"
+    },
+    {
+      "page": "1",
+      "line": 5,
+      "text": "Nalezena bronzová spona, viz katalog.",
+      "block": "p1-b4",
+      "text_source": "text-layer",
+      "bbox_precision": "measured",
+      "bbox": [
+        72.1,
+        135.549,
+        240.472,
+        146.549
+      ],
+      "categ": "Clear",
+      "quality_score": 0.9449,
+      "lang": "ces_Latn"
+    },
+    {
+      "page": "1",
+      "line": 6,
+      "text": "První řádek",
+      "block": "p1-b5",
+      "text_source": "text-layer",
+      "bbox_precision": "measured",
+      "bbox": [
+        72.1,
+        148.999,
+        122.568,
+        159.999
+      ],
+      "categ": "Clear",
+      "quality_score": 0.9782,
+      "lang": "ces_Latn"
+    },
+    {
+      "page": "1",
+      "line": 7,
+      "text": "Druhý řádek",
+      "block": "p1-b5",
+      "text_source": "text-layer",
+      "bbox_precision": "measured",
+      "bbox": [
+        72.1,
+        162.449,
+        126.616,
+        173.449
+      ],
+      "categ": "Clear",
+      "quality_score": 0.9793,
+      "lang": "ces_Latn"
+    },
+    {
+      "page": "1",
+      "line": 8,
+      "text": "Dílčí závěr",
+      "block": "p1-b6",
+      "text_source": "text-layer",
+      "bbox_precision": "measured",
+      "bbox": [
+        72.1,
+        175.899,
+        116.958,
+        186.899
+      ],
+      "categ": "Clear",
+      "quality_score": 0.9784,
+      "lang": "ces_Latn"
+    },
+    {
+      "page": "1",
+      "line": 9,
+      "text": "Kotva rámečku.",
+      "block": "p1-b7",
+      "text_source": "text-layer",
+      "bbox_precision": "measured",
+      "bbox": [
+        72.1,
+        189.349,
+        140.828,
+        200.349
+      ],
+      "categ": "Clear",
+      "quality_score": 0.8735,
+      "lang": "slk_Latn"
+    },
+    {
+      "page": "1",
+      "line": 10,
+      "text": "Poznámka v rámečku.",
+      "block": "p1-b8",
+      "text_source": "text-layer",
+      "bbox_precision": "absent",
+      "categ": "Clear",
+      "quality_score": 0.942,
+      "lang": "slk_Latn"
+    },
+    {
+      "page": "1",
+      "line": 11,
+      "text": "Katalog nálezů je uložen v archivu.",
+      "block": "p1-b9",
+      "text_source": "text-layer",
+      "bbox_precision": "measured",
+      "bbox": [
+        80.186,
+        758.899,
+        232.404,
+        769.899
+      ],
+      "categ": "Clear",
+      "quality_score": 0.9684,
+      "lang": "ces_Latn"
+    },
+    {
+      "page": "2",
+      "line": 1,
+      "text": "Druhá strana začíná zde.",
+      "block": "p2-b0",
+      "text_source": "text-layer",
+      "bbox_precision": "measured",
+      "bbox": [
+        72.1,
+        74.449,
+        180.516,
+        85.449
+      ],
+      "categ": "Clear",
+      "quality_score": 0.9605,
+      "lang": "ces_Latn"
+    },
+    {
+      "page": "2",
+      "line": 2,
+      "text": "Nálezy\tNálezy",
+      "block": "p2-b1",
+      "text_source": "text-layer",
+      "bbox_precision": "derived",
+      "bbox": [
+        77.5,
+        87.899,
+        327.064,
+        112.349
+      ],
+      "categ": "Clear",
+      "quality_score": 0.9102,
+      "lang": "slk_Latn"
+    },
+    {
+      "page": "2",
+      "line": 3,
+      "text": "Keramika\t12 ks",
+      "block": "p2-b1",
+      "text_source": "text-layer",
+      "bbox_precision": "derived",
+      "bbox": [
+        77.5,
+        87.899,
+        327.064,
+        112.349
+      ],
+      "categ": "Clear",
+      "quality_score": 0.8747,
+      "lang": "ces_Latn"
+    },
+    {
+      "page": "2",
+      "line": 4,
+      "text": "Konec první sekce.",
+      "block": "p2-b2",
+      "text_source": "text-layer",
+      "bbox_precision": "measured",
+      "bbox": [
+        72.1,
+        114.799,
+        154.622,
+        125.799
+      ],
+      "categ": "Clear",
+      "quality_score": 0.9491,
+      "lang": "ces_Latn"
+    },
+    {
+      "page": "2",
+      "line": 5,
+      "text": "Strana 1",
+      "block": "p2-b3",
+      "text_source": "text-layer",
+      "bbox_precision": "measured",
+      "bbox": [
+        72.1,
+        794.899,
+        100.744,
+        805.899
+      ],
+      "categ": "Clear",
+      "quality_score": 0.8,
+      "lang": "ces_Latn"
+    },
+    {
+      "page": "3",
+      "line": 1,
+      "text": "Text třetí strany pokračuje na čtvrté.",
+      "block": "p3-b0",
+      "text_source": "text-layer",
+      "bbox_precision": "measured",
+      "bbox": [
+        72.1,
+        74.449,
+        232.777,
+        85.449
+      ],
+      "categ": "Clear",
+      "quality_score": 0.9604,
+      "lang": "ces_Latn"
+    },
+    {
+      "page": "3",
+      "line": 2,
+      "text": "Závěr.",
+      "block": "p3-b1",
+      "text_source": "text-layer",
+      "bbox_precision": "measured",
+      "bbox": [
+        72.1,
+        87.899,
+        98.115,
+        98.899
+      ],
+      "categ": "Clear",
+      "quality_score": 0.9364,
+      "lang": "ces_Latn"
+    }
+  ],
+  "quality_summary": {
+    "pages": {
+      "total": 3,
+      "empty": 0,
+      "scored": 3,
+      "mean": 0.9323,
+      "median": 0.9484,
+      "min": 0.8989,
+      "max": 0.9495
+    },
+    "lines": {
+      "total": 18,
+      "by_categ": {
+        "Clear": 18
+      }
+    }
+  }
+}
