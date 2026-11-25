@@ -19,7 +19,7 @@
         "height": 842.0,
         "unit": "pt"
       },
-      "quality_score": 0.8951,
+      "quality_score": 0.8949,
       "quality_band": "Clear"
     },
     {
@@ -74,7 +74,7 @@
         140.0
       ],
       "categ": "Clear",
-      "quality_score": 0.9314,
+      "quality_score": 0.9307,
       "lang": "ces_Latn"
     },
     {
@@ -91,7 +91,7 @@
         140.0
       ],
       "categ": "Clear",
-      "quality_score": 0.9658,
+      "quality_score": 0.9654,
       "lang": "ces_Latn"
     },
     {
@@ -143,7 +143,7 @@
       ],
       "unit": "block",
       "categ": "Clear",
-      "quality_score": 0.9688,
+      "quality_score": 0.9687,
       "lang": "ces_Latn"
     }
   ],
@@ -152,10 +152,10 @@
       "total": 3,
       "empty": 1,
       "scored": 1,
-      "mean": 0.8951,
-      "median": 0.8951,
-      "min": 0.8951,
-      "max": 0.8951
+      "mean": 0.8949,
+      "median": 0.8949,
+      "min": 0.8949,
+      "max": 0.8949
     },
     "lines": {
       "total": 6,

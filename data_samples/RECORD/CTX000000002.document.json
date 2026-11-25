@@ -16,7 +16,7 @@
         "height": 841.89,
         "unit": "pt"
       },
-      "quality_score": 0.9498,
+      "quality_score": 0.9495,
       "quality_band": "Clear"
     },
     {
@@ -28,7 +28,7 @@
         "height": 841.89,
         "unit": "pt"
       },
-      "quality_score": 0.9004,
+      "quality_score": 0.8989,
       "quality_band": "Clear"
     },
     {
@@ -40,7 +40,7 @@
         "height": 841.89,
         "unit": "pt"
       },
-      "quality_score": 0.9486,
+      "quality_score": 0.9484,
       "quality_band": "Clear"
     }
   ],
@@ -79,7 +79,7 @@
         106.155
       ],
       "categ": "Clear",
-      "quality_score": 0.9444,
+      "quality_score": 0.9453,
       "lang": "ces_Latn"
     },
     {
@@ -130,7 +130,7 @@
         146.549
       ],
       "categ": "Clear",
-      "quality_score": 0.9444,
+      "quality_score": 0.9449,
       "lang": "ces_Latn"
     },
     {
@@ -164,7 +164,7 @@
         173.449
       ],
       "categ": "Clear",
-      "quality_score": 0.9795,
+      "quality_score": 0.9793,
       "lang": "ces_Latn"
     },
     {
@@ -198,7 +198,7 @@
         200.349
       ],
       "categ": "Clear",
-      "quality_score": 0.8786,
+      "quality_score": 0.8735,
       "lang": "slk_Latn"
     },
     {
@@ -226,7 +226,7 @@
         769.899
       ],
       "categ": "Clear",
-      "quality_score": 0.9681,
+      "quality_score": 0.9684,
       "lang": "ces_Latn"
     },
     {
@@ -260,7 +260,7 @@
         112.349
       ],
       "categ": "Clear",
-      "quality_score": 0.9114,
+      "quality_score": 0.9102,
       "lang": "slk_Latn"
     },
     {
@@ -277,7 +277,7 @@
         112.349
       ],
       "categ": "Clear",
-      "quality_score": 0.8809,
+      "quality_score": 0.8747,
       "lang": "ces_Latn"
     },
     {
@@ -294,7 +294,7 @@
         125.799
       ],
       "categ": "Clear",
-      "quality_score": 0.9493,
+      "quality_score": 0.9491,
       "lang": "ces_Latn"
     },
     {
@@ -328,7 +328,7 @@
         85.449
       ],
       "categ": "Clear",
-      "quality_score": 0.9606,
+      "quality_score": 0.9604,
       "lang": "ces_Latn"
     },
     {
@@ -345,7 +345,7 @@
         98.899
       ],
       "categ": "Clear",
-      "quality_score": 0.9365,
+      "quality_score": 0.9364,
       "lang": "ces_Latn"
     }
   ],
@@ -354,10 +354,10 @@
       "total": 3,
       "empty": 0,
       "scored": 3,
-      "mean": 0.9329,
-      "median": 0.9486,
-      "min": 0.9004,
-      "max": 0.9498
+      "mean": 0.9323,
+      "median": 0.9484,
+      "min": 0.8989,
+      "max": 0.9495
     },
     "lines": {
       "total": 18,

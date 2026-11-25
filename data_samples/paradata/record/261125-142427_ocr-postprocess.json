@@ -1,0 +1,110 @@
+{
+  "schema_version": "3.0",
+  "program": "ocr-postprocess",
+  "tool_version": "v2.0.0-beta",
+  "repository": "https://github.com/ufal/atrium-ocr-postprocess",
+  "runner_ref": "ed86807d0f4e9324fc35eee8fd43b41c88b3703b",
+  "docker_image": "",
+  "python_version": "3.11.4 (main, Jul 26 2023, 14:53:35) [GCC 11.3.0]",
+  "run_id": "261125-142427",
+  "run_uuid": "urn:uuid:e3120368-8bb8-481d-adc3-e496e4c1690f",
+  "run_agent": "",
+  "action_status": "completed",
+  "start_time": "2026-11-25T14:24:27.111334+00:00",
+  "end_time": "2026-11-25T14:24:28.293863+00:00",
+  "duration_seconds": 1.183,
+  "config": {
+    "command": "build_record",
+    "score": true
+  },
+  "parameters": {
+    "docproc_version": "1.0",
+    "scored": true,
+    "atr_pages": [
+      2
+    ]
+  },
+  "inputs": [
+    {
+      "name": "atr/docproc-json",
+      "sha512": "0e77ce5d1677c4f5255ec95e4a3e150bc522f3a034ab329d9c198f47ab5c8bd97245555dd821d26d2ab05a6b0fa66f20618314d9624869acadb7952e98bb7e71",
+      "media_type": "application/json",
+      "stored": true
+    },
+    {
+      "name": "atr/docproc-json",
+      "sha512": "4dd24f04dea6d787b23604d885ab3ea65906ccd81c716b6162e6fd54bbc1fffb0bec9ba16e9e68050a883dd0ccaf710b64a5e8c8b3e4842fd79f2978cb97970c",
+      "media_type": "application/json",
+      "stored": false
+    }
+  ],
+  "outputs": [
+    {
+      "name": "atrium/document-json",
+      "sha512": "346292d020f309612b5189001808b5f54ac8606d63c835bb59b2462489172bb2d0c46c83e2002bcac7d4833461f37d6cc3f6987c8230f2f3d3dbb12315872ef4",
+      "media_type": "application/json",
+      "stored": true,
+      "record_fields": {
+        "source": [
+          "origin",
+          "page_count",
+          "language"
+        ],
+        "pages": [
+          "page_index",
+          "page",
+          "content_status",
+          "canvas",
+          "quality_score",
+          "quality_band"
+        ],
+        "lines": [
+          "page",
+          "line",
+          "text",
+          "block",
+          "text_source",
+          "bbox_precision",
+          "bbox",
+          "categ",
+          "quality_score",
+          "lang",
+          "unit"
+        ],
+        "content": [
+          "text"
+        ],
+        "quality_summary": [
+          "pages",
+          "lines"
+        ]
+      }
+    }
+  ],
+  "components": [
+    {
+      "name": "alto_tools",
+      "license": "Apache-2.0",
+      "license_url": "https://www.apache.org/licenses/LICENSE-2.0"
+    },
+    {
+      "name": "fasttext",
+      "license": "CC BY-NC 4.0",
+      "license_url": "https://creativecommons.org/licenses/by-nc/4.0/"
+    },
+    {
+      "name": "qwen2.5_0.5b",
+      "license": "Apache-2.0",
+      "license_url": "https://www.apache.org/licenses/LICENSE-2.0"
+    }
+  ],
+  "statistics": {
+    "input_files_total": 1,
+    "successfully_processed": 1,
+    "skipped_files": 0,
+    "output_counts_by_type": {},
+    "performance_per_minute": {}
+  },
+  "skipped_files_detail": [],
+  "limits": []
+}

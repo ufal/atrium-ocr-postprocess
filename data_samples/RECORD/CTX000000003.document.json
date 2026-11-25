@@ -19,7 +19,7 @@
         "height": 841.89,
         "unit": "pt"
       },
-      "quality_score": 0.9426,
+      "quality_score": 0.9422,
       "quality_band": "Clear"
     },
     {
@@ -31,7 +31,7 @@
         "height": 841.89,
         "unit": "pt"
       },
-      "quality_score": 0.9366,
+      "quality_score": 0.9365,
       "quality_band": "Clear"
     },
     {
@@ -43,7 +43,8 @@
         "height": 841.89,
         "unit": "pt"
       },
-      "quality_band": "Trash"
+      "quality_score": 0.8886,
+      "quality_band": "Clear"
     },
     {
       "page_index": 4,
@@ -69,7 +70,7 @@
         78.0
       ],
       "categ": "Clear",
-      "quality_score": 0.9305,
+      "quality_score": 0.9304,
       "lang": "ces_Latn"
     },
     {
@@ -86,7 +87,7 @@
         112.0
       ],
       "categ": "Clear",
-      "quality_score": 0.9314,
+      "quality_score": 0.9307,
       "lang": "ces_Latn"
     },
     {
@@ -103,7 +104,7 @@
         126.0
       ],
       "categ": "Clear",
-      "quality_score": 0.9658,
+      "quality_score": 0.9654,
       "lang": "ces_Latn"
     },
     {
@@ -153,7 +154,7 @@
         130.0
       ],
       "categ": "Clear",
-      "quality_score": 0.9045,
+      "quality_score": 0.9042,
       "lang": "ces_Latn"
     },
     {
@@ -171,7 +172,7 @@
       ],
       "unit": "block",
       "categ": "Clear",
-      "quality_score": 0.9801,
+      "quality_score": 0.9799,
       "lang": "ces_Latn"
     },
     {
@@ -187,8 +188,8 @@
         260.0,
         72.0
       ],
-      "categ": "Trash",
-      "quality_score": 0.8987,
+      "categ": "Clear",
+      "quality_score": 0.9001,
       "lang": "ces_Latn"
     },
     {
@@ -221,8 +222,8 @@
         230.0,
         432.0
       ],
-      "categ": "Trash",
-      "quality_score": 0.8758,
+      "categ": "Clear",
+      "quality_score": 0.8771,
       "lang": "slk_Latn"
     }
   ],
@@ -230,18 +231,17 @@
     "pages": {
       "total": 4,
       "empty": 1,
-      "scored": 2,
-      "mean": 0.9396,
-      "median": 0.9396,
-      "min": 0.9366,
-      "max": 0.9426
+      "scored": 3,
+      "mean": 0.9224,
+      "median": 0.9365,
+      "min": 0.8886,
+      "max": 0.9422
     },
     "lines": {
       "total": 10,
       "by_categ": {
-        "Clear": 5,
-        "Non-text": 1,
-        "Trash": 2
+        "Clear": 7,
+        "Non-text": 1
       },
       "block_units": 2
     }
