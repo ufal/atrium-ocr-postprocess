@@ -62,7 +62,7 @@ from typing import Dict, List, Optional, Tuple
 
 import document_hook
 import text_formats
-from atrium_paradata import ParadataLogger
+from atrium_paradata import ParadataLogger, name_only
 from page_split import _doc_id_from_filename, _sha512_of
 
 CONFIG_PATH = os.getenv("LANGID_CONFIG", os.path.join("setup", "config.txt"))
@@ -338,8 +338,8 @@ def main(argv=None) -> int:
         config={
             "script": "text_split",
             "method": "text-lines",
-            "input_dir": str(args.input_dir),
-            "output_dir": str(args.output_dir),
+            "input_dir": name_only(str(args.input_dir)),
+            "output_dir": name_only(str(args.output_dir)),
             "strict": bool(strict),
             "limits": {k: v for k, v in vars(limits).items()},
             "options": {k: list(v) if isinstance(v, tuple) else v for k, v in vars(options).items()},

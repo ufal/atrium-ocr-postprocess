@@ -5,7 +5,15 @@ A document with any page digital-convert cannot use goes through the ATR whole, 
 stored but named by its SHA-512 in the builder's paradata (D23). The record keeps the exact lines of
 the text layer where digital-convert could use it (H6, D21), with the layout of the stored docproc (D26):
 
-* **a page digital-convert routed to the ATR** (`needsAtr`) takes the ATR's lines (`text_source: atr`);
+* **a page digital-convert routed to the ATR** (`needsAtr`) takes the ATR's lines (`text_source: atr`),
+  unless the document is an office document (`OFFICE_FORMATS`, judged on digital-convert's
+  `sourceFormat`) and the page has lines of its own: such a page went to the ATR for what its objects
+  show, not for its text, which is exact (atrium-project#84 decision 3). It keeps its lines as any
+  other page does, and an ATR block's own lines are dropped only when the native lines linked to it
+  hold its text: at least `KEEP_NATIVE_MIN_RECALL` of its words (casefolded alphanumeric tokens).
+  Otherwise both are kept, the native lines first (a caption in a text box over a scan keeps the
+  scan's OCR). A table's own lines go whenever native cells were linked to it: its OCR repeats them.
+  Nothing is lost; at worst a block's text is there twice;
 * **any other page** keeps digital-convert's lines (`text_source: text-layer`, their own box, box
   precision and flags). Each is linked to the ATR block holding the largest share of its box; with no
   overlap, to the nearest block. A nested block wins a tie with its parent (a figure's `.t0` OCR child
@@ -29,14 +37,21 @@ What fails the job (D13, H9), raised as `docproc.DocprocError`:
 
 from __future__ import annotations
 
-from typing import Dict, List, Optional, Sequence, Tuple
+import re
+from collections import Counter
+from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
-from docproc import DocprocError, ReadBlock, ReadDocument, ReadLine, ReadPage
+from docproc import OFFICE_FORMATS, DocprocError, ReadBlock, ReadDocument, ReadLine, ReadPage
 
 #: A page's size may differ between the two producers by this many units (rendering and rounding) ...
 SIZE_TOLERANCE_PT = 2.0
 #: ... or by this share of the size, whichever is larger.
 SIZE_TOLERANCE_SHARE = 0.01
+#: On a forced page of an office document, an ATR block's own lines are dropped only when the native
+#: lines linked to it hold at least this share of its words (atrium-project#84 decision 3, R4).
+KEEP_NATIVE_MIN_RECALL = 0.5
+
+_WORD = re.compile(r"[^\W_]+")
 
 Box = Sequence[float]
 
@@ -118,8 +133,30 @@ def _relabel(lines: Sequence[ReadLine], source: str, block: Optional[str] = None
     ]
 
 
-def _text_layer_page(index: int, atr: Optional[ReadPage], layer: ReadPage) -> List[ReadLine]:
-    """The lines of a page whose text layer is kept (see the module docstring)."""
+def _words(texts: Iterable[str]) -> List[str]:
+    """Casefolded alphanumeric tokens."""
+    return [word for text in texts for word in _WORD.findall(str(text or "").casefold())]
+
+
+def _recall(block: ReadBlock, native: Sequence[ReadLine]) -> float:
+    """The share of `block`'s own words that the native lines linked to it hold (1.0 for a block
+    with no words of its own: there is nothing to lose)."""
+    words = _words(line.text for line in block.lines)
+    if not words:
+        return 1.0
+    have = Counter(_words(line.text for line in native))
+    held = 0
+    for word in words:
+        if have[word] > 0:
+            have[word] -= 1
+            held += 1
+    return held / len(words)
+
+
+def _text_layer_page(index: int, atr: Optional[ReadPage], layer: ReadPage, by_text: bool = False) -> List[ReadLine]:
+    """The lines of a page whose text layer is kept (see the module docstring). `by_text`: a forced
+    page of an office document, whose ATR blocks keep their own lines unless the native lines linked
+    to them hold their text (`KEEP_NATIVE_MIN_RECALL`)."""
     blocks = list(atr.blocks) if atr is not None else []
     if not any(block.bbox is not None for block in blocks):
         raise DocprocError(
@@ -153,6 +190,8 @@ def _text_layer_page(index: int, atr: Optional[ReadPage], layer: ReadPage) -> Li
     for block in sorted(blocks, key=lambda b: b.reading_order):
         if block.id in kept:
             out.extend(kept[block.id])
+            if by_text and block.type != "table" and _recall(block, kept[block.id]) < KEEP_NATIVE_MIN_RECALL:
+                out.extend(_relabel(block.lines, "atr"))
         else:
             out.extend(_relabel(block.lines, "atr"))
     return out
@@ -192,14 +231,17 @@ def merge(stored: ReadDocument, text_layer: ReadDocument) -> Tuple[ReadDocument,
             f"the ATR echoes forced pages {sorted(stored.forced)}, digital-convert routed {atr_pages} to it (D27)",
         )
 
+    # An office document's forced pages keep their own text (atrium-project#84 decision 3, R4).
+    office = (text_layer.source_format or "") in OFFICE_FORMATS
     pages: Dict[int, ReadPage] = {}
     for index in range(1, stored.page_count + 1):
         atr, layer = stored.pages.get(index), text_layer.pages.get(index)
         _check_geometry(index, atr, layer)
-        if index in atr_pages or layer is None or not layer.lines:
-            lines = _relabel(atr.lines, "atr") if atr is not None else []
+        forced = index in atr_pages
+        if layer is not None and layer.lines and (office or not forced):
+            lines = _text_layer_page(index, atr, layer, by_text=forced)
         else:
-            lines = _text_layer_page(index, atr, layer)
+            lines = _relabel(atr.lines, "atr") if atr is not None else []
         frame = atr if atr is not None else layer
         if frame is None:
             continue  # routed empty by both

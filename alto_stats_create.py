@@ -35,7 +35,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import pandas as pd  # To easily create the final CSV
 
 import alto_tools  # Vendored `alto-tools -s` statistics path (issue #50)
-from atrium_paradata import ParadataLogger
+from atrium_paradata import ParadataLogger, name_only
 from page_split import doc_page_from_path, page_sort_key
 
 
@@ -180,8 +180,8 @@ def main(argv=None):
         program="ocr-postprocess",
         config={
             "script": "alto_stats_create",
-            "input_dir": str(args.input_folder),
-            "output_csv": str(args.output),
+            "input_dir": name_only(str(args.input_folder)),
+            "output_csv": name_only(str(args.output)),
         },
         paradata_dir="paradata",
         output_types=["csv"],

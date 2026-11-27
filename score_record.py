@@ -35,7 +35,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
 from atrium_limits import LimitNotes
-from atrium_paradata import ParadataLogger
+from atrium_paradata import ParadataLogger, name_only
 from document_hook import PROGRAM_NAME
 from record_scoring import UnknownPages, answer_lines, parse_pages, score_record, scored_by_model, select_lines
 
@@ -166,7 +166,7 @@ def main(argv: Optional[List[str]] = None, classify: Optional[Classifier] = None
             "command": "score_record",
             "records": len(files),
             "pages": args.pages,
-            "out_dir": args.out_dir,
+            "out_dir": name_only(args.out_dir),
             "scores": args.scores,
         },
         paradata_dir=args.paradata_dir,

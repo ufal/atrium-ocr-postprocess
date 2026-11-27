@@ -40,7 +40,7 @@ import pandas as pd
 from tqdm import tqdm
 
 import document_hook
-from atrium_paradata import ParadataLogger
+from atrium_paradata import ParadataLogger, name_only
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -327,7 +327,8 @@ def main():
 
     logger = ParadataLogger(
         program=PROGRAM_NAME,
-        config=vars(args),
+        # Names only, never paths (atrium-project#84 decision 1).
+        config={"config": name_only(args.config)},
         paradata_dir="paradata",
         output_types=["csv"],
         config_dir=str(Path(__file__).resolve().parent / "setup"),

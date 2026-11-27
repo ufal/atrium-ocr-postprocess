@@ -2256,3 +2256,13 @@ Documentation only; no code, test or configuration change.
 * **Open (v2.0.1):** `/process` answers 200 for a lossy read; a rotated or cropped mixed document fails until the
   ATR measures the displayed page.
 * Logs only; not pushed.
+
+## 2026-11-27 — atrium-project#84: the non-A options prepared (ARÚP's answers pending)
+
+* **Keep-native (R4):** `docproc.OFFICE_FORMATS`; `docproc_merge.merge` runs `_text_layer_page(by_text=True)` on a forced page of an office text-layer docproc that has lines: an ATR block's own lines are dropped only when the native lines linked to it hold ≥ 50 % of its words (`KEEP_NATIVE_MIN_RECALL`), a table's whenever native cells were linked. `atr_page_missing` still fails such a page with no ATR block. PDFs unchanged. Six tests.
+* **1b:** `name_only` in 13 batch CLIs (`page_split`, the stats scripts, `text_split`, the five extractors, `classify_TEXT`, `aggregate_STAT`, `score_record`); model ids with `local_only`. `tools/decide_lines.py` untouched (parked). A `page_split` test.
+* **Checked:** 2367 passed (2360 at baseline); openapi regenerated (the record schema's H3 descriptions); the hub's lane replayed locally with `build_record.py --no-score`.
+* **Shared:** the re-vendored `atrium_paradata.py` (`name_only`, `start --config-name`, `RENDERED_PDF_DISTRIBUTION`), `atrium_document.schema.json` (H3 descriptions: the forced pages and the pages showing graphics) and `atrium_rocrate.py` (a docstring), byte-identical to the hub's; the pin moves to the hub's squash commit before the PR opens.
+* **Not in the PR:** the committed samples, regenerated from the merged code before the tags.
+* The change is `atrium-ocr-postprocess.decisions-84.zip`, these logs `atrium-ocr-postprocess.agent_dev_logs.zip`.
+* Logs only; not pushed.

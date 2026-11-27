@@ -31,7 +31,10 @@ therefore points at the image actually executing rather than a fixed fork.
 * **Components:** the licensed components the run actually exercised, each with its own licence terms, in
 `components`, as facts. No licence of the output is computed or recorded. See
 [The components a run lists](paradata.md#the-components-a-run-lists) below.
-* **Configuration:** Stores run-time configuration, including script names and specific model choices.
+* **Configuration:** Stores run-time configuration, including script names and specific model choices. Files
+and folders are named, never given as paths (`atrium_paradata.name_only`, atrium-project#84 decision 1): a path
+describes the machine that ran the job, not the document. A model is named by its folder when it is a local one,
+and kept as given when it is a Hugging Face id.
 * **Timing:** Records precise UTC start times, end times, and the total duration of the run in seconds.
 * **Statistics:** Tracks the total number of input files, successfully processed documents, and computes performance
 throughput (e.g., output files generated per minute).

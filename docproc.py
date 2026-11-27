@@ -58,6 +58,12 @@ DIGITAL_FORMATS = frozenset(
     {"pdf-digital", "docx", "pptx", "odt", "ods", "xlsx", "rtf", "doc", "xls", "txt", "csv", "tsv", "json"}
 )
 
+#: `sourceFormat` values of an office document digital-convert reads as its own text on the pages of
+#: a rendering. Judged on digital-convert's docproc: a merged document carries the ATR's format. A page of
+#: one that goes to the ATR does so for what its objects show, not for its text, which is exact
+#: (atrium-project#84 decision 3), so the merge keeps that text (`docproc_merge`).
+OFFICE_FORMATS = frozenset({"docx", "doc", "odt", "rtf"})
+
 
 class DocprocError(ValueError):
     """A docproc the builder cannot build a complete record from; `reason` is a stable code."""

@@ -36,7 +36,7 @@ import os
 import sys
 from typing import Dict, List, Optional, Sequence, Tuple
 
-from atrium_paradata import ParadataLogger
+from atrium_paradata import ParadataLogger, name_only
 from page_split import doc_page_from_path
 from text_formats import IngestError, ReaderOptions, decode_bytes, load_settings
 
@@ -161,7 +161,11 @@ def main(argv=None) -> int:
 
     logger = ParadataLogger(
         program="ocr-postprocess",
-        config={"script": "text_stats_create", "input_folder": str(args.input_folder), "output": str(args.output)},
+        config={
+            "script": "text_stats_create",
+            "input_folder": name_only(str(args.input_folder)),
+            "output": name_only(str(args.output)),
+        },
         paradata_dir="paradata",
         output_types=["csv"],
         config_dir=os.path.join(os.path.dirname(os.path.abspath(__file__)), "setup"),

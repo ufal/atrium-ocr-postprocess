@@ -21,7 +21,7 @@ from tqdm import tqdm
 from transformers import LayoutLMv3ForTokenClassification
 
 import document_hook
-from atrium_paradata import ParadataLogger
+from atrium_paradata import ParadataLogger, name_only
 
 _SCRIPT_NAME = "extract_layoutreader"
 
@@ -421,10 +421,10 @@ def main(argv=None):
         config={
             "script": "extract_LytRdr_ALTO_2_TXT",
             "method": "layoutreader",
-            "input_csv": str(input_csv),
-            "input_dir": str(page_alto_dir),
-            "output_dir": str(OUTPUT_TEXT_DIR),
-            "lr_model": str(LR_MODEL),
+            "input_csv": name_only(str(input_csv)),
+            "input_dir": name_only(str(page_alto_dir)),
+            "output_dir": name_only(str(OUTPUT_TEXT_DIR)),
+            "lr_model": name_only(str(LR_MODEL), local_only=True),
             "n_workers": MAX_WORKERS,
         },
         paradata_dir="paradata",

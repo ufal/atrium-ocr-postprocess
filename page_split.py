@@ -36,7 +36,7 @@ from typing import Any, Iterable, List, Optional, Tuple
 
 import document_hook
 from atrium_document import canonical_doc_id
-from atrium_paradata import ParadataLogger
+from atrium_paradata import ParadataLogger, name_only
 
 DOCUMENT_CONFIG_PATH = os.getenv("LANGID_CONFIG", os.path.join("setup", "config.txt"))
 
@@ -555,8 +555,8 @@ def main(argv=None):
         program="ocr-postprocess",
         config={
             "script": "page_split",
-            "input_dir": str(args.input_dir),
-            "output_dir": str(args.output_dir),
+            "input_dir": name_only(str(args.input_dir)),
+            "output_dir": name_only(str(args.output_dir)),
         },
         paradata_dir="paradata",
         output_types=_formats_present,

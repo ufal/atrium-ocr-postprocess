@@ -28,7 +28,7 @@ from typing import Any, List, Optional, Set
 from tqdm import tqdm
 
 import document_hook
-from atrium_paradata import ParadataLogger
+from atrium_paradata import ParadataLogger, name_only
 from page_split import PAGE_LIST_KEYS
 from text_formats import json_text_lines
 
@@ -227,9 +227,9 @@ def main(argv: Optional[list] = None) -> None:
         config={
             "script": "extract_JSON_2_TXT",
             "method": "json-keys",
-            "input_csv": str(input_csv),
-            "input_dir": str(input_dir),
-            "output_dir": str(OUTPUT_TEXT_DIR),
+            "input_csv": name_only(str(input_csv)),
+            "input_dir": name_only(str(input_dir)),
+            "output_dir": name_only(str(OUTPUT_TEXT_DIR)),
             "n_workers": MAX_WORKERS,
             "force_single_page": force_single_page,
         },

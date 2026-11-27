@@ -50,7 +50,7 @@ from typing import Dict, List, Optional, Tuple
 
 import document_hook
 import text_formats
-from atrium_paradata import ParadataLogger
+from atrium_paradata import ParadataLogger, name_only
 
 CONFIG_PATH = os.getenv("LANGID_CONFIG", "setup/config.txt")
 LINE_TABLE_COLUMNS = ["file", "page_num", "line_num", "text", "page_label"]
@@ -205,9 +205,9 @@ def main(argv: Optional[list] = None) -> int:
         config={
             "script": "extract_TEXT_2_TXT",
             "method": "text-lines",
-            "input_csv": str(input_csv),
-            "output_dir": str(output_dir),
-            "lines_dir": str(lines_dir),
+            "input_csv": name_only(str(input_csv)),
+            "output_dir": name_only(str(output_dir)),
+            "lines_dir": name_only(str(lines_dir)),
             "max_line_chars": options.max_line_chars,
             "keep_blank_lines": options.keep_blank_lines,
             "strict": bool(strict),

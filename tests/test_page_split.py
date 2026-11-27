@@ -140,6 +140,19 @@ def test_main_writes_paradata_accounting(workdir):
     assert stats["output_counts_by_type"]["xml"] == 2  # pages out
 
 
+def test_main_paradata_name_its_folders_not_their_paths(workdir):
+    """atrium-project#84 decision 1: a batch run's `config` names the folders it was given, never their
+    paths (they describe the machine that ran the job)."""
+    import json
+
+    (workdir / "in" / "doc.alto.xml").write_text(_TWO_PAGE_DOC, encoding="utf-8")
+    main([str(workdir / "in"), str(workdir / "out") + "/"])
+
+    data = json.loads(next((workdir / "paradata").glob("*.json")).read_text(encoding="utf-8"))
+    assert data["config"]["input_dir"] == "in"
+    assert data["config"]["output_dir"] == "out"
+
+
 # ── split_alto_xml unit behaviour ────────────────────────────────────────────
 
 

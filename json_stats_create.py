@@ -34,7 +34,7 @@ import os
 
 import pandas as pd
 
-from atrium_paradata import ParadataLogger
+from atrium_paradata import ParadataLogger, name_only
 from extract_JSON_2_TXT import page_text_lines
 from page_split import doc_page_from_path, page_sort_key
 
@@ -131,8 +131,8 @@ def main(argv=None):
         program="ocr-postprocess",
         config={
             "script": "json_stats_create",
-            "input_dir": str(args.input_folder),
-            "output_csv": str(args.output),
+            "input_dir": name_only(str(args.input_folder)),
+            "output_csv": name_only(str(args.output)),
         },
         paradata_dir="paradata",
         output_types=["csv"],

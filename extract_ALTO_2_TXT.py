@@ -33,7 +33,7 @@ from tqdm import tqdm
 
 import alto_tools
 import document_hook
-from atrium_paradata import ParadataLogger
+from atrium_paradata import ParadataLogger, name_only
 from text_util import join_hyphenated_lines
 
 _SCRIPT_NAME = "extract_alto2txt"
@@ -144,9 +144,9 @@ def main(argv=None) -> None:
         config={
             "script": "extract_ALTO_2_TXT",
             "method": "alto-tools",
-            "input_csv": str(input_csv),
-            "input_dir": str(page_alto_dir),
-            "output_dir": str(OUTPUT_TEXT_DIR),
+            "input_csv": name_only(str(input_csv)),
+            "input_dir": name_only(str(page_alto_dir)),
+            "output_dir": name_only(str(OUTPUT_TEXT_DIR)),
             "n_workers": MAX_WORKERS,
         },
         paradata_dir="paradata",

@@ -52,7 +52,7 @@ import pandas as pd
 from tqdm import tqdm
 
 import document_hook
-from atrium_paradata import ParadataLogger
+from atrium_paradata import ParadataLogger, name_only
 from text_util import (
     _TRUSTED_FOREIGN_LANG_BASES,
     CATEG_TRASH_SCORE_MAX,
@@ -1344,10 +1344,10 @@ def main(argv=None):
         config={
             "batch_size": BATCH_SIZE,
             "max_workers": WORKERS_MAX,
-            "input_csv": INPUT_CSV,
-            "text_dir": TEXT_DIR,
-            "output_dir": OUTPUT_DIR,
-            "model_name": MODEL_NAME,
+            "input_csv": name_only(INPUT_CSV),
+            "text_dir": name_only(TEXT_DIR),
+            "output_dir": name_only(OUTPUT_DIR),
+            "model_name": name_only(MODEL_NAME, local_only=True),
         },
         paradata_dir="paradata",
         output_types=["csv"],
