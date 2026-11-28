@@ -2266,3 +2266,19 @@ Documentation only; no code, test or configuration change.
 * **Not in the PR:** the committed samples, regenerated from the merged code before the tags.
 * The change is `atrium-ocr-postprocess.decisions-84.zip`, these logs `atrium-ocr-postprocess.agent_dev_logs.zip`.
 * Logs only; not pushed.
+
+## 2026-11-27 (evening) — atrium-project#84: ARÚP's answers, #19 adjusted
+
+* **ARÚP (comment 7, motyc 16:25):** 1(c), 2(b), 3(b) pictures only (the PDF rule), 6(c) with `figure` blocks.
+* **Decision 3:** keep-native reverted: `docproc_merge.merge()` takes the ATR's lines on every forced page, office or
+  PDF; its six tests go.
+* **Decision 6:** digital-convert's docproc now carries `figure` blocks with no lines and no `imageRef`; the reader
+  already reads such a block as no lines. Tests cover a text-layer docproc and a mixed merge with figure blocks.
+* **Decision 1:** the 13 batch command lines drop every folder and file key from `config` and name their inputs and
+  outputs as entries (file name, SHA-512, `stored: false`); `classify_TEXT.py` and `aggregate_STAT.py` name the
+  records they write. Models stay by name; the `ocr_engine` parameters of the GLM and LayoutReader extractors name
+  a local model, never its path (G1 of 11-27, lost with the container and redone).
+* **Not done here:** the batch sample (fastText's host is blocked in this container) is for the cluster.
+* **Verified:** 2370 passed, 16 skipped, 2 xfailed; records built from digital-convert's docprocs with figure blocks,
+  and both mixed documents, in the hub lane's local replay.
+* Not pushed.
