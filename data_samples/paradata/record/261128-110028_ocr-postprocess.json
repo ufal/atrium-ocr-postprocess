@@ -3,28 +3,28 @@
   "program": "ocr-postprocess",
   "tool_version": "v2.0.0-beta",
   "repository": "https://github.com/ufal/atrium-ocr-postprocess",
-  "runner_ref": "ed86807d0f4e9324fc35eee8fd43b41c88b3703b",
+  "runner_ref": "b67f3ca1b1f9669d4dd131ba71f125741fc4599a",
   "docker_image": "",
   "python_version": "3.11.4 (main, Jul 26 2023, 14:53:35) [GCC 11.3.0]",
-  "run_id": "261125-142407",
-  "run_uuid": "urn:uuid:6e4eaa03-07cf-4a30-bee7-d8691ae5f2e8",
+  "run_id": "261128-110028",
+  "run_uuid": "urn:uuid:dc4a0b9c-1a5c-48b5-96c1-a879eacb399b",
   "run_agent": "",
   "action_status": "completed",
-  "start_time": "2026-11-25T14:24:07.494111+00:00",
-  "end_time": "2026-11-25T14:24:11.426436+00:00",
-  "duration_seconds": 3.932,
+  "start_time": "2026-11-28T11:00:28.726428+00:00",
+  "end_time": "2026-11-28T11:00:30.002268+00:00",
+  "duration_seconds": 1.276,
   "config": {
     "command": "build_record",
     "score": true
   },
   "parameters": {
-    "docproc_version": "1.0",
+    "docproc_version": "1.1",
     "scored": true
   },
   "inputs": [
     {
       "name": "atr/docproc-json",
-      "sha512": "fec2185d2432566f9d24a60cc2fbe6d9356e0eec8e2241b58114564f5a78e2b9820c86cad837e0fa83a2f331d1953782075c091457885c3148d4d45dacab695f",
+      "sha512": "b6917ce15941df279d592c344434631b98600d8e251c18545e27fee3c5771ead646b680e1bdd8acb45cad0e4cb9f88d35fac8bd5f9a577f516313622f73316e6",
       "media_type": "application/json",
       "stored": true
     }
@@ -32,14 +32,13 @@
   "outputs": [
     {
       "name": "atrium/document-json",
-      "sha512": "346385b91d557ddbe15ca96f2a745384842b53b713f0cacfcd36b102ae6d42cada53773f71769a4d4531cfd7dda207a897ed3d9c70ae64a4962900a94b65d61a",
+      "sha512": "bd9a50834b08fbfce4d37ef76ab27eaa630a3a1541b7df81571879cb5da6a0a011bcaeaf761be8f5e62dea897b5f45f90f1aa3bbb80c1846e665050f4f1c2784",
       "media_type": "application/json",
       "stored": true,
       "record_fields": {
         "source": [
           "origin",
-          "page_count",
-          "language"
+          "page_count"
         ],
         "pages": [
           "page_index",
@@ -57,7 +56,6 @@
           "text_source",
           "bbox_precision",
           "bbox",
-          "unit",
           "categ",
           "quality_score",
           "lang"

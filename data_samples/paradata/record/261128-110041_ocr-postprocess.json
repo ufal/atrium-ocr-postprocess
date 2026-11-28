@@ -3,42 +3,52 @@
   "program": "ocr-postprocess",
   "tool_version": "v2.0.0-beta",
   "repository": "https://github.com/ufal/atrium-ocr-postprocess",
-  "runner_ref": "ed86807d0f4e9324fc35eee8fd43b41c88b3703b",
+  "runner_ref": "b67f3ca1b1f9669d4dd131ba71f125741fc4599a",
   "docker_image": "",
   "python_version": "3.11.4 (main, Jul 26 2023, 14:53:35) [GCC 11.3.0]",
-  "run_id": "261125-142418",
-  "run_uuid": "urn:uuid:6277303d-c0c5-46d8-a305-b67c72bb9189",
+  "run_id": "261128-110041",
+  "run_uuid": "urn:uuid:15336a26-280f-4349-9e7c-7b4f9001c8d7",
   "run_agent": "",
   "action_status": "completed",
-  "start_time": "2026-11-25T14:24:18.804817+00:00",
-  "end_time": "2026-11-25T14:24:19.989213+00:00",
-  "duration_seconds": 1.184,
+  "start_time": "2026-11-28T11:00:41.419486+00:00",
+  "end_time": "2026-11-28T11:00:42.677679+00:00",
+  "duration_seconds": 1.258,
   "config": {
     "command": "build_record",
     "score": true
   },
   "parameters": {
-    "docproc_version": "1.1",
-    "scored": true
+    "docproc_version": "1.0",
+    "scored": true,
+    "atr_pages": [
+      2
+    ]
   },
   "inputs": [
     {
       "name": "atr/docproc-json",
-      "sha512": "b6917ce15941df279d592c344434631b98600d8e251c18545e27fee3c5771ead646b680e1bdd8acb45cad0e4cb9f88d35fac8bd5f9a577f516313622f73316e6",
+      "sha512": "0e77ce5d1677c4f5255ec95e4a3e150bc522f3a034ab329d9c198f47ab5c8bd97245555dd821d26d2ab05a6b0fa66f20618314d9624869acadb7952e98bb7e71",
       "media_type": "application/json",
       "stored": true
+    },
+    {
+      "name": "atr/docproc-json",
+      "sha512": "4dd24f04dea6d787b23604d885ab3ea65906ccd81c716b6162e6fd54bbc1fffb0bec9ba16e9e68050a883dd0ccaf710b64a5e8c8b3e4842fd79f2978cb97970c",
+      "media_type": "application/json",
+      "stored": false
     }
   ],
   "outputs": [
     {
       "name": "atrium/document-json",
-      "sha512": "bd9a50834b08fbfce4d37ef76ab27eaa630a3a1541b7df81571879cb5da6a0a011bcaeaf761be8f5e62dea897b5f45f90f1aa3bbb80c1846e665050f4f1c2784",
+      "sha512": "346292d020f309612b5189001808b5f54ac8606d63c835bb59b2462489172bb2d0c46c83e2002bcac7d4833461f37d6cc3f6987c8230f2f3d3dbb12315872ef4",
       "media_type": "application/json",
       "stored": true,
       "record_fields": {
         "source": [
           "origin",
-          "page_count"
+          "page_count",
+          "language"
         ],
         "pages": [
           "page_index",
@@ -58,7 +68,8 @@
           "bbox",
           "categ",
           "quality_score",
-          "lang"
+          "lang",
+          "unit"
         ],
         "content": [
           "text"
