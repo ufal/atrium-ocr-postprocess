@@ -36,7 +36,7 @@ from typing import Any, Iterable, List, Optional, Tuple
 
 import document_hook
 from atrium_document import canonical_doc_id
-from atrium_paradata import ParadataLogger, name_only
+from atrium_paradata import ParadataLogger
 
 DOCUMENT_CONFIG_PATH = os.getenv("LANGID_CONFIG", os.path.join("setup", "config.txt"))
 
@@ -553,11 +553,8 @@ def main(argv=None):
 
     _logger = ParadataLogger(
         program="ocr-postprocess",
-        config={
-            "script": "page_split",
-            "input_dir": name_only(str(args.input_dir)),
-            "output_dir": name_only(str(args.output_dir)),
-        },
+        # Settings only (atrium-project#84 decision 1): the files read and written are entries below.
+        config={"script": "page_split"},
         paradata_dir="paradata",
         output_types=_formats_present,
         config_dir=os.path.join(os.path.dirname(os.path.abspath(__file__)), "setup"),
@@ -585,6 +582,7 @@ def main(argv=None):
             print(f"Processing '{filename}'...")
             _total_inputs += 1
             page_suffix = ALTO_PAGE_SUFFIX if fmt == "xml" else JSON_PAGE_SUFFIX
+            _logger.add_input_files(input_file_path)
             try:
                 page_count = split_fn(input_file_path, args.output_dir)
                 _logger.log_success(fmt, count=page_count)  # pages produced
@@ -592,6 +590,9 @@ def main(argv=None):
                     _drop_stale_pages(args.output_dir, filename, page_suffix)
                 if page_count > 0:
                     _docs_ok += 1
+                    _logger.add_output_files(
+                        *_page_files(args.output_dir, _doc_id_from_filename(filename, fmt), page_suffix)
+                    )
                     # (atrium-llm-enrich#13) page_split is the first stage to see the
                     # original input, so it is the natural first writer of `source`
                     # — set_source() is itself a no-op if a baseline already has one.
@@ -618,6 +619,26 @@ def main(argv=None):
                 _drop_stale_pages(args.output_dir, filename, page_suffix)
     finally:
         _logger.finalize(input_total=_total_inputs, processed_total=_docs_ok)
+
+
+def _page_files(output_dir: str, doc_id: str, suffix: str) -> List[str]:
+    """The page files a split of `doc_id` wrote (`<out>/<doc_id>/<doc_id>-<page><suffix>`), in page
+    order: the run's outputs, named by file name and SHA-512 (atrium-project#84 decision 1)."""
+    folder = os.path.join(output_dir, doc_id)
+    prefix = f"{doc_id}-"
+    try:
+        names = os.listdir(folder)
+    except OSError:
+        return []
+    pages = [
+        name
+        for name in names
+        if name.startswith(prefix)
+        and name.endswith(suffix)
+        and len(name) > len(prefix) + len(suffix)
+        and os.path.isfile(os.path.join(folder, name))
+    ]
+    return [os.path.join(folder, name) for name in sorted(pages, key=lambda n: (len(n), n))]
 
 
 def _drop_stale_pages(output_dir: str, filename: str, suffix: str) -> None:

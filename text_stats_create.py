@@ -36,7 +36,7 @@ import os
 import sys
 from typing import Dict, List, Optional, Sequence, Tuple
 
-from atrium_paradata import ParadataLogger, name_only
+from atrium_paradata import ParadataLogger
 from page_split import doc_page_from_path
 from text_formats import IngestError, ReaderOptions, decode_bytes, load_settings
 
@@ -161,11 +161,8 @@ def main(argv=None) -> int:
 
     logger = ParadataLogger(
         program="ocr-postprocess",
-        config={
-            "script": "text_stats_create",
-            "input_folder": name_only(str(args.input_folder)),
-            "output": name_only(str(args.output)),
-        },
+        # Settings only (atrium-project#84 decision 1): the pages read and the CSV written are entries.
+        config={"script": "text_stats_create"},
         paradata_dir="paradata",
         output_types=["csv"],
         config_dir=os.path.join(os.path.dirname(os.path.abspath(__file__)), "setup"),
@@ -191,6 +188,8 @@ def main(argv=None) -> int:
         except OSError as exc:
             print(f"Error: cannot write {args.output}: {exc}", file=sys.stderr)
             return 1
+        logger.add_input_files(*(row["path"] for row in rows))
+        logger.add_output_files(args.output)
         logger.log_success("csv", count=len(rows))
         print(f"Wrote {len(rows)} page rows to {args.output} ({len(skipped)} file(s) skipped).")
     finally:

@@ -62,7 +62,7 @@ from typing import Dict, List, Optional, Tuple
 
 import document_hook
 import text_formats
-from atrium_paradata import ParadataLogger, name_only
+from atrium_paradata import ParadataLogger
 from page_split import _doc_id_from_filename, _sha512_of
 
 CONFIG_PATH = os.getenv("LANGID_CONFIG", os.path.join("setup", "config.txt"))
@@ -338,8 +338,6 @@ def main(argv=None) -> int:
         config={
             "script": "text_split",
             "method": "text-lines",
-            "input_dir": name_only(str(args.input_dir)),
-            "output_dir": name_only(str(args.output_dir)),
             "strict": bool(strict),
             "limits": {k: v for k, v in vars(limits).items()},
             "options": {k: list(v) if isinstance(v, tuple) else v for k, v in vars(options).items()},
@@ -364,6 +362,7 @@ def main(argv=None) -> int:
             row: Dict[str, object] = {"filename": name, "doc_id": doc_id}
             ingest_rows.append(row)
             print(f"Processing '{name}'...")
+            _logger.add_input_files(path)
             owned_id = False
             try:
                 problem = validate_doc_id(doc_id)
@@ -417,6 +416,7 @@ def main(argv=None) -> int:
                     shutil.rmtree(staged, ignore_errors=True)
                     raise
                 _swap_in(args.output_dir, doc_id, staged)
+                _logger.add_output_files(os.path.join(args.output_dir, doc_id))
                 for n, page in enumerate(doc.pages, 1):
                     page_rows.append(
                         {
@@ -457,6 +457,9 @@ def main(argv=None) -> int:
     finally:
         _write_csv(os.path.join(args.output_dir, INGEST_REPORT), INGEST_COLUMNS, ingest_rows)
         _write_csv(os.path.join(args.output_dir, PAGES_REPORT), PAGES_COLUMNS, page_rows)
+        _logger.add_output_files(
+            os.path.join(args.output_dir, INGEST_REPORT), os.path.join(args.output_dir, PAGES_REPORT)
+        )
         _logger.log_success("csv", count=2)
         if used_pdf:
             _logger.log_component("pypdfium2")

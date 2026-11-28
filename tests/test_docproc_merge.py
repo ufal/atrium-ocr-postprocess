@@ -104,168 +104,6 @@ def test_a_forced_page_takes_the_atrs_lines():
     assert {line.bbox_precision for line in document.pages[2].lines} == {"derived"}
 
 
-# ── an office document's forced page keeps its own text (atrium-project#84 decision 3, R4) ────────
-
-
-def _line(text: str, box: list) -> dict:
-    return {"text": text, "bbox": box, "bboxPrecision": "measured"}
-
-
-def _office(*blocks: dict) -> dict:
-    """mixed.digital-convert as a DOCX whose forced page 2 holds `blocks` (no running text: object text,
-    a table's cells, a header), as digital-convert routes such a page to the ATR."""
-    digital = _docproc("mixed.digital-convert")
-    digital["sourceFormat"] = "docx"
-    page = digital["pages"][1]
-    page["textLayer"] = "digital"
-    page["needsAtrReason"] = "an office page without running text: it shows 1 graphic(s)"
-    page["blocks"] = [dict(block, readingOrder=n) for n, block in enumerate(blocks)]
-    return digital
-
-
-def _scan_page(*extra: dict) -> dict:
-    """mixed.atr whose page 2 is the ATR's reading of a pasted scan: a page-sized figure and its `.t0` OCR
-    child at the top, as the ATR writes figure OCR, and `extra` blocks after them."""
-    atr = _docproc("mixed.atr")
-    atr["pages"][1]["blocks"] = [
-        {
-            "id": "p2-b0",
-            "type": "figure",
-            "bbox": [72.0, 150.0, 520.0, 700.0],
-            "readingOrder": 0,
-            "imageRef": "assets/p2-b0.png",
-            "children": ["p2-b0.t0"],
-        },
-        {
-            "id": "p2-b0.t0",
-            "type": "text",
-            "bbox": [72.0, 150.0, 520.0, 300.0],
-            "readingOrder": 1,
-            "parent": "p2-b0",
-            "content": "Sonda II profil A–B\nnivelační bod 245,30",
-        },
-        *[dict(block, readingOrder=2 + n) for n, block in enumerate(extra)],
-    ]
-    return atr
-
-
-def test_a_forced_office_page_keeps_its_cells_and_adds_the_scans_ocr():
-    """A table and a scan on a page with no running text: the native cells are kept, linked to the
-    ATR's table, whose own OCR of them is dropped; the scan's OCR, which no native line holds, is
-    added."""
-    digital = _office(
-        {
-            "id": "p2-b0",
-            "type": "table",
-            "bbox": [80.0, 720.0, 500.0, 760.0],
-            "content": "Objekt\tDatace",
-            "lines": [_line("Objekt", [80.0, 720.0, 200.0, 735.0]), _line("Datace", [300.0, 720.0, 420.0, 735.0])],
-        },
-    )
-    atr = _scan_page(
-        {"id": "p2-b1", "type": "table", "bbox": [75.0, 715.0, 505.0, 765.0], "content": "0bjekt Datace"},
-    )
-    document, atr_pages = _merged(atr=atr, digital=digital)
-    assert atr_pages == [2]
-    assert [row for row in _rows(document) if row[0] == 2] == [
-        (2, "p2-b0.t0", "atr", "Sonda II profil A–B"),
-        (2, "p2-b0.t0", "atr", "nivelační bod 245,30"),
-        (2, "p2-b1", "text-layer", "Objekt"),
-        (2, "p2-b1", "text-layer", "Datace"),
-    ]
-
-
-def test_a_caption_over_the_scan_keeps_the_scans_ocr():
-    """R8: the caption's text box lies inside the scan's OCR child, so it links to it; the caption does
-    not hold the OCR's words, so both are kept, the native line first."""
-    digital = _office(
-        {
-            "id": "p2-b0",
-            "type": "paragraph",
-            "bbox": [100.0, 200.0, 400.0, 212.0],
-            "content": "Obr. 2: Plán sondy II",
-            "lines": [_line("Obr. 2: Plán sondy II", [100.0, 200.0, 400.0, 212.0])],
-        },
-    )
-    document, _ = _merged(atr=_scan_page(), digital=digital)
-    assert [row for row in _rows(document) if row[0] == 2] == [
-        (2, "p2-b0.t0", "text-layer", "Obr. 2: Plán sondy II"),
-        (2, "p2-b0.t0", "atr", "Sonda II profil A–B"),
-        (2, "p2-b0.t0", "atr", "nivelační bod 245,30"),
-    ]
-
-
-def test_a_header_linked_by_distance_keeps_the_scans_ocr():
-    """A running header above the scan links to the nearest block, the OCR child (a tie with the
-    figure, which the smaller block wins); its words are not the OCR's, so the OCR stays."""
-    digital = _office(
-        {
-            "id": "p2-b0",
-            "type": "header",
-            "bbox": [72.0, 100.0, 300.0, 112.0],
-            "content": "Archeologický ústav",
-            "lines": [_line("Archeologický ústav", [72.0, 100.0, 300.0, 112.0])],
-        },
-    )
-    document, _ = _merged(atr=_scan_page(), digital=digital)
-    rows = [row for row in _rows(document) if row[0] == 2]
-    assert (2, "p2-b0.t0", "text-layer", "Archeologický ústav") in rows
-    assert (2, "p2-b0.t0", "atr", "Sonda II profil A–B") in rows
-
-
-def test_an_atr_block_whose_words_the_native_lines_hold_is_not_doubled():
-    """At least `KEEP_NATIVE_MIN_RECALL` of a block's words in the native lines linked to it: the
-    native lines stand for it."""
-    digital = _office(
-        {
-            "id": "p2-b0",
-            "type": "paragraph",
-            "bbox": [100.0, 200.0, 400.0, 212.0],
-            "content": "Sonda II profil A–B",
-            "lines": [_line("Sonda II profil A–B", [100.0, 200.0, 400.0, 212.0])],
-        },
-    )
-    atr = _scan_page()
-    atr["pages"][1]["blocks"][1]["content"] = "Sonda II profil A-B"
-    document, _ = _merged(atr=atr, digital=digital)
-    assert [row for row in _rows(document) if row[0] == 2] == [(2, "p2-b0.t0", "text-layer", "Sonda II profil A–B")]
-
-
-def test_a_forced_office_page_with_lines_and_no_atr_block_fails():
-    digital = _office(
-        {
-            "id": "p2-b0",
-            "type": "paragraph",
-            "bbox": [100.0, 200.0, 400.0, 212.0],
-            "content": "Obr. 2",
-            "lines": [_line("Obr. 2", [100.0, 200.0, 400.0, 212.0])],
-        },
-    )
-    atr = _scan_page()
-    atr["pages"][1]["blocks"] = []
-    with pytest.raises(DocprocError) as info:
-        _merged(atr=atr, digital=digital)
-    assert info.value.reason == "atr_page_missing"
-
-
-def test_a_forced_pdf_page_with_lines_still_takes_the_atrs():
-    """The keep-native rule is an office document's: a PDF page goes to the ATR because its layer
-    cannot be used, so its lines give way to the ATR's."""
-    digital = _docproc("mixed.digital-convert")
-    digital["pages"][1]["blocks"] = [
-        {
-            "id": "p2-b0",
-            "type": "paragraph",
-            "bbox": [72.0, 80.0, 520.0, 92.0],
-            "readingOrder": 0,
-            "content": "Nlezy jsou ulo eny",
-            "lines": [_line("Nlezy jsou ulo eny", [72.0, 80.0, 520.0, 92.0])],
-        },
-    ]
-    document, _ = _merged(digital=digital)
-    assert {row[2] for row in _rows(document) if row[0] == 2} == {"atr"}
-
-
 def test_an_atr_block_no_text_layer_line_falls_into_adds_its_lines_in_reading_order():
     """The figure's OCR child has no text-layer line: its text is the ATR's, between the paragraph and
     the caption, as the ATR orders them (H8). The figure itself gives no line."""
@@ -312,6 +150,32 @@ def test_a_line_without_a_box_follows_its_digital_convert_block():
     document, _ = _merged(digital=digital)
     line = document.pages[1].lines[2]
     assert line.block == "p1-b0" and line.bbox is None and line.bbox_precision == "absent"
+
+
+def _with_figure(data: dict) -> dict:
+    """digital-convert's docproc with its page 3 picture written as a `figure` block: a box, no lines,
+    no content, no `imageRef` (atrium-project#84 decision 6)."""
+    data = copy.deepcopy(data)
+    page = next(p for p in data["pages"] if p["pageNumber"] == 3)
+    page["blocks"].append(
+        {"id": "p3-b2", "type": "figure", "bbox": [72.0, 140.0, 520.0, 410.0], "readingOrder": 2, "confidence": 1.0}
+    )
+    return data
+
+
+def test_a_figure_block_is_read_as_a_block_without_lines():
+    page = read_docproc(_with_figure(_docproc("mixed.digital-convert"))).pages[3]
+    plain = read_docproc(_docproc("mixed.digital-convert")).pages[3]
+    assert [line.text for line in page.lines] == [line.text for line in plain.lines]
+    figure = next(block for block in page.blocks if block.id == "p3-b2")
+    assert figure.type == "figure" and figure.lines == [] and figure.bbox == [72.0, 140.0, 520.0, 410.0]
+
+
+def test_digital_converts_figure_blocks_change_no_line_of_a_mixed_record():
+    """The figure blocks digital-convert now writes are layout only: the merged lines are the same."""
+    document, atr_pages = _merged(digital=_with_figure(_docproc("mixed.digital-convert")))
+    plain, _ = _merged()
+    assert atr_pages == [2] and _rows(document) == _rows(plain)
 
 
 def test_an_empty_page_stays_empty():

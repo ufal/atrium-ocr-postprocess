@@ -50,7 +50,7 @@ from typing import Dict, List, Optional, Tuple
 
 import document_hook
 import text_formats
-from atrium_paradata import ParadataLogger, name_only
+from atrium_paradata import ParadataLogger
 
 CONFIG_PATH = os.getenv("LANGID_CONFIG", "setup/config.txt")
 LINE_TABLE_COLUMNS = ["file", "page_num", "line_num", "text", "page_label"]
@@ -205,9 +205,6 @@ def main(argv: Optional[list] = None) -> int:
         config={
             "script": "extract_TEXT_2_TXT",
             "method": "text-lines",
-            "input_csv": name_only(str(input_csv)),
-            "output_dir": name_only(str(output_dir)),
-            "lines_dir": name_only(str(lines_dir)),
             "max_line_chars": options.max_line_chars,
             "keep_blank_lines": options.keep_blank_lines,
             "strict": bool(strict),
@@ -221,6 +218,8 @@ def main(argv: Optional[list] = None) -> int:
     doc_json_dir = document_hook.resolve_document_json_dir(cfg.get("DOCUMENT", "JSON_DIR", fallback=""))
     ok = failed = failed_docs = 0
     table_rows: Dict[str, List[Dict[str, object]]] = {}
+    read: List[object] = [input_csv]
+    written: List[object] = []
     try:
         for bad in bad_rows:
             failed += 1
@@ -243,6 +242,8 @@ def main(argv: Optional[list] = None) -> int:
                 print(f"  failed {path}: {exc}", file=sys.stderr)
                 continue
             ok += 1
+            read.append(path)
+            written.append(out_path)
             _logger.log_success("txt")
             label = labels.get(file_id, page, path)
             rows = table_rows.setdefault(file_id, [])
@@ -264,10 +265,12 @@ def main(argv: Optional[list] = None) -> int:
                 _logger.log_skip(file_id, f"line table not written: {exc}")
                 print(f"  line table for {file_id} not written: {exc}", file=sys.stderr)
                 continue
+            written.append(os.path.join(lines_dir, f"{file_id}.csv"))
             _logger.log_success("csv")
 
         # The engine is the producer's paradata (record schema 2.0 has no `pages[].ocr`, D9).
         _logger.set_parameter("ocr_engine", "text-lines")
+        document_hook.name_files(_logger, read, written)
         for doc_id, page_ids in document_hook.group_tasks_by_doc(tasks).items():
             try:
                 pages, content = document_hook.pages_and_content_from_text(output_dir, doc_id, page_ids)

@@ -413,17 +413,11 @@ def main(argv=None):
     use_cuda = torch.cuda.is_available()
     print(f"Device: {'CUDA' if use_cuda else 'CPU'}")
 
-    # parent directory of any path
-    page_alto_dir = Path(tasks[-1][2]).parent
-
     _logger = ParadataLogger(
         program="ocr-postprocess",
         config={
             "script": "extract_LytRdr_ALTO_2_TXT",
             "method": "layoutreader",
-            "input_csv": name_only(str(input_csv)),
-            "input_dir": name_only(str(page_alto_dir)),
-            "output_dir": name_only(str(OUTPUT_TEXT_DIR)),
             "lr_model": name_only(str(LR_MODEL), local_only=True),
             "n_workers": MAX_WORKERS,
         },
@@ -464,9 +458,15 @@ def main(argv=None):
                 _logger.log_skip(t[0], "layoutreader processing failed")
             else:
                 _logger.log_success("txt")
+        done = [t for t, r in zip(tasks, results, strict=True) if r]
+        document_hook.name_files(
+            _logger,
+            [input_csv, *(t[2] for t in done)],
+            [document_hook.page_text_file(OUTPUT_TEXT_DIR, t[0], t[1]) for t in done],
+        )
 
         # The engine is the producer's paradata (record schema 2.0 has no `pages[].ocr`, D9).
-        _logger.set_parameter("ocr_engine", f"layoutreader:{LR_MODEL}")
+        _logger.set_parameter("ocr_engine", f"layoutreader:{name_only(str(LR_MODEL), local_only=True)}")
         for doc_id, page_ids in document_hook.group_tasks_by_doc(tasks).items():
             pages, content = document_hook.pages_and_content_from_text(OUTPUT_TEXT_DIR, doc_id, page_ids)
             document_hook.write_document_block(

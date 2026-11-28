@@ -40,7 +40,7 @@ import pandas as pd
 from tqdm import tqdm
 
 import document_hook
-from atrium_paradata import ParadataLogger, name_only
+from atrium_paradata import ParadataLogger
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -327,8 +327,9 @@ def main():
 
     logger = ParadataLogger(
         program=PROGRAM_NAME,
-        # Names only, never paths (atrium-project#84 decision 1).
-        config={"config": name_only(args.config)},
+        # Settings only (atrium-project#84 decision 1): the config file, the CSVs read and the stats
+        # written are entries by file name and SHA-512.
+        config={"standard_cols": sorted(STANDARD_COLS)},
         paradata_dir="paradata",
         output_types=["csv"],
         config_dir=str(Path(__file__).resolve().parent / "setup"),
@@ -338,6 +339,7 @@ def main():
     _doc_cfg.read(args.config, encoding="utf-8")
     document_json_dir = document_hook.resolve_document_json_dir(_doc_cfg.get("DOCUMENT", "JSON_DIR", fallback=""))
 
+    logger.add_input_files(args.config, *sorted(csv_files))
     print(f"Aggregating {len(csv_files)} documents using Multiprocessing...")
     all_page_stats = []
 
@@ -360,6 +362,7 @@ def main():
                         all_page_stats.append(result)
                         doc_out = output_dir / f"stats_{original_file.stem}.csv"
                         result.to_csv(doc_out, index=False, encoding="utf-8")
+                        logger.add_output_files(doc_out)
                         logger.log_success("csv")
                         # (atrium-llm-enrich#13) pages[] is field-owned here: quality_score/
                         # quality_band only — page-classification's category/
@@ -369,6 +372,7 @@ def main():
                             document_json_dir,
                             original_file.stem,
                             merge_blocks={"pages": _page_records_from_stats(result)},
+                            logger=logger,
                         )
                     else:
                         logger.log_skip(original_file.name, "Empty or invalid CSV structure")
@@ -383,6 +387,7 @@ def main():
             final_df = sort_page_stats(final_df)
 
             final_df.to_csv(output_stats_path, index=False, encoding="utf-8")
+            logger.add_output_files(output_stats_path)
             print(f"Done. Final stats saved to {output_stats_path}")
         else:
             print("No valid page stats could be aggregated.")

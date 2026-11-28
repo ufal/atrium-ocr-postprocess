@@ -816,7 +816,7 @@
             }
           },
           "page_categories": {
-            "description": "Owner: page-classification. Predicted category per page label, for the pages forced to the ATR and the pages showing graphics (H3, atrium-project#84 decision 4). Values come from the `page-category` scheme in the hub-canonical atrium_vocab.py -- 11 concepts, `atrium_vocab.labels_for('page-category')` -- and each has a stable URI via `atrium_vocab.concept_uri('page-category', value)`. Deliberately NOT constrained by `enum`: page-classification derives its label list from the filesystem at runtime (utils.py collect_images), so an enum here would turn a naming slip into a hard pipeline failure instead of the advisory NOTE the registry raises. See docs/skos_strategy.md 4.",
+            "description": "Owner: page-classification. Predicted category per page label, for the pages forced to the ATR and the pages with `figure` blocks (H3, atrium-project#84 decision 4); a page without a category was not selected. Values come from the `page-category` scheme in the hub-canonical atrium_vocab.py -- 11 concepts, `atrium_vocab.labels_for('page-category')` -- and each has a stable URI via `atrium_vocab.concept_uri('page-category', value)`. Deliberately NOT constrained by `enum`: page-classification derives its label list from the filesystem at runtime (utils.py collect_images), so an enum here would turn a naming slip into a hard pipeline failure instead of the advisory NOTE the registry raises. See docs/skos_strategy.md 4.",
             "type": "object",
             "additionalProperties": {
               "type": "string"
@@ -830,7 +830,7 @@
             ]
           },
           "pages": {
-            "description": "Owner of the rows: the record builder (ocr-postprocess), one row for every page of the original, empty pages included (D29). page-classification adds category fields to the pages forced to the ATR and the pages showing graphics; nlp-enrich adds teitok_surface. Field-level ownership — never co-mutated. The page's text-layer verdict and needs_atr live in docproc's routing (D27).",
+            "description": "Owner of the rows: the record builder (ocr-postprocess), one row for every page of the original, empty pages included (D29). page-classification adds category fields to the pages forced to the ATR and the pages with `figure` blocks (a page without one was not selected); nlp-enrich adds teitok_surface. Field-level ownership — never co-mutated. The page's text-layer verdict and needs_atr live in docproc's routing (D27).",
             "type": "array",
             "items": {
               "type": "object",
@@ -874,7 +874,7 @@
                 },
                 "category": {
                   "type": "string",
-                  "description": "page-classification, on the pages forced to the ATR and the pages showing graphics (H3, atrium-project#84 decision 4)."
+                  "description": "page-classification, on the pages forced to the ATR and the pages with `figure` blocks (H3, atrium-project#84 decision 4); absent on a page that was not selected."
                 },
                 "category_confidence": {
                   "type": "number",
@@ -2690,6 +2690,6 @@
   },
   "x-atrium-record-schema": {
     "schema_version": "2.0",
-    "sha256": "6b2a89a60df4b8094560f25291653ee3ec184753e5081d43ee1429ef7fa653b8"
+    "sha256": "8affc88a1d968c6dd7ad3215ce4ce79a1d0c4a7a97c8bbb2f41b319e2b7ba673"
   }
 }

@@ -28,7 +28,7 @@ from typing import Any, List, Optional, Set
 from tqdm import tqdm
 
 import document_hook
-from atrium_paradata import ParadataLogger, name_only
+from atrium_paradata import ParadataLogger
 from page_split import PAGE_LIST_KEYS
 from text_formats import json_text_lines
 
@@ -220,16 +220,11 @@ def main(argv: Optional[list] = None) -> None:
         print("No pages to extract.")
         return
 
-    input_dir = Path(tasks[-1][2]).parent
-
     _logger = ParadataLogger(
         program="ocr-postprocess",
         config={
             "script": "extract_JSON_2_TXT",
             "method": "json-keys",
-            "input_csv": name_only(str(input_csv)),
-            "input_dir": name_only(str(input_dir)),
-            "output_dir": name_only(str(OUTPUT_TEXT_DIR)),
             "n_workers": MAX_WORKERS,
             "force_single_page": force_single_page,
         },
@@ -258,6 +253,12 @@ def main(argv: Optional[list] = None) -> None:
                 _logger.log_success("txt")
             else:
                 _logger.log_skip(t[2], "json extraction failed")
+        done = [t for t, r in zip(tasks, results, strict=True) if r]
+        document_hook.name_files(
+            _logger,
+            [input_csv, *(t[2] for t in done)],
+            [document_hook.page_text_file(OUTPUT_TEXT_DIR, t[0], t[1]) for t in done],
+        )
 
         # The engine is the producer's paradata (record schema 2.0 has no `pages[].ocr`, D9).
         _logger.set_parameter("ocr_engine", "json-keys")

@@ -205,16 +205,11 @@ def main(argv=None):
     # Logger is initialised here, after df is loaded, so that page_alto_dir
     # and len(df) are defined.  MAX_WORKERS is a module-level constant so it
     # is always available regardless of initialisation order.
-    page_alto_dir = Path(df.iloc[0]["path"]).parent
-
     _logger = ParadataLogger(
         program="ocr-postprocess",
         config={
             "script": "extract_LLM_ALTO_2_TXT",
             "method": "glm",
-            "input_csv": name_only(str(input_csv)),
-            "input_dir": name_only(str(page_alto_dir)),
-            "output_dir": name_only(str(OUTPUT_TEXT_DIR)),
             "llm_model": name_only(str(MODEL_PATH), local_only=True),
             "n_workers": MAX_WORKERS,
         },
@@ -236,6 +231,8 @@ def main(argv=None):
     _doc_cfg.read(CONFIG_PATH, encoding="utf-8")
     _document_json_dir = document_hook.resolve_document_json_dir(_doc_cfg.get("DOCUMENT", "JSON_DIR", fallback=""))
 
+    read: list = [input_csv]
+    written: list = []
     try:
         for _, row in tqdm(df.iterrows(), total=len(df)):
             file_id = row["file"]
@@ -267,6 +264,8 @@ def main(argv=None):
 
             # Resume — unless the page image is newer than its text (#31 Phase 5).
             if document_hook.output_is_current(txt_path, [image_path]):
+                read.append(image_path)
+                written.append(txt_path)
                 continue
 
             # --- Inference ---
@@ -275,12 +274,15 @@ def main(argv=None):
             if text:
                 _logger.log_success("txt")
                 document_hook.write_text_if_changed(txt_path, text)  # unchanged text keeps its time (resume)
+                read.append(image_path)
+                written.append(txt_path)
             else:
                 _logger.log_skip(str(image_path), "failed to extract text with GLM")
 
         _tasks = list(zip(df["file"], df["page"], strict=False))
         # The engine is the producer's paradata (record schema 2.0 has no `pages[].ocr`, D9).
-        _logger.set_parameter("ocr_engine", f"glm:{MODEL_PATH}")
+        _logger.set_parameter("ocr_engine", f"glm:{name_only(str(MODEL_PATH), local_only=True)}")
+        document_hook.name_files(_logger, read, written)
         for doc_id, page_ids in document_hook.group_tasks_by_doc(_tasks).items():
             pages, content = document_hook.pages_and_content_from_text(OUTPUT_TEXT_DIR, doc_id, page_ids)
             document_hook.write_document_block(

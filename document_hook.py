@@ -503,6 +503,72 @@ def write_scores(
         return written
 
 
+def page_text_file(text_dir: str, file_id: Any, page_id: Any) -> str:
+    """One extracted page's text file: `<text_dir>/<file>/<file>-<page>.txt`, as the extractors write it."""
+    return os.path.join(str(text_dir), str(file_id), f"{file_id}-{page_id}.txt")
+
+
+def name_files(logger: Any, inputs: Iterable[Any] = (), outputs: Iterable[Any] = ()) -> None:
+    """Name the files a batch stage read and wrote in its paradata, by file name and SHA-512, never by
+    path (atrium-project#84 decision 1): `ParadataLogger.add_input_files` / `add_output_files`. A file
+    that is not there (a page that failed) is left out."""
+    if logger is None:
+        return
+    logger.add_input_files(*[p for p in inputs if p and os.path.isfile(str(p))])
+    logger.add_output_files(*[p for p in outputs if p and os.path.isfile(str(p))])
+
+
+class EntryRecorder:
+    """Stands in for a ParadataLogger in a worker process, which cannot hold the run's logger: it
+    records the inputs and outputs a record writer names, each hashed when it is named (a record
+    written in place is read before it is replaced), for the main process to replay into the run's
+    paradata (`replay_entries`)."""
+
+    def __init__(self) -> None:
+        self.inputs: List[Dict[str, Any]] = []
+        self.outputs: List[Dict[str, Any]] = []
+
+    @staticmethod
+    def _entry(
+        name: str, data: Any, path: Optional[str], sha512: Optional[str], media_type: Optional[str], stored: bool
+    ):
+        from atrium_paradata import sha512_of  # noqa: PLC0415
+
+        return {
+            "name": name,
+            "sha512": sha512 or sha512_of(data, path),
+            "media_type": media_type,
+            "stored": stored,
+        }
+
+    def add_input(self, name, data=None, *, path=None, sha512=None, media_type=None, stored=True):
+        self.inputs.append(self._entry(name, data, path, sha512, media_type, stored))
+
+    def add_output(self, name, data=None, *, path=None, sha512=None, media_type=None, stored=True, record_fields=None):
+        entry = self._entry(name, data, path, sha512, media_type, stored)
+        entry["record_fields"] = record_fields
+        self.outputs.append(entry)
+
+    def entries(self) -> Dict[str, List[Dict[str, Any]]]:
+        return {"inputs": list(self.inputs), "outputs": list(self.outputs)}
+
+
+def replay_entries(logger: Any, entries: Optional[Dict[str, List[Dict[str, Any]]]]) -> None:
+    """Name in the run's paradata what an `EntryRecorder` recorded in a worker."""
+    if logger is None or not entries:
+        return
+    for e in entries.get("inputs") or []:
+        logger.add_input(e["name"], sha512=e["sha512"], media_type=e.get("media_type"), stored=e.get("stored", True))
+    for e in entries.get("outputs") or []:
+        logger.add_output(
+            e["name"],
+            sha512=e["sha512"],
+            media_type=e.get("media_type"),
+            stored=e.get("stored", True),
+            record_fields=e.get("record_fields"),
+        )
+
+
 def group_tasks_by_doc(tasks: Iterable[Sequence[Any]]) -> "OrderedDict[str, List[Any]]":
     """Group (file_id, page_id, ...) task tuples by file_id, preserving the page
     order each task list was built in (the extraction CSV's row order).

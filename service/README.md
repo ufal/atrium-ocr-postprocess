@@ -275,11 +275,7 @@ curl -X POST "http://localhost:8000/build_record" \
   `quality_score` and `quality_band`, and `quality_summary`, as `/score_record` writes them. A page routed `empty` has
   `content_status: empty` and no score.
 * **A mixed document** ([`docproc_merge.py`](../docproc_merge.py)): a page digital-convert routed to the
-  ATR takes the ATR's lines (`text_source: atr`), except an office document's (DOCX, DOC, ODT, RTF): such a page went
-  to the ATR for what its objects show, so it keeps its own exact lines as any other page does, and an ATR block's
-  own lines are dropped only when the native lines linked to it hold at least half of its words (a table's always:
-  its OCR repeats the cells); otherwise both are kept, native first (atrium-project#84 decision 3). Any other page
-  keeps digital-convert's exact lines
+  ATR takes the ATR's lines (`text_source: atr`). Any other page keeps digital-convert's exact lines
   (`text_source: text-layer`), each linked (`block`) to the ATR block holding the largest share of its box, else the
   nearest; a nested block (a figure's `.t0` OCR child) wins over its parent. An ATR block no kept line went to adds
   its own lines. Lines follow the ATR's reading order; `source.origin` is `digital` while a text-layer line is

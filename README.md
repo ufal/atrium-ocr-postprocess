@@ -107,8 +107,7 @@ page back for another recognition pass; re-processing is a later, separate campa
 In the AMČR pipeline, digital-convert and the ATR read each document and write its layout as docproc; one
 docproc is stored per document. ocr-postprocess builds the record from it with `POST /build_record`. For a
 mixed document it takes the ATR's docproc and digital-convert's together, and keeps the text layer's lines on
-the pages where they are good, and an office document's own lines on every page, adding the ATR's text where they
-lack it (a pasted scan). It is the only tool that scores lines. page-classification's page categories then
+the pages where they are good. It is the only tool that scores lines. page-classification's page categories then
 join the record's page rows, nlp-enrich adds the linguistic layer and keyword-extract the keywords. The whole
 route: the hub's [Pipelines](https://ufal.github.io/atrium-project/pipelines/#the-route-through-the-pipeline)
 page and this tool's [workflow page](https://ufal.github.io/atrium-project/workflows/ocr-postprocess/). Its SSH
