@@ -1,5 +1,6 @@
 # Strategy — [atrium-project#84](https://github.com/ufal/atrium-project/issues/84) (doc-schema-v2): ocr-postprocess's part
 
+> _**Refreshed 2026-11-28**: Status — 11-28 (merged and released as `v2.0.0-beta`; the hub's lanes, the chain sample at the tags and `doc-schema-v2` next)._
 > _**Refreshed 2026-11-27 (evening)**: Status — 11-27 (evening) (ARÚP's answers on atrium-project#84, comment 7; the PR adjusted)._
 > _**Refreshed 2026-11-27**: Status — 11-27 (the non-A options of atrium-project#84 prepared, not pushed)._
 > _**Refreshed 2026-11-25**: Status — 11-25 (the v2.0.0-beta release prep)._
@@ -18,17 +19,19 @@
 > issue existed), whose reader for "ATR's JSON or ALTO", D14 merge by decode verdict, `pages[].origin`,
 > `lines[].style.region` and `tables[]` are superseded below._
 
-**Status (2026-11-27, evening)**: 🟡 **ARÚP answered atrium-project#84 (comment 7). #19 is adjusted: keep-native is reverted, a forced office page takes the ATR's lines as a PDF page does (decision 3); the batch command lines keep settings and models in `config` and name every file they read or write as an `inputs`/`outputs` entry by name and SHA-512 (decision 1); the two LLM/LayoutReader engine strings name a local model, never its path. See the DEVLOG entry of 11-27 (evening).**
+**Status (2026-11-28)**: 🟢 **Released as `v2.0.0-beta` (`6008e0c`, 11-28): #19 squash-merged (`7eea714`, atrium-project#84's decisions 1, 3, 6) after the re-pin to the hub's `ff0a8ea` (`v1`), with the records and the batch run from the cluster (runner `b67f3ca`, the tag's code); the release run is green and the images are certified. Next, in the hub: the chain sample re-run at this tag, both E2E lanes on the `2.0.0-beta` images, and `doc-schema-v2`'s tag (motyc is asked on atrium-project#84). See the DEVLOG entry of 11-28.**
 
-**Status (2026-11-27)**: 🟡 **The non-A options of atrium-project#84 prepared (not pushed; ARÚP has not answered): a forced page of an office document keeps its own lines, the ATR's added where they lack its text (decision 3, R4); the batch scripts' paradata name folders, not paths (decision 1). One PR, after the hub's. See the DEVLOG entry of 11-27.**
+**Status (2026-11-27, evening)**: 🟡 **ARÚP answered atrium-project#84 (comment 7). #19 is adjusted: keep-native is reverted, a forced office page takes the ATR's lines as a PDF page does (decision 3); the batch command lines keep settings and models in `config` and name every file they read or write as an `inputs`/`outputs` entry by name and SHA-512 (decision 1); the two LLM/LayoutReader engine strings name a local model, never its path. See the DEVLOG entry of 11-27 (evening).** _(superseded 11-28: merged and released)_
 
-**Status (2026-11-25)**: 🟢 **v2.0.0-beta release prep in #18 (`v2-beta-prep` → `test`), CI green; the records and paradata are this version's (runner `ed86807`, checked 11-25). Tag 26 November after the merge.**
+**Status (2026-11-27)**: 🟡 **The non-A options of atrium-project#84 prepared (not pushed; ARÚP has not answered): a forced page of an office document keeps its own lines, the ATR's added where they lack its text (decision 3, R4); the batch scripts' paradata name folders, not paths (decision 1). One PR, after the hub's. See the DEVLOG entry of 11-27.** _(superseded 11-27 evening: ARÚP answered)_
+
+**Status (2026-11-25)**: 🟢 **v2.0.0-beta release prep in #18 (`v2-beta-prep` → `test`), CI green; the records and paradata are this version's (runner `ed86807`, checked 11-25). Tag 26 November after the merge.** _(superseded 11-28: tagged `v2.0.0-beta` on 11-28, after ARÚP's answers)_
 
 **Status (2026-11-19)**: 🟡 **This repository's part is on `test` (#11–#13, #15, #16), pinned to `02cbd01`. Ronald's
 answers (11-17) match the builder: derived line boxes (ask 7) and `all_engines_failed` as a failure (ask 9). One
 pilot risk from ask 10: the merge refuses a rotated or cropped text-layer page of a mixed document
 (`coordinate_mismatch`) until the open ATR measures the displayed page. The release (`v2.0.0-beta`) goes with the
-batch (atrium-project#77); doc-schema-v2's tag after the cluster run. See "Status — 11-19".**
+batch (atrium-project#77); doc-schema-v2's tag after the cluster run. See "Status — 11-19".** _(superseded 11-25: the release prep)_
 
 **Status (2026-11-14, afternoon)**: 🟡 **The hub's PR is merged and this repository is pinned to it: drift is green.
 Round 6 completes this repository's part where no answer is pending; see "Status — round 6". The release (v2.0.0-beta)
