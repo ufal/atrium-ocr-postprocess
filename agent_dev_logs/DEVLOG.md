@@ -2256,3 +2256,29 @@ Documentation only; no code, test or configuration change.
 * **Open (v2.0.1):** `/process` answers 200 for a lossy read; a rotated or cropped mixed document fails until the
   ATR measures the displayed page.
 * Logs only; not pushed.
+
+## 2026-11-27 — atrium-project#84: the non-A options prepared (ARÚP's answers pending)
+
+* **Keep-native (R4):** `docproc.OFFICE_FORMATS`; `docproc_merge.merge` runs `_text_layer_page(by_text=True)` on a forced page of an office text-layer docproc that has lines: an ATR block's own lines are dropped only when the native lines linked to it hold ≥ 50 % of its words (`KEEP_NATIVE_MIN_RECALL`), a table's whenever native cells were linked. `atr_page_missing` still fails such a page with no ATR block. PDFs unchanged. Six tests.
+* **1b:** `name_only` in 13 batch CLIs (`page_split`, the stats scripts, `text_split`, the five extractors, `classify_TEXT`, `aggregate_STAT`, `score_record`); model ids with `local_only`. `tools/decide_lines.py` untouched (parked). A `page_split` test.
+* **Checked:** 2367 passed (2360 at baseline); openapi regenerated (the record schema's H3 descriptions); the hub's lane replayed locally with `build_record.py --no-score`.
+* **Shared:** the re-vendored `atrium_paradata.py` (`name_only`, `start --config-name`, `RENDERED_PDF_DISTRIBUTION`), `atrium_document.schema.json` (H3 descriptions: the forced pages and the pages showing graphics) and `atrium_rocrate.py` (a docstring), byte-identical to the hub's; the pin moves to the hub's squash commit before the PR opens.
+* **Not in the PR:** the committed samples, regenerated from the merged code before the tags.
+* The change is `atrium-ocr-postprocess.decisions-84.zip`, these logs `atrium-ocr-postprocess.agent_dev_logs.zip`.
+* Logs only; not pushed.
+
+## 2026-11-27 (evening) — atrium-project#84: ARÚP's answers, #19 adjusted
+
+* **ARÚP (comment 7, motyc 16:25):** 1(c), 2(b), 3(b) pictures only (the PDF rule), 6(c) with `figure` blocks.
+* **Decision 3:** keep-native reverted: `docproc_merge.merge()` takes the ATR's lines on every forced page, office or
+  PDF; its six tests go.
+* **Decision 6:** digital-convert's docproc now carries `figure` blocks with no lines and no `imageRef`; the reader
+  already reads such a block as no lines. Tests cover a text-layer docproc and a mixed merge with figure blocks.
+* **Decision 1:** the 13 batch command lines drop every folder and file key from `config` and name their inputs and
+  outputs as entries (file name, SHA-512, `stored: false`); `classify_TEXT.py` and `aggregate_STAT.py` name the
+  records they write. Models stay by name; the `ocr_engine` parameters of the GLM and LayoutReader extractors name
+  a local model, never its path (G1 of 11-27, lost with the container and redone).
+* **Not done here:** the batch sample (fastText's host is blocked in this container) is for the cluster.
+* **Verified:** 2370 passed, 16 skipped, 2 xfailed; records built from digital-convert's docprocs with figure blocks,
+  and both mixed documents, in the hub lane's local replay.
+* Not pushed.

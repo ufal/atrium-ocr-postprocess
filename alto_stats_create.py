@@ -178,21 +178,20 @@ def main(argv=None):
 
     _logger = ParadataLogger(
         program="ocr-postprocess",
-        config={
-            "script": "alto_stats_create",
-            "input_dir": str(args.input_folder),
-            "output_csv": str(args.output),
-        },
+        # Settings only (atrium-project#84 decision 1): the pages read and the CSV written are entries.
+        config={"script": "alto_stats_create"},
         paradata_dir="paradata",
         output_types=["csv"],
         config_dir=os.path.join(os.path.dirname(os.path.abspath(__file__)), "setup"),
     )
     _total_inputs = 0
+    _read: list = []
 
     try:
         # --- 4. Process Subdirectories ---
         for subdir in subdirs:
             stats, doc_inputs, doc_skips = process_alto_files_with_alto_tools(subdir)
+            _read.extend(rec["path"] for rec in stats)
             _total_inputs += doc_inputs
             _logger.log_success("csv", count=len(stats))
             for sk in doc_skips:
@@ -212,6 +211,7 @@ def main(argv=None):
         # --- 5. Process Root Directory ---
         # After processing subdirs, process any .xml files in the root folder
         stats, doc_inputs, doc_skips = process_alto_files_with_alto_tools(args.input_folder)
+        _read.extend(rec["path"] for rec in stats)
         _total_inputs += doc_inputs
         _logger.log_success("csv", count=len(stats))
         for sk in doc_skips:
@@ -226,6 +226,9 @@ def main(argv=None):
                 df.to_csv(args.output, index=False, header=False, mode="a")
             print(f"Processed {len(stats)} files from {args.input_folder}")
 
+        _logger.add_input_files(*_read)
+        if os.path.exists(args.output):
+            _logger.add_output_files(args.output)
         print("Done.")
     finally:
         _logger.finalize(input_total=_total_inputs)

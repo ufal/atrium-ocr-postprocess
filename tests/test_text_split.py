@@ -408,3 +408,19 @@ def test_a_rerun_keeps_the_file_times_of_unchanged_pages(workdir, monkeypatch):
     assert os.stat(p1).st_mtime_ns == t1
     assert os.stat(p2).st_mtime_ns > t2
     assert p2.read_text(encoding="utf-8") == "strana dva, opravená\n"
+
+
+def test_paradata_name_the_files_read_and_written_never_their_paths(workdir, monkeypatch):
+    """atrium-project#84 decision 1(c): settings in `config`; the original read, its page files and the
+    two reports written are entries by file name and SHA-512; the record by its distribution name."""
+    _config(workdir, monkeypatch)
+    inp, out = workdir / "in", workdir / "out"
+    (inp / "a.txt").write_text("Jedna\nDva\fTři\n", encoding="utf-8")
+    assert text_split.main([str(inp), str(out)]) == 0
+    data = json.loads(next((workdir / "paradata").glob("*.json")).read_text(encoding="utf-8"))
+    assert not {"input_dir", "output_dir"} & set(data["config"])
+    assert [e["name"] for e in data["inputs"] if e["name"] != "atrium/document-json"] == ["a.txt"]
+    names = [e["name"] for e in data["outputs"] if e["name"] != "atrium/document-json"]
+    assert names[-2:] == ["ingest_report.csv", "pages_report.csv"] and len(names) == 4, names
+    assert all(len(e["sha512"]) == 128 for e in data["inputs"] + data["outputs"])
+    assert str(workdir) not in json.dumps(data)

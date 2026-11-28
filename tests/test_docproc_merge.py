@@ -152,6 +152,32 @@ def test_a_line_without_a_box_follows_its_digital_convert_block():
     assert line.block == "p1-b0" and line.bbox is None and line.bbox_precision == "absent"
 
 
+def _with_figure(data: dict) -> dict:
+    """digital-convert's docproc with its page 3 picture written as a `figure` block: a box, no lines,
+    no content, no `imageRef` (atrium-project#84 decision 6)."""
+    data = copy.deepcopy(data)
+    page = next(p for p in data["pages"] if p["pageNumber"] == 3)
+    page["blocks"].append(
+        {"id": "p3-b2", "type": "figure", "bbox": [72.0, 140.0, 520.0, 410.0], "readingOrder": 2, "confidence": 1.0}
+    )
+    return data
+
+
+def test_a_figure_block_is_read_as_a_block_without_lines():
+    page = read_docproc(_with_figure(_docproc("mixed.digital-convert"))).pages[3]
+    plain = read_docproc(_docproc("mixed.digital-convert")).pages[3]
+    assert [line.text for line in page.lines] == [line.text for line in plain.lines]
+    figure = next(block for block in page.blocks if block.id == "p3-b2")
+    assert figure.type == "figure" and figure.lines == [] and figure.bbox == [72.0, 140.0, 520.0, 410.0]
+
+
+def test_digital_converts_figure_blocks_change_no_line_of_a_mixed_record():
+    """The figure blocks digital-convert now writes are layout only: the merged lines are the same."""
+    document, atr_pages = _merged(digital=_with_figure(_docproc("mixed.digital-convert")))
+    plain, _ = _merged()
+    assert atr_pages == [2] and _rows(document) == _rows(plain)
+
+
 def test_an_empty_page_stays_empty():
     document, _ = _merged()
     assert 4 not in document.pages and document.routes[4] == "empty" and document.page_count == 4

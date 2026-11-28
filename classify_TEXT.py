@@ -52,7 +52,7 @@ import pandas as pd
 from tqdm import tqdm
 
 import document_hook
-from atrium_paradata import ParadataLogger
+from atrium_paradata import ParadataLogger, name_only
 from text_util import (
     _TRUSTED_FOREIGN_LANG_BASES,
     CATEG_TRASH_SCORE_MAX,
@@ -1083,6 +1083,7 @@ def process_document(task):
         batch_meta = []
         processed_count = 0
         batch_counter = 0
+        paradata = None  # the record named when one is written (below)
 
         for _, row in group.iterrows():
             page_id = str(row["page"])
@@ -1177,13 +1178,23 @@ def process_document(task):
             # (atrium-llm-enrich#13) lines[] is field-owned here: categ/quality_score/
             # lang/text only — a co-contributor's fields on the same row (nlp-enrich's
             # lemma/upos/feats/teitok_ref/bbox) survive untouched via merge_block.
+            # The record read and written, for the main process's paradata (a worker holds no logger).
+            recorder = document_hook.EntryRecorder()
             document_hook.write_document_block(
                 document_json_dir,
                 file_id,
                 merge_blocks={"lines": _lines_records_from_df(df)},
+                logger=recorder,
             )
+            paradata = recorder.entries()
 
-        return {"status": "success", "file_id": file_id, "lines": processed_count, "reclassified": reclassified}
+        return {
+            "status": "success",
+            "file_id": file_id,
+            "lines": processed_count,
+            "reclassified": reclassified,
+            "paradata": paradata,
+        }
 
     except Exception as e:
         part_path.unlink(missing_ok=True)  # an incomplete document leaves nothing a resume could trust
@@ -1344,15 +1355,15 @@ def main(argv=None):
         config={
             "batch_size": BATCH_SIZE,
             "max_workers": WORKERS_MAX,
-            "input_csv": INPUT_CSV,
-            "text_dir": TEXT_DIR,
-            "output_dir": OUTPUT_DIR,
-            "model_name": MODEL_NAME,
+            "model_name": name_only(MODEL_NAME, local_only=True),
         },
         paradata_dir="paradata",
         output_types=["csv"],
         config_dir=str(Path(__file__).resolve().parent / "setup"),
     )
+
+    # The page index read (atrium-project#84 decision 1: files by name and SHA-512, never in config).
+    document_hook.name_files(logger, [INPUT_CSV])
 
     # ── paradata: record the licensed components this step exercises ──────────
     logger.log_component("fasttext")
@@ -1428,6 +1439,14 @@ def main(argv=None):
                     if status == "success":
                         total_processed += result["lines"]
                         logger.log_success("csv")
+                        # The page texts read, the categorized CSV and the record written.
+                        group = next(t[1] for t in grouped_tasks if t[0] == file_id)
+                        document_hook.name_files(
+                            logger,
+                            [page_text_path(TEXT_DIR, file_id, str(row["page"])) for _, row in group.iterrows()],
+                            [Path(OUTPUT_DIR) / f"{file_id}.csv"],
+                        )
+                        document_hook.replay_entries(logger, result.get("paradata"))
                         if result.get("reclassified"):
                             tqdm.write(f"Re-classified (a page text changed since its output): {result['file_id']}")
                     elif status == "skipped":

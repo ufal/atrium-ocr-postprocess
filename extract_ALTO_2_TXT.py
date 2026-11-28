@@ -137,16 +137,11 @@ def main(argv=None) -> None:
         print("No pages to extract.")
         return
 
-    page_alto_dir = Path(tasks[-1][2]).parent
-
     _logger = ParadataLogger(
         program="ocr-postprocess",
         config={
             "script": "extract_ALTO_2_TXT",
             "method": "alto-tools",
-            "input_csv": str(input_csv),
-            "input_dir": str(page_alto_dir),
-            "output_dir": str(OUTPUT_TEXT_DIR),
             "n_workers": MAX_WORKERS,
         },
         paradata_dir="paradata",
@@ -176,6 +171,12 @@ def main(argv=None) -> None:
                 _logger.log_success("txt")
             else:
                 _logger.log_skip(t[2], "alto-tools extraction failed")
+        done = [t for t, r in zip(tasks, results, strict=True) if r]
+        document_hook.name_files(
+            _logger,
+            [input_csv, *(t[2] for t in done)],
+            [document_hook.page_text_file(OUTPUT_TEXT_DIR, t[0], t[1]) for t in done],
+        )
 
         # (atrium-llm-enrich#13) pages[].ocr + content are field-/block-owned here;
         # read the just-written .txt files back per document rather than keeping

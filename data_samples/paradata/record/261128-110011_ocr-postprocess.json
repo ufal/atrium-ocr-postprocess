@@ -3,45 +3,36 @@
   "program": "ocr-postprocess",
   "tool_version": "v2.0.0-beta",
   "repository": "https://github.com/ufal/atrium-ocr-postprocess",
-  "runner_ref": "ed86807d0f4e9324fc35eee8fd43b41c88b3703b",
+  "runner_ref": "b67f3ca1b1f9669d4dd131ba71f125741fc4599a",
   "docker_image": "",
   "python_version": "3.11.4 (main, Jul 26 2023, 14:53:35) [GCC 11.3.0]",
-  "run_id": "261125-142427",
-  "run_uuid": "urn:uuid:e3120368-8bb8-481d-adc3-e496e4c1690f",
+  "run_id": "261128-110011",
+  "run_uuid": "urn:uuid:1bedbdf2-643d-490e-9ebd-371782c82032",
   "run_agent": "",
   "action_status": "completed",
-  "start_time": "2026-11-25T14:24:27.111334+00:00",
-  "end_time": "2026-11-25T14:24:28.293863+00:00",
-  "duration_seconds": 1.183,
+  "start_time": "2026-11-28T11:00:11.329898+00:00",
+  "end_time": "2026-11-28T11:00:15.012843+00:00",
+  "duration_seconds": 3.683,
   "config": {
     "command": "build_record",
     "score": true
   },
   "parameters": {
     "docproc_version": "1.0",
-    "scored": true,
-    "atr_pages": [
-      2
-    ]
+    "scored": true
   },
   "inputs": [
     {
       "name": "atr/docproc-json",
-      "sha512": "0e77ce5d1677c4f5255ec95e4a3e150bc522f3a034ab329d9c198f47ab5c8bd97245555dd821d26d2ab05a6b0fa66f20618314d9624869acadb7952e98bb7e71",
+      "sha512": "fec2185d2432566f9d24a60cc2fbe6d9356e0eec8e2241b58114564f5a78e2b9820c86cad837e0fa83a2f331d1953782075c091457885c3148d4d45dacab695f",
       "media_type": "application/json",
       "stored": true
-    },
-    {
-      "name": "atr/docproc-json",
-      "sha512": "4dd24f04dea6d787b23604d885ab3ea65906ccd81c716b6162e6fd54bbc1fffb0bec9ba16e9e68050a883dd0ccaf710b64a5e8c8b3e4842fd79f2978cb97970c",
-      "media_type": "application/json",
-      "stored": false
     }
   ],
   "outputs": [
     {
       "name": "atrium/document-json",
-      "sha512": "346292d020f309612b5189001808b5f54ac8606d63c835bb59b2462489172bb2d0c46c83e2002bcac7d4833461f37d6cc3f6987c8230f2f3d3dbb12315872ef4",
+      "sha512": "346385b91d557ddbe15ca96f2a745384842b53b713f0cacfcd36b102ae6d42cada53773f71769a4d4531cfd7dda207a897ed3d9c70ae64a4962900a94b65d61a",
       "media_type": "application/json",
       "stored": true,
       "record_fields": {
@@ -66,10 +57,10 @@
           "text_source",
           "bbox_precision",
           "bbox",
+          "unit",
           "categ",
           "quality_score",
-          "lang",
-          "unit"
+          "lang"
         ],
         "content": [
           "text"

@@ -1,5 +1,7 @@
 # Strategy — [atrium-project#84](https://github.com/ufal/atrium-project/issues/84) (doc-schema-v2): ocr-postprocess's part
 
+> _**Refreshed 2026-11-27 (evening)**: Status — 11-27 (evening) (ARÚP's answers on atrium-project#84, comment 7; the PR adjusted)._
+> _**Refreshed 2026-11-27**: Status — 11-27 (the non-A options of atrium-project#84 prepared, not pushed)._
 > _**Refreshed 2026-11-25**: Status — 11-25 (the v2.0.0-beta release prep)._
 > _**Refreshed 2026-11-19**: "Status — 11-19": rounds 7–9 and #16 merged, Ronald's answers against the builder, the
 > tag after the cluster run._
@@ -15,6 +17,10 @@
 > This file is the repository's slice only; its 11-11 version (written before the
 > issue existed), whose reader for "ATR's JSON or ALTO", D14 merge by decode verdict, `pages[].origin`,
 > `lines[].style.region` and `tables[]` are superseded below._
+
+**Status (2026-11-27, evening)**: 🟡 **ARÚP answered atrium-project#84 (comment 7). #19 is adjusted: keep-native is reverted, a forced office page takes the ATR's lines as a PDF page does (decision 3); the batch command lines keep settings and models in `config` and name every file they read or write as an `inputs`/`outputs` entry by name and SHA-512 (decision 1); the two LLM/LayoutReader engine strings name a local model, never its path. See the DEVLOG entry of 11-27 (evening).**
+
+**Status (2026-11-27)**: 🟡 **The non-A options of atrium-project#84 prepared (not pushed; ARÚP has not answered): a forced page of an office document keeps its own lines, the ATR's added where they lack its text (decision 3, R4); the batch scripts' paradata name folders, not paths (decision 1). One PR, after the hub's. See the DEVLOG entry of 11-27.**
 
 **Status (2026-11-25)**: 🟢 **v2.0.0-beta release prep in #18 (`v2-beta-prep` → `test`), CI green; the records and paradata are this version's (runner `ed86807`, checked 11-25). Tag 26 November after the merge.**
 

@@ -1,0 +1,111 @@
+{
+  "schema_version": "3.0",
+  "program": "ocr-postprocess",
+  "tool_version": "v2.0.0-beta",
+  "repository": "https://github.com/ufal/atrium-ocr-postprocess",
+  "runner_ref": "b67f3ca1b1f9669d4dd131ba71f125741fc4599a",
+  "docker_image": "",
+  "python_version": "3.11.4 (main, Jul 26 2023, 14:53:35) [GCC 11.3.0]",
+  "run_id": "261128-110122",
+  "run_uuid": "urn:uuid:8872b8e4-9c81-43ae-8792-b26a113364fe",
+  "run_agent": "",
+  "action_status": "completed",
+  "start_time": "2026-11-28T11:01:22.109225+00:00",
+  "end_time": "2026-11-28T11:01:30.133977+00:00",
+  "duration_seconds": 8.025,
+  "config": {
+    "batch_size": 128,
+    "max_workers": 32,
+    "model_name": "Qwen/Qwen2.5-0.5B"
+  },
+  "parameters": {},
+  "inputs": [
+    {
+      "name": "test_alto_stats.csv",
+      "sha512": "f384cf5a8172689326953a1b0debe6d61b327000375f9fb472f8d5f327f0582751aa73296e15eaf4f0c6460a02b3e6e369b94e7df1675ecf1a4170b2a1fa5b03",
+      "stored": false
+    },
+    {
+      "name": "CTX000000001-1.txt",
+      "sha512": "61893a01597bc7b456f804266dd924b32566e78308c62673e769730e574fca2dc7df0ab1a66d0cbb20a8e37e11ad925731fb99f10dd2da464421c10d2d559541",
+      "stored": false
+    },
+    {
+      "name": "CTX000000001-2.txt",
+      "sha512": "4ed5074641d4ac6a6d786f92ef65e47d3f1eee40292674d5e038ea18cf8e502ebe8fe8d3faf5dcfff0b9b4e8905720e8dbb9311fe36f037dd06e150db1080cd4",
+      "stored": false
+    },
+    {
+      "name": "CTX000000003-1.txt",
+      "sha512": "e54c4dae2903299a1510be4d5e8982bf258214e9c88a7955bbffff7b10c0fbad3bf48f1155fd495114eed8298a45780b2a6fb04df9ea1fdbd18b1af262eba45d",
+      "stored": false
+    },
+    {
+      "name": "CTX000000002-1.txt",
+      "sha512": "08b64fea9d3cd92ed9fc2e9823a28fe7c4fb1fe373b19dae74fb4b6f62fc2211cc1f5df1b2db05b7826881ca50a7e60b8a39a0cf0bd0e8825a5151772d2d3cac",
+      "stored": false
+    },
+    {
+      "name": "CTX000000002-2.txt",
+      "sha512": "e829f04d131143874a831b3418bdb23c935fbde592122e022aa920a1230b5a326ed1d76d6030184a4f5006591febb52b6ea326e7ded27ebfb81bf36049a7466d",
+      "stored": false
+    },
+    {
+      "name": "CTX000000002-3.txt",
+      "sha512": "14eee48c7f1becd87f50128e7722ec342e58301ddf9bcd054c0c39275a2bf88ccfb77d53b272c2332beb113ff201f309f8502ff77a8c32905a9bfc0a1455cd82",
+      "stored": false
+    },
+    {
+      "name": "CTX000000002-4.txt",
+      "sha512": "8ca17345fafae6744e30b04191f916265afc7ab5411bf35d753e6195509c6c7a71c0aef7eb56244de65431b2e2eb4ac771b2920756e8f9da1d65f507aceba596",
+      "stored": false
+    }
+  ],
+  "outputs": [
+    {
+      "name": "CTX000000001.csv",
+      "sha512": "05a898d27d5d1fd45d65b8baddc296076dfff6dc4bf5dc086ae49f365725b124eb0793347a918b858eb35815cbe24733ffd29a602481ec3b76763f61b3b72d78",
+      "stored": false
+    },
+    {
+      "name": "CTX000000003.csv",
+      "sha512": "ade5d8ad7e4d75a6a4b63d499294abc2728cd8737a4ba20f811c18dde8e044b5b0c879f3cf2e5a383f176bb3c6f9aa4b6ee9fe75a740f49c91959edc5da01d5a",
+      "stored": false
+    },
+    {
+      "name": "CTX000000002.csv",
+      "sha512": "fb821d70e684b83dc1b93828ec76a11e09283d7619be01b791d4ea94815b209faa7c8cfca498078c7840b018fde438676ae3fba6bb596b8f2d8cbeaa1c090b83",
+      "stored": false
+    }
+  ],
+  "components": [
+    {
+      "name": "alto_tools",
+      "license": "Apache-2.0",
+      "license_url": "https://www.apache.org/licenses/LICENSE-2.0"
+    },
+    {
+      "name": "fasttext",
+      "license": "CC BY-NC 4.0",
+      "license_url": "https://creativecommons.org/licenses/by-nc/4.0/"
+    },
+    {
+      "name": "qwen2.5_0.5b",
+      "license": "Apache-2.0",
+      "license_url": "https://www.apache.org/licenses/LICENSE-2.0"
+    }
+  ],
+  "statistics": {
+    "input_files_total": 3,
+    "successfully_processed": 3,
+    "skipped_files": 0,
+    "output_counts_by_type": {
+      "csv": 3
+    },
+    "performance_per_minute": {
+      "csv": 22.4306
+    }
+  },
+  "skipped_files_detail": [],
+  "limits": []
+}

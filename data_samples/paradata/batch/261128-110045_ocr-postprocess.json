@@ -1,0 +1,99 @@
+{
+  "schema_version": "3.0",
+  "program": "ocr-postprocess",
+  "tool_version": "v2.0.0-beta",
+  "repository": "https://github.com/ufal/atrium-ocr-postprocess",
+  "runner_ref": "b67f3ca1b1f9669d4dd131ba71f125741fc4599a",
+  "docker_image": "",
+  "python_version": "3.11.4 (main, Jul 26 2023, 14:53:35) [GCC 11.3.0]",
+  "run_id": "261128-110045",
+  "run_uuid": "urn:uuid:ca2051bf-bf91-4dde-acb1-73768f7b2327",
+  "run_agent": "",
+  "action_status": "completed",
+  "start_time": "2026-11-28T11:00:45.106422+00:00",
+  "end_time": "2026-11-28T11:00:45.169160+00:00",
+  "duration_seconds": 0.063,
+  "config": {
+    "script": "page_split"
+  },
+  "parameters": {},
+  "inputs": [
+    {
+      "name": "CTX000000001.alto.xml",
+      "sha512": "bae39af8eb1c8d0d65c521a5ea580ce74de62b1290c32573ec1639aeac9fe73b81f5e70865c7f8d36c0732f18701c037a844db6d6d62ca032ed52ddf9a7df67d",
+      "stored": false
+    },
+    {
+      "name": "CTX000000002.alto.xml",
+      "sha512": "5ca76cbce1e50a29dc9b01c8440b089cd9805e92537f8bd2d9590491618f0f8a19fc31ec8b67b84fa6242f33743da6a2be70c654c93be57110444a072716ae6c",
+      "stored": false
+    },
+    {
+      "name": "CTX000000003.alto.xml",
+      "sha512": "4e2560c56e94ac95f77ee6dff44e956e812a33665b9007fb64bcc6a75706012cf75f86a12098d1f6e6459dbd3797359c65a6e7c11b43264f81174aa46f1084fa",
+      "stored": false
+    }
+  ],
+  "outputs": [
+    {
+      "name": "CTX000000001-1.alto.xml",
+      "sha512": "8745b706a26b04074c545055511b18e7e7be49c154af17c9bb172c0b261b6db770ea8cb94a0c9af80a0747cccf557f3f5d6a38311e30dfc1f3600b17130b27e1",
+      "stored": false
+    },
+    {
+      "name": "CTX000000001-2.alto.xml",
+      "sha512": "cb663dffe183c065f4bba35d0ae1606f1705d79ce5ed660b1bfd7e6de66d35da2176da274517e4afc19d8faca21f3bbcd0b8acf0ca974ed62ad19ea792812d0f",
+      "stored": false
+    },
+    {
+      "name": "CTX000000002-1.alto.xml",
+      "sha512": "b4bb3e3cac0f4a3d7eeda0ad87ec5784ac513f803b123aded08874d566efe9dc2c2c1df6af742fd0f5ce0f7bf20faab4b2ab8c13b2b623c440a5a012b52253d6",
+      "stored": false
+    },
+    {
+      "name": "CTX000000002-2.alto.xml",
+      "sha512": "b91fe04d921671f8452deb81c1aed6ff41350d65d5359a6cf94f139193e18c22f4393c21aaf3d182d7ba892ae7a1f351414494b470f7d9430d86211f541352f4",
+      "stored": false
+    },
+    {
+      "name": "CTX000000002-3.alto.xml",
+      "sha512": "fbe33c4787639a4fa078aa5a299cb3aa18e5fec51c299fcfd965918f0d4e280602e878e516845cb072afa7ecd96cb32271830219e997a2a82022bf8023b731e1",
+      "stored": false
+    },
+    {
+      "name": "CTX000000002-4.alto.xml",
+      "sha512": "c0831d1662666f8a80a2e80fab7726137248b405569fd03c06cd4596d5f1a1d19df8f31bea7ac45f800786993b1175bd861f8b67d21de3c9b938a3f962267c6e",
+      "stored": false
+    },
+    {
+      "name": "CTX000000003-1.alto.xml",
+      "sha512": "58508ca7efcd7334088c90ff197b3eae46d1c4f1da2f89dcbe8e8b6375bb2fdeb779356c38ab1d3342881b54d83bd70402e7a2c4c747999b733728f79de0f438",
+      "stored": false
+    }
+  ],
+  "components": [
+    {
+      "name": "alto_tools",
+      "license": "Apache-2.0",
+      "license_url": "https://www.apache.org/licenses/LICENSE-2.0"
+    },
+    {
+      "name": "fasttext",
+      "license": "CC BY-NC 4.0",
+      "license_url": "https://creativecommons.org/licenses/by-nc/4.0/"
+    }
+  ],
+  "statistics": {
+    "input_files_total": 3,
+    "successfully_processed": 3,
+    "skipped_files": 0,
+    "output_counts_by_type": {
+      "xml": 7
+    },
+    "performance_per_minute": {
+      "xml": 6694.5073
+    }
+  },
+  "skipped_files_detail": [],
+  "limits": []
+}

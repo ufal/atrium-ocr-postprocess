@@ -140,6 +140,31 @@ def test_main_writes_paradata_accounting(workdir):
     assert stats["output_counts_by_type"]["xml"] == 2  # pages out
 
 
+def test_main_paradata_name_files_as_entries_not_in_config(workdir):
+    """atrium-project#84 decision 1(c): a batch run's `config` holds its settings only; every file it
+    read or wrote is an `inputs`/`outputs` entry by file name and SHA-512, `stored: false`, never by
+    path (a path describes the machine that ran the job)."""
+    import hashlib
+    import json
+
+    source = workdir / "in" / "doc.alto.xml"
+    source.write_text(_TWO_PAGE_DOC, encoding="utf-8")
+    main([str(workdir / "in"), str(workdir / "out") + "/"])
+
+    data = json.loads(next((workdir / "paradata").glob("*.json")).read_text(encoding="utf-8"))
+    assert data["config"] == {"script": "page_split"}
+    files_in = [e for e in data["inputs"] if e["name"] != "atrium/document-json"]
+    files_out = [e for e in data["outputs"] if e["name"] != "atrium/document-json"]
+    assert files_in == [
+        {"name": "doc.alto.xml", "sha512": hashlib.sha512(source.read_bytes()).hexdigest(), "stored": False}
+    ]
+    assert [e["name"] for e in files_out] == ["doc-7.alto.xml", "doc-8.alto.xml"]
+    for entry in files_out:
+        page = workdir / "out" / "doc" / entry["name"]
+        assert entry["sha512"] == hashlib.sha512(page.read_bytes()).hexdigest() and entry["stored"] is False
+    assert str(workdir) not in json.dumps(data)
+
+
 # ── split_alto_xml unit behaviour ────────────────────────────────────────────
 
 

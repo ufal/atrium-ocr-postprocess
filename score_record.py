@@ -166,7 +166,6 @@ def main(argv: Optional[List[str]] = None, classify: Optional[Classifier] = None
             "command": "score_record",
             "records": len(files),
             "pages": args.pages,
-            "out_dir": args.out_dir,
             "scores": args.scores,
         },
         paradata_dir=args.paradata_dir,

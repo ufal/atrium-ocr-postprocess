@@ -123,3 +123,23 @@ def test_an_invalid_config_exits_2(tmp_path, monkeypatch):
     monkeypatch.setattr(text_stats_create, "CONFIG_PATH", str(config))
     monkeypatch.chdir(tmp_path)
     assert text_stats_create.main([str(root)]) == 2
+
+
+def test_main_names_its_files_as_entries_not_in_config(tmp_path, monkeypatch):
+    """atrium-project#84 decision 1(c): `config` holds settings only; the page texts read and the CSV
+    written are `inputs`/`outputs` entries by file name and SHA-512."""
+    import hashlib
+    import json
+
+    monkeypatch.chdir(tmp_path)
+    root = tmp_path / "PAGE_TEXT"
+    _write(root / "d" / "d-1.txt", "x\n")
+    out = tmp_path / "out" / "stats.csv"
+    assert text_stats_create.main([str(root), "-o", str(out)]) == 0
+    data = json.loads(next((tmp_path / "paradata").glob("*.json")).read_text(encoding="utf-8"))
+    assert data["config"] == {"script": "text_stats_create"}
+    assert [(e["name"], e["stored"]) for e in data["inputs"]] == [("d-1.txt", False)]
+    assert data["outputs"] == [
+        {"name": "stats.csv", "sha512": hashlib.sha512(out.read_bytes()).hexdigest(), "stored": False}
+    ]
+    assert str(tmp_path) not in json.dumps(data)

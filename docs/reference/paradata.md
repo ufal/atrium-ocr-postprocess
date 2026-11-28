@@ -31,7 +31,13 @@ therefore points at the image actually executing rather than a fixed fork.
 * **Components:** the licensed components the run actually exercised, each with its own licence terms, in
 `components`, as facts. No licence of the output is computed or recorded. See
 [The components a run lists](paradata.md#the-components-a-run-lists) below.
-* **Configuration:** Stores run-time configuration, including script names and specific model choices.
+* **Configuration:** Stores what shaped the output only: the script, its method and settings, the models (a local
+model by its folder name, a Hugging Face id as given). Never a path or the name of a file the run read or wrote
+(atrium-project#84 decision 1): a path describes the machine that ran the job, not the document.
+* **Files read and written:** a batch script names every file it reads or writes that is not a distribution (the
+originals, the page files, the extracted texts, the line tables, the stats CSVs, its config file) in `inputs` /
+`outputs`, by file name and SHA-512, `stored: false`; the records by their distribution name (`atrium/document-json`).
+SHA-512 everywhere (decision 2).
 * **Timing:** Records precise UTC start times, end times, and the total duration of the run in seconds.
 * **Statistics:** Tracks the total number of input files, successfully processed documents, and computes performance
 throughput (e.g., output files generated per minute).

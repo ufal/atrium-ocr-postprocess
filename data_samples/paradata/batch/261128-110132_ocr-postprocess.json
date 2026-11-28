@@ -1,0 +1,95 @@
+{
+  "schema_version": "3.0",
+  "program": "ocr-postprocess",
+  "tool_version": "v2.0.0-beta",
+  "repository": "https://github.com/ufal/atrium-ocr-postprocess",
+  "runner_ref": "b67f3ca1b1f9669d4dd131ba71f125741fc4599a",
+  "docker_image": "",
+  "python_version": "3.11.4 (main, Jul 26 2023, 14:53:35) [GCC 11.3.0]",
+  "run_id": "261128-110132",
+  "run_uuid": "urn:uuid:13891ca5-fc3d-4789-bc4e-a90dec3772f8",
+  "run_agent": "",
+  "action_status": "completed",
+  "start_time": "2026-11-28T11:01:32.293127+00:00",
+  "end_time": "2026-11-28T11:01:32.445223+00:00",
+  "duration_seconds": 0.152,
+  "config": {
+    "standard_cols": [
+      "Clear",
+      "Empty",
+      "Noisy",
+      "Non-text",
+      "Trash"
+    ]
+  },
+  "parameters": {},
+  "inputs": [
+    {
+      "name": "config.txt",
+      "sha512": "154430354a5af8567886667528d4530f10b9d658b01f35ea16c3dfba206727a69021b6ea2ef6a4676760410dde01d6ee8c49666ca5833258ab66b77c61acfb7d",
+      "stored": false
+    },
+    {
+      "name": "CTX000000001.csv",
+      "sha512": "05a898d27d5d1fd45d65b8baddc296076dfff6dc4bf5dc086ae49f365725b124eb0793347a918b858eb35815cbe24733ffd29a602481ec3b76763f61b3b72d78",
+      "stored": false
+    },
+    {
+      "name": "CTX000000002.csv",
+      "sha512": "fb821d70e684b83dc1b93828ec76a11e09283d7619be01b791d4ea94815b209faa7c8cfca498078c7840b018fde438676ae3fba6bb596b8f2d8cbeaa1c090b83",
+      "stored": false
+    },
+    {
+      "name": "CTX000000003.csv",
+      "sha512": "ade5d8ad7e4d75a6a4b63d499294abc2728cd8737a4ba20f811c18dde8e044b5b0c879f3cf2e5a383f176bb3c6f9aa4b6ee9fe75a740f49c91959edc5da01d5a",
+      "stored": false
+    }
+  ],
+  "outputs": [
+    {
+      "name": "stats_CTX000000003.csv",
+      "sha512": "0aa6ff7b6e0d23a82e0b940ef0e26cc187e4e95276eb0e4686d69bfd353eaf64ad89be1cf51025d48aff3a28d354e50bef858a1fe97a2356e4d82c321289347b",
+      "stored": false
+    },
+    {
+      "name": "stats_CTX000000001.csv",
+      "sha512": "813613361595fa04c8bb2bc4cc097ca21440885a377487ce6daa0de5863c601a6e78587f5d0b14b722519316bc0124b221967ec3f63c728fe0f27499462d7159",
+      "stored": false
+    },
+    {
+      "name": "stats_CTX000000002.csv",
+      "sha512": "86de492e3af9a441144cf90b67a941774a51223381b429a6f2c1772ea3bdc5cf5750bcc2b4f50ef95e77eb5d057e205f606e538b5ae91a9d6aa7dcb8098f4a5d",
+      "stored": false
+    },
+    {
+      "name": "samples_page_stats.csv",
+      "sha512": "745490c5a2bfef4a5886d616dbe50c1aedf003454da2458044cac09c28e2ce5c5aae19154e832db122b5c1a2565cf17c257de40935ef7fffc8edc6e928cf48da",
+      "stored": false
+    }
+  ],
+  "components": [
+    {
+      "name": "alto_tools",
+      "license": "Apache-2.0",
+      "license_url": "https://www.apache.org/licenses/LICENSE-2.0"
+    },
+    {
+      "name": "fasttext",
+      "license": "CC BY-NC 4.0",
+      "license_url": "https://creativecommons.org/licenses/by-nc/4.0/"
+    }
+  ],
+  "statistics": {
+    "input_files_total": 3,
+    "successfully_processed": 3,
+    "skipped_files": 0,
+    "output_counts_by_type": {
+      "csv": 3
+    },
+    "performance_per_minute": {
+      "csv": 1183.4631
+    }
+  },
+  "skipped_files_detail": [],
+  "limits": []
+}
